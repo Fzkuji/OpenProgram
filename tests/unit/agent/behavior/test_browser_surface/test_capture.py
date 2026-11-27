@@ -682,7 +682,8 @@ def test_subprocess_permission_snapshot_denies_nested_browser_page_before_bypass
     from dataclasses import replace
     from types import SimpleNamespace
 
-    from openprogram.runtime.permissions.authority import local_owner_authority, runtime_authority
+    from openprogram.runtime.permissions.authority import local_owner_authority
+    from openprogram.state.authority import runtime_authority
     from openprogram.runtime.agent.turn_request import TurnRequest
     from openprogram.runtime.permissions.approvals.approval import wrap_with_approval
     from openprogram.runtime.conversation.process_runner import _permission_rules_from_snapshot

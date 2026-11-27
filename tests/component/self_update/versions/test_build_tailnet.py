@@ -86,3 +86,12 @@ def test_the_worker_finds_the_sidecar_in_its_versions_bin(tmp_path, monkeypatch)
     monkeypatch.setattr(remote_access, "_runtime_roots", lambda: [])
     monkeypatch.setattr(sys, "prefix", str(version / "venv"))
     assert remote_access.binary_path() == sidecar
+
+
+def test_a_base_from_a_runtime_layer_supplies_the_sidecar(tmp_path, worktree, go_on_path):
+    base = tmp_path / "base"
+    (base / "bin").mkdir(parents=True)
+    (base / "bin" / NAME).write_bytes(b"from base")
+    staging = tmp_path / "staging"
+    builder._stage_tailnet(worktree, staging, _previous(tmp_path), ["apps/tailnet/x.go"], go_on_path, base)
+    assert (staging / "bin" / NAME).read_bytes() == b"from base"

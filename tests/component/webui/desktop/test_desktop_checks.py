@@ -25,6 +25,7 @@ SCRIPTS = (
 )
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("script", SCRIPTS)
 def test_desktop_check_script_passes(script: str, tmp_path):
     node = shutil.which("node")

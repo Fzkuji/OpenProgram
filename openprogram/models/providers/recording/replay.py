@@ -22,9 +22,9 @@ from .recording import (
     RECORDING_FORMAT_VERSION,
     _RUNTIME_ONLY_OPTION_FIELDS,
     _dump_options,
-    remove_secret_values,
     restrict_recording_file,
 )
+from openprogram.state.secret_removal import remove_secret_values
 from ..types import (
     AssistantMessageEvent,
     Context,

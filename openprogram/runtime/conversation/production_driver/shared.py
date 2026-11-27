@@ -382,8 +382,14 @@ class CanonicalAgentEntry:
         self.control = driver._control_service()
 
     def admit(self, **kwargs) -> CanonicalAgentAdmission:
-        from openprogram.programs.tools.planning.goal.chat import admit
-        return admit(self, **kwargs)
+        # A Program that governs admission (a chat Goal serializes turns
+        # with its own changes) admits in place of this entry and calls
+        # ``_admit_without_goal`` for every turn it does not govern.
+        from openprogram.runtime.conversation import turn_hooks
+        governor = turn_hooks.provider("turn_admission")
+        if governor is None:
+            return self._admit_without_goal(**kwargs)
+        return governor(self, **kwargs)
 
     def _admit_without_goal(
         self,

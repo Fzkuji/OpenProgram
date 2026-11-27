@@ -12,10 +12,9 @@ import threading
 import pytest
 
 from openprogram.host import sandbox
+from openprogram.state import sandbox_settings
+from openprogram.state.sandbox_settings import DEFAULT_DENY_READ, MODE_AUTO, MODE_WORKSPACE_WRITE
 from openprogram.host.sandbox import (
-    DEFAULT_DENY_READ,
-    MODE_AUTO,
-    MODE_WORKSPACE_WRITE,
     SandboxPolicy,
     SandboxUnavailable,
     _bwrap_unavailable_reason,
@@ -754,7 +753,7 @@ def test_sandbox_settings_are_registered():
             "sandbox.deny_write",
             "sandbox.writable_roots", "sandbox.network",
             "sandbox.unavailable_policy", "sandbox.pass_env"} <= keys
-    assert _BY_KEY["sandbox.mode"].default == sandbox.MODE_OFF
+    assert _BY_KEY["sandbox.mode"].default == sandbox_settings.MODE_OFF
 
 
 def test_deny_read_ships_loaded():
@@ -800,6 +799,7 @@ class TestSeatbeltEndToEnd:
             assert r.returncode != 0
             assert not os.path.exists(target)
 
+    @pytest.mark.slow
     def test_linked_worktree_commits_but_cannot_move_other_branches(self, tmp_path):
         git = ["git", "-c", "user.name=t", "-c", "user.email=t@t"]
         source = tmp_path / "source"

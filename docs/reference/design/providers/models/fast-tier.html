@@ -4,11 +4,9 @@
 <table class="stack">
 <thead><tr><th scope="col">Route</th><th scope="col">On the wire</th><th scope="col">Support comes from</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">openai-codex</code></th><td>body <code translate="no">service_tier: "priority"</code></td><td>the account catalogue's <code translate="no">service_tiers</code></td></tr>
 <tr><th scope="row">OpenAI Responses and Completions</th><td>body <code translate="no">service_tier</code></td><td>row <code translate="no">fast</code>, then models.dev <code translate="no">speed_modes</code></td></tr>
 <tr><th scope="row"><code translate="no">anthropic</code>, Opus 4.6, 4.7, 4.8</th><td><code translate="no">extra_body={"speed":"fast"}</code> and <code translate="no">anthropic-beta: fast-mode-2026-02-01</code>, appended without clobbering other betas</td><td><code translate="no">Model.fast</code>, default table</td></tr>
 <tr><th scope="row"><code translate="no">xai</code>, <code translate="no">grok-4.6</code>, <code translate="no">https://api.x.ai/v1</code></th><td><code translate="no">service_tier</code></td><td>provider and endpoint scoped declaration</td></tr>
-<tr><th scope="row"><code translate="no">xai-subscription</code>, <code translate="no">grok-4.6</code></th><td><code translate="no">service_tier</code></td><td>declared; other models <code translate="no">unknown</code></td></tr>
 <tr><th scope="row">all other wires</th><td>nothing leaves the process</td><td>none</td></tr>
 </tbody>
 </table>
@@ -17,37 +15,22 @@
 <p><code translate="no">providers/settings/fast.py fast_capability</code>, shared by the agent-settings projection and dispatch; <code translate="no">supports_fast</code> is its boolean form.</p>
 <ol>
 <li>Row <code translate="no">fast: false</code>: unsupported</li>
-<li><code translate="no">openai-codex</code>: <code translate="no">Model.fast</code> from the account catalogue</li>
 <li>Row <code translate="no">fast: true</code>: supported</li>
 <li>xAI declarations above</li>
 <li>models.dev <code translate="no">speed_modes</code> with <code translate="no">priority</code> or <code translate="no">fast</code>: supported</li>
 <li>Otherwise <code translate="no">unknown</code></li>
 </ol>
 <p class="note"><code translate="no">Model.fast</code>: a row's <code translate="no">fast</code> wins; <code translate="no">enabled_models.default_fast</code> fills rows with none.</p>
-<h2>Codex source</h2>
-<p><code translate="no">GET https://chatgpt.com/backend-api/codex/models?client_version=&lt;ver&gt;</code>, with the subscription bearer and <code translate="no">chatgpt-account-id</code>.</p>
-<table class="stack fixed">
-<thead class="sr"><tr><th scope="col">Field</th><th scope="col">Gives</th></tr></thead>
-<tbody>
-<tr><th scope="row"><code translate="no">service_tiers</code> with <code translate="no">id:"priority"</code></th><td>Fast tier</td></tr>
-<tr><th scope="row"><code translate="no">supported_reasoning_levels</code></th><td>Thinking picker</td></tr>
-<tr><th scope="row"><code translate="no">context_window</code></th><td>The real subscription value</td></tr>
-</tbody>
-</table>
-<p class="note">Requests and dispatch use <code translate="no">originator: codex_cli_rs</code> and <code translate="no">version</code>: the backend greylists ids such as <code translate="no">gpt-5.6-luna</code> by client, so another originator sees the model and then gets 404. models.dev tracks the API platform, not this front door.</p>
 <h2>Storage</h2>
-<p>Official endpoint, then normalise, then last-known-good cache and <code translate="no">config.json</code>, then registry, then <code translate="no">supports_fast</code> and dispatch.</p>
+<p><code translate="no">config.json</code>, then registry, then <code translate="no">supports_fast</code> and dispatch.</p>
 <table class="stack">
 <thead><tr><th scope="col">Layer</th><th scope="col">Location</th><th scope="col">Persistence</th></tr></thead>
 <tbody>
-<tr><th scope="row">Official endpoint, CLI cache</th><td><code translate="no">openai_codex/list_models.py</code></td><td>live first; <code translate="no">~/.codex/models_cache.json</code> is a stale display fallback</td></tr>
-<tr><th scope="row">Subscription catalogue</th><td><code translate="no">catalog/subscription_catalog.py</code></td><td>atomic last-known-good; after login and periodically</td></tr>
-<tr><th scope="row">Spec row</th><td><code translate="no">config.json</code></td><td>official refresh adds, updates and retires; honors disables</td></tr>
+<tr><th scope="row">Spec row</th><td><code translate="no">config.json</code></td><td>Fetch adds, updates and retires; honors disables</td></tr>
 <tr><th scope="row"><code translate="no">Model.fast</code></th><td><code translate="no">_build_model_from_row</code></td><td>memory</td></tr>
 <tr><th scope="row">models.dev</th><td><code translate="no">catalog/sources/models_dev.py</code></td><td>remote, 1 h memory cache</td></tr>
 </tbody>
 </table>
-<p class="note">CLI cache rows carry an error, so they never add or delete configured models.</p>
 <h2>Turn</h2>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Moment</th><th scope="col">Behaviour</th></tr></thead>
@@ -65,14 +48,12 @@
 <tbody>
 <tr><th scope="row"><code translate="no">models/providers/types.py</code></th><td><code translate="no">Model.fast</code></td></tr>
 <tr><th scope="row"><code translate="no">providers/catalog/enabled_models.py</code></th><td><code translate="no">default_fast</code>, config-row backfill</td></tr>
-<tr><th scope="row"><code translate="no">adapters/openai_codex/{openai_codex,catalog}.py</code></th><td>Passthrough, client identity</td></tr>
 <tr><th scope="row"><code translate="no">adapters/anthropic/anthropic.py</code></th><td>Claude wire</td></tr>
-<tr><th scope="row"><code translate="no">adapters/openai_codex/list_models.py</code></th><td>Official fetch</td></tr>
 <tr><th scope="row"><code translate="no">listing/fetchers/__init__.py</code></th><td>Passes fast and thinking; enrich cannot overwrite</td></tr>
 <tr><th scope="row"><code translate="no">interfaces/server/routes/execution/runtime.py</code></th><td><code translate="no">chat.fast</code></td></tr>
 <tr><th scope="row"><code translate="no">apps/web/components/chat/composer/index.tsx</code></th><td>Control, send gate</td></tr>
 </tbody>
 </table>
-<p class="note">Codex models need only a Fetch. Detection logic: <code translate="no">fast_capability</code>. Claude: <code translate="no">default_fast</code>. Other providers: works once models.dev knows it.</p>
+<p class="note">Detection logic: <code translate="no">fast_capability</code>. Claude: <code translate="no">default_fast</code>. Other providers: works once models.dev knows it.</p>
 </details>
 <p class="next"><a href="thinking-effort.html">Thinking effort</a></p>

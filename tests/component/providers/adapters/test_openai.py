@@ -38,7 +38,7 @@ class TestOpenAIProviderWiring:
         # "no credential anywhere" path on any dev machine.
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         monkeypatch.setattr(
-            "openprogram.models.providers.settings.env_api_keys.resolve_provider_key",
+            "openprogram.models.auth.env_api_keys.resolve_provider_key",
             lambda *a, **k: None,
         )
         with pytest.raises(ValueError, match="API key"):

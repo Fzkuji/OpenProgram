@@ -33,7 +33,8 @@ import uuid
 from collections.abc import Mapping
 from typing import Any
 
-from openprogram.runtime.execution.model import TERMINAL_EXECUTION_STATUSES, ExecutionStatus
+from openprogram.runtime.execution.model import ExecutionStatus
+from openprogram.runtime.execution.run_control.stop_reasons import stopped_by_limit
 
 from . import task_branch, task_runs, time_limits
 from openprogram.host._platform.filesystem import replace_file
@@ -47,32 +48,20 @@ ANNOUNCE_ATTEMPTS = 5
 _finishing = threading.Lock()
 
 
-def held_for_switch(result: Any) -> bool:
-    """A turn saved during a version switch: the run happens after the switch."""
-    from openprogram.operations.self_update.control.held_turns import HELD_REASON
-
-    return getattr(result, "error_reason", None) == HELD_REASON
-
-
-def has_ended(result: Any, execution: Any) -> bool:
-    """Whether the run is over, rather than stopped at a point it goes on from."""
-    if getattr(result, "_execution_safe_point_handoff", False) or held_for_switch(result):
-        return False
-    return execution is None or execution.status in TERMINAL_EXECUTION_STATUSES
-
-
 def conclude(session_id: str, task: dict[str, Any], execution_id: str, result: Any,
              execution: Any) -> dict[str, Any] | None:
     """Settle the task's branch on the run's tip and say what the run has for
     the user; ``None`` while the run has not ended, or when the user stopped it."""
+    from openprogram.runtime.conversation.turn_endings import has_ended
+
     if not has_ended(result, execution):
         return None
     tip = getattr(result, "assistant_msg_id", None)
     task_branch.finish(session_id, task, None, tip)
     ended_as = getattr(execution, "status", None)
-    if ended_as is ExecutionStatus.CANCELLED and not time_limits.stopped_by_limit(execution):
+    if ended_as is ExecutionStatus.CANCELLED and not stopped_by_limit(execution):
         return None
-    if time_limits.stopped_by_limit(execution):
+    if stopped_by_limit(execution):
         status, text = task_runs.FAILED, time_limits.SCHEDULED_RUN_STOPPED
     elif result is None or getattr(result, "failed", False) or ended_as in _ENDED_BROKEN:
         status, text = task_runs.FAILED, str(getattr(result, "error", None) or (
@@ -113,9 +102,9 @@ def close_run_tabs(execution_id: str, *, wait: bool = False) -> None:
     App; a run's own process passes ``wait`` so the pages are closed before
     the process exits."""
     try:
-        from openprogram.programs._host import services
+        from openprogram.runtime import program_host
 
-        browser = services.lookup("browser")
+        browser = program_host.host().services.lookup("browser")
         if browser is not None and execution_id:
             if wait:
                 browser.tabs.close_run_tabs(execution_id)
@@ -194,7 +183,7 @@ def _retry_later(outcome: dict[str, Any], execution_id: str) -> None:
 
 def _still_scheduled(task_id: str) -> bool:
     """A task the user deleted has no page to record on and nothing to say."""
-    from openprogram.programs.tools.jobs.cron.cron import _load, _resolve_path
+    from openprogram.runtime.scheduler.store import _load, _resolve_path
 
     return any(entry.get("id") == task_id for entry in _load(_resolve_path()))
 
@@ -228,7 +217,7 @@ def finish_resumed(executions: Any, execution: Any, result: Any) -> None:
 
 
 def _kept_directory() -> str:
-    from openprogram.programs.tools.jobs.cron.cron import _resolve_path
+    from openprogram.runtime.scheduler.store import _resolve_path
 
     return os.path.join(os.path.dirname(_resolve_path()) or ".", "run-endings")
 

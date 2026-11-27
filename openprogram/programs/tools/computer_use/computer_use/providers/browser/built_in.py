@@ -23,7 +23,7 @@ import sys
 from typing import Any
 
 from openprogram.host.machines import Machine
-from openprogram.programs._host.execution import ToolReturn
+from openprogram.runtime.agent.tool_execution import ToolReturn
 
 from ... import errors
 from ...routing import locks, registry

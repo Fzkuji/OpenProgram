@@ -65,7 +65,7 @@ def read_text(png: bytes) -> list[dict]:
     if system == "Windows":
         from openprogram.host._platform import windows_ocr
         return windows_ocr.recognize(png)
-    from openprogram.programs.tools.computer_use.computer_use.desktop import ocr
+    from openprogram.programs.tools.computer_use.computer_use.desktop.common import ocr
     boxes = ocr.recognize(png, width, height) if system == "Darwin" else ocr.recognize_tesseract(png)
     return [{"text": box.text, "box": [box.x, box.y, box.width, box.height]} for box in boxes]
 

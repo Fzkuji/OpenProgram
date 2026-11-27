@@ -3,6 +3,7 @@
 import copy
 import hashlib
 import logging
+import os
 import re
 import shutil
 import subprocess
@@ -13,7 +14,8 @@ from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
-from openprogram.host import sandbox as _sandbox
+from openprogram.host._platform.processes import process_alive
+from openprogram.state import host_facts
 
 from ..markdown import read_checked_tree, read_topic_tree
 from .block_views import BlockViewsMixin
@@ -57,6 +59,29 @@ def _topic_size_note(relative: Path, text: str) -> str:
     return note + ")"
 
 
+#: A stage is named for the process that made it, so a stage whose process
+#: ended without closing it (killed mid-write) can be told from a live one.
+_STAGE_PREFIX = f"{TEMPORARY_PREFIX}topics-"
+_orphans_removed = False
+
+
+def _remove_orphaned_stages() -> None:
+    """Remove stages whose process is gone, once per process.
+
+    ``close`` removes a stage on every path a process lives through; a
+    process that is killed while a write is open cannot, and its stage, a
+    full copy of memory, would otherwise stay in the temp directory.
+    """
+    global _orphans_removed
+    if _orphans_removed:
+        return
+    _orphans_removed = True
+    for stage in Path(tempfile.gettempdir()).glob(f"{_STAGE_PREFIX}*-*"):
+        owner = stage.name[len(_STAGE_PREFIX):].split("-", 1)[0]
+        if owner.isdigit() and int(owner) != os.getpid() and not process_alive(int(owner)):
+            shutil.rmtree(stage, ignore_errors=True)
+
+
 _FOREIGN_SOURCE: ContextVar[bool] = ContextVar("memory_foreign_source", default=False)
 
 
@@ -91,7 +116,8 @@ class MemoryWorkspace(
         # the stage.
         self.outside: set[str] = set()
         self.memory_dir.mkdir(parents=True, exist_ok=True)
-        self.stage_dir = Path(tempfile.mkdtemp(prefix=f"{TEMPORARY_PREFIX}topics-"))
+        _remove_orphaned_stages()
+        self.stage_dir = Path(tempfile.mkdtemp(prefix=f"{_STAGE_PREFIX}{os.getpid()}-"))
         self.pending: dict[str, dict[str, Any]] = {}
         self.config = config or MemoryConfig()
         self._allowed_new_source_refs = (
@@ -108,7 +134,12 @@ class MemoryWorkspace(
         self.current_ref: str | None = None
         self.last_changed_topics: list[str] = []
         self.last_created_blocks = 0
-        self._refresh_stage()
+        try:
+            self._refresh_stage()
+        except BaseException:
+            # The caller never gets the workspace to close.
+            self._discard_stage()
+            raise
 
     def close(self) -> None:
         """Remove the staging directory.
@@ -171,22 +202,11 @@ class MemoryWorkspace(
         # in the sandbox wherever the platform has one, even while interactive
         # shell sandboxing is off, and runs without it elsewhere, unless the
         # text it is working from came from someone other than the owner.
-        from openprogram.host.backend.local import _invocation
-
-        policy = _sandbox.resolve_policy(required=True)
-        assert policy is not None
-        reason = _sandbox.unavailable_reason()
-        if reason is None:
-            args, use_shell, env, _sandboxed = _invocation(command, str(self.stage_dir), policy=policy)
-        elif self._shell_needs_sandbox:
-            raise _sandbox.SandboxUnavailable(
-                f"this batch holds messages from someone other than the owner and there is no sandbox here ({reason}); "
-                "use the Read, Write and Edit tools")
-        else:
-            _log.warning("memory workspace command runs without a sandbox: %s", reason)
-            with _sandbox.without_policy():
-                args, use_shell, env, _sandboxed = _invocation(command, str(self.stage_dir))
-            env = _sandbox.child_env(policy)
+        args, use_shell, env = host_facts.sandbox_preferred_invocation(
+            command, str(self.stage_dir),
+            refusal=("this batch holds messages from someone other than the owner and there is no sandbox here "
+                     "({reason}); use the Read, Write and Edit tools") if self._shell_needs_sandbox else None,
+        )
         result = subprocess.run(
             args,
             cwd=self.stage_dir,

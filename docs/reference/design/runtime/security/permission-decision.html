@@ -79,7 +79,7 @@
 <tr><th scope="row">Identity</th><td>Capabilities, non-owner scope, page scripts, framework operations, cited memory</td><td><code translate="no">permissions/identity.py</code>, <code translate="no">tool_authority.py</code>, <code translate="no">Refused</code> from the tool</td></tr>
 <tr><th scope="row">Rules</th><td>Deny, ask and allow rules, hold outbound, hooks</td><td><code translate="no">permissions/rule.py</code>, <code translate="no">runtime/events/tool_gate.py</code></td></tr>
 <tr><th scope="row">Mode</th><td>The table above</td><td><code translate="no">_mode_decision</code></td></tr>
-<tr><th scope="row">Sandbox</th><td>Paths and network outside the sandbox, only when Sandbox is on</td><td><code translate="no">host/sandbox/</code>, <code translate="no">programs/_host/execution.py</code></td></tr>
+<tr><th scope="row">Sandbox</th><td>Paths and network outside the sandbox, only when Sandbox is on</td><td><code translate="no">host/sandbox/</code>, <code translate="no">runtime/agent/tool_execution.py</code></td></tr>
 <tr><th scope="row">Correctness</th><td>Argument checks, read before write, a file changed under an approval, a stale review</td><td>Tool code, returned to the model as an error or a retry</td></tr>
 </tbody>
 </table>
@@ -126,7 +126,7 @@
 <tbody>
 <tr><th scope="row">Stale state</th><td><code translate="no">PERMISSION_REVIEW_STALE</code>, <code translate="no">APPROVAL_FILE_CHANGED</code> and wait resume mismatches come back as a retry instruction through <code translate="no">refusal.stale(...)</code>, not as a block</td></tr>
 <tr><th scope="row">MCP server</th><td>Its model-facing text, keyed by decision code, comes from <code translate="no">refusal.py</code> (<code translate="no">MCP_GATE_REFUSALS</code>), so <code translate="no">_trusted_approval_denial</code> recognises the same strings the gate produces</td></tr>
-<tr><th scope="row">Single source test</th><td><code translate="no">tests/unit/security/test_refusal_single_source.py</code> walks <code translate="no">openprogram/programs/</code>, <code translate="no">openprogram/runtime/permissions/</code>, <code translate="no">openprogram/runtime/agent/loop/</code> and <code translate="no">openprogram/extensions/mcp/server/</code>. It fails on a bracketed denial literal, <code translate="no">"denied": True</code> in a dict or <code translate="no">details=</code>, a <code translate="no">"sandbox policy:"</code> literal, or <code translate="no">raise PermissionError(</code> outside <code translate="no">refusal.py</code>. Each exception is on an explicit allowlist with its reason.</td></tr>
+<tr><th scope="row">Single source test</th><td><code translate="no">tests/unit/security/test_refusal_single_source.py</code> walks <code translate="no">openprogram/programs/</code>, <code translate="no">openprogram/runtime/permissions/</code>, <code translate="no">openprogram/runtime/agent/loop/</code> and <code translate="no">openprogram/interfaces/mcp_server/</code>. It fails on a bracketed denial literal, <code translate="no">"denied": True</code> in a dict or <code translate="no">details=</code>, a <code translate="no">"sandbox policy:"</code> literal, or <code translate="no">raise PermissionError(</code> outside <code translate="no">refusal.py</code>. Each exception is on an explicit allowlist with its reason.</td></tr>
 </tbody>
 </table>
 </details>

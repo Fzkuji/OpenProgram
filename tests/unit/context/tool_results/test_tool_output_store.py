@@ -188,7 +188,7 @@ def _bind_session(session_id):
 
 
 def test_full_texts_are_kept_once_by_content(tmp_path):
-    from openprogram.programs._host.execution import _persist_full_result
+    from openprogram.runtime.agent.tool_execution import _persist_full_result
 
     first = _persist_full_result("call_1", "same text", results_dir=tmp_path)
     again = _persist_full_result("call_2", "same text", results_dir=tmp_path)
@@ -199,7 +199,7 @@ def test_full_texts_are_kept_once_by_content(tmp_path):
 
 
 def test_full_texts_live_and_die_with_their_conversation(tmp_path, monkeypatch):
-    from openprogram.programs._host.execution import _persist_full_result
+    from openprogram.runtime.agent.tool_execution import _persist_full_result
     from openprogram.runtime.execution.run_control import binding
 
     store = SessionStore(tmp_path / "sessions")
@@ -221,7 +221,7 @@ def test_full_texts_live_and_die_with_their_conversation(tmp_path, monkeypatch):
 
 
 def test_without_a_conversation_the_shared_directory_keeps_it(tmp_path):
-    from openprogram.programs._host.execution import _persist_full_result
+    from openprogram.runtime.agent.tool_execution import _persist_full_result
 
     path = _persist_full_result("call_1", "text", fallback_dir=lambda: tmp_path / "shared")
     assert path.parent == tmp_path / "shared"

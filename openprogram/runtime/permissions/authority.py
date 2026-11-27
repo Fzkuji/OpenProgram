@@ -3,8 +3,7 @@
 The authority record itself (its fields, the schema stamp, the fixed
 tier-capability table and the check against it) is stored data and lives
 in :mod:`openprogram.state.authority`. This module builds on it: the
-owner identity, the authority constructors and how speech is shown to the
-model. It knows no
+owner identity and the authority constructors that need it. It knows no
 tool names; :mod:`openprogram.runtime.permissions.tool_authority` maps a
 tool call onto one capability and decides it with this table.
 """
@@ -17,10 +16,9 @@ import re
 import threading
 import uuid
 from pathlib import Path
-from typing import Any, Mapping
-from urllib.parse import quote
+from typing import Any
 
-from openprogram.state.authority import normalize_authority, sanitize_speaker_display
+from openprogram.state.authority import LOCAL_OWNER_SPEAKER, normalize_authority, sanitize_speaker_display
 
 
 class AuthorityError(RuntimeError):
@@ -87,9 +85,6 @@ def owner_principal_id() -> str:
 
 def _reset_owner_cache_for_tests() -> None:
     _owner_cache.clear()
-
-
-LOCAL_OWNER_SPEAKER = "owner/local"
 
 
 def owner_authority(principal_id: str) -> dict[str, Any]:
@@ -209,53 +204,6 @@ def mcp_client_authority(client_id: str) -> dict[str, Any]:
     }
 
 
-def runtime_authority(parent: Mapping[str, Any] | Any, source: str) -> dict[str, Any]:
-    inherited = normalize_authority(parent)
-    if not inherited:
-        return {}
-    inherited.update({
-        "speaker_kind": "runtime",
-        "speaker_id": f"runtime/{quote(str(source), safe='-_.')}",
-        "speaker_display": str(source).replace("_", " "),
-        "interaction": "non-interactive",
-    })
-    return inherited
-
-
-def render_model_input(
-    content: str,
-    *,
-    speaker_kind: str = "unknown",
-    speaker_id: str = "unknown",
-    speaker_display: str = "unknown",
-) -> str:
-    """Encode untrusted text as one value in the model-visible envelope."""
-    return json.dumps({
-        "speaker_kind": str(speaker_kind or "unknown"),
-        "speaker_id": str(speaker_id or "unknown"),
-        "speaker_display": sanitize_speaker_display(
-            str(speaker_display or "unknown")
-        ),
-        "content": str(content or ""),
-    }, ensure_ascii=False, separators=(",", ":"))
-
-
-def render_model_input_from(value: Mapping[str, Any] | Any, content: str) -> str:
-    # The JSON envelope exists to attribute channel speech; a node with no
-    # authority metadata is the local owner's own turn (or pre-authority
-    # history) and renders as plain text — wrapping it would present the
-    # owner to the model as an unknown speaker on every turn.
-    authority = normalize_authority(value)
-    if not authority:
-        return content
-    return render_model_input(
-        content,
-        speaker_kind=authority.get("speaker_kind", "unknown"),
-        speaker_id=authority.get("speaker_id", "unknown"),
-        speaker_display=authority.get("speaker_display", "unknown"),
-    )
-
-
 def authority_from_message(session_id: str, message_id: str) -> dict[str, Any]:
     """Read authority persisted on a turn node; no ambient identity fallback."""
     if not session_id or not message_id:
@@ -312,9 +260,6 @@ __all__ = [
     "channel_owner_authority",
     "paired_channel_authority",
     "mcp_client_authority",
-    "runtime_authority",
     "authority_from_message",
     "turn_origin",
-    "render_model_input",
-    "render_model_input_from",
 ]

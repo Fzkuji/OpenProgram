@@ -52,6 +52,23 @@ from openprogram.runtime.conversation.surface_context import (
 _log = logging.getLogger(__name__)
 
 
+def _report_envelope_key(kind: str) -> str:
+    """The key that marks a Program's report forwarded from a tool subprocess."""
+    return f"__op_{kind}__"
+
+
+def _forwarded_reports(envelope: Any) -> Any | None:
+    """The ``tool_subprocess_reports`` handler whose report ``envelope`` carries, if any."""
+    if not isinstance(envelope, dict) or not any(
+            key.startswith("__op_") and value for key, value in envelope.items() if isinstance(key, str)):
+        return None
+    from openprogram.runtime.conversation import turn_hooks
+    for reports in turn_hooks.handlers("tool_subprocess_reports"):
+        if envelope.get(_report_envelope_key(reports.kind)):
+            return reports
+    return None
+
+
 # execution_id → live Process. Session is a secondary index so a
 # compatibility session-level lookup still finds the current owner.
 _active: dict[str, mp.Process] = {}
@@ -1062,12 +1079,12 @@ def _child_entry(
     # instead of recursing into another subprocess.
     os.environ["OPENPROGRAM_IN_AGENTIC_SUBPROCESS"] = "1"
     # Spawn context: re-import openprogram so the agent_tools registry
-    # populates in this fresh interpreter.
+    # populates in this fresh interpreter (the Program host loads the
+    # Programs on first use, through the root package's loader).
     try:
         import openprogram  # noqa: F401
-        import openprogram.programs  # noqa: F401
-        from openprogram.programs import agent_tools as _warm
-        _warm()  # force registration
+        from openprogram.runtime import program_host
+        program_host.host().agent_tools()  # force registration
     except Exception:
         # The tool may still run; a missing registry shows up as an unknown tool.
         _log.warning("agent tool registry warm-up failed in subprocess", exc_info=True)
@@ -1086,7 +1103,8 @@ def _child_entry(
         )
         from openprogram.runtime.context.session_db import default_db
         from openprogram.runtime.agent.runtime.factory import create_runtime
-        from openprogram.programs._host.runtime import get as _get_tool
+        from openprogram.runtime import program_host
+        _get_tool = program_host.host().get
         from openprogram.runtime.conversation.turn_runtime import (
             _wrap_agentic_runtime_block,
         )
@@ -1232,13 +1250,16 @@ def _child_entry(
         except Exception:
             # Optional preview: the parent just does not follow native windows.
             _log.debug("native window forwarding not installed for session %s", session_id, exc_info=True)
-        # So does what the child does on a browser Page, for the preview to follow.
-        try:
-            from openprogram.programs.applications.browser.pages import forward_operations_to_parent
-            forward_operations_to_parent(lambda reported: _on_event({"__op_browser_operation__": True, "data": reported}))
-        except Exception:
-            # Optional preview: the parent just does not follow browser pages.
-            _log.debug("browser operation forwarding not installed for session %s", session_id, exc_info=True)
+        # So does what Programs report from the child (what it does on a
+        # browser Page), for the preview to follow.
+        from openprogram.runtime.conversation import turn_hooks
+        for reports in turn_hooks.handlers("tool_subprocess_reports"):
+            try:
+                envelope_key = _report_envelope_key(reports.kind)
+                reports.forward(lambda reported, key=envelope_key: _on_event({key: True, "data": reported}))
+            except Exception:
+                # Optional preview: the parent just does not follow these reports.
+                _log.debug("%s forwarding not installed for session %s", reports.kind, session_id, exc_info=True)
 
         wrapped = _wrap_agentic_runtime_block(tool, req, _on_event, anchor_msg_id)
 
@@ -1751,12 +1772,12 @@ def run_agent_method_in_subprocess(
                 # Optional preview state; the drain thread must keep running.
                 _log.debug("native window report failed for execution %s", eid, exc_info=True)
             return
-        if isinstance(env, dict) and env.get("__op_browser_operation__"):
+        forwarded = _forwarded_reports(env)
+        if forwarded is not None:
             try:
-                from openprogram.programs.applications.browser.pages import report_forwarded_operation
-                report_forwarded_operation(env.get("data") or {}, execution_id=eid)
+                forwarded.report(env.get("data") or {}, execution_id=eid)
             except Exception:
-                logging.getLogger(__name__).debug("forwarded browser operation report failed", exc_info=True)
+                logging.getLogger(__name__).debug("forwarded %s report failed", forwarded.kind, exc_info=True)
             return
         if isinstance(env, dict) and env.get("type") == "goal_update":
             try:

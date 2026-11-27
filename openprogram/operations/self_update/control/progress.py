@@ -155,7 +155,7 @@ def _reached_trial(store: Any, update_id: str) -> bool:
 
 def _version_labels(record: Any) -> tuple[str, str]:
     """``(candidate, previous)`` by number when this install keeps versions."""
-    from ..versions import layout as paths
+    from openprogram.host._platform import runtime_layout as paths
     from ..versions import overview
 
     candidate_id = getattr(record.request, "candidate_version", None) or record.state.detail.get("candidate_version")

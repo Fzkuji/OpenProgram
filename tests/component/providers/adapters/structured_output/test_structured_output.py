@@ -305,9 +305,9 @@ def test_strict_tool_kill_switch_disables_hidden_auto(monkeypatch):
     monkeypatch.setenv("OPENPROGRAM_STRICT_TOOLS", "0")
     model = Model(
         id="callable",
-        name="Codex",
-        api="openai-codex",
-        provider="openai-codex",
+        name="Responses",
+        api="openai-responses",
+        provider="openai",
         base_url="https://example.invalid",
     )
 
@@ -459,10 +459,6 @@ def test_registry_entry_reads_remain_coherent_during_replacement(monkeypatch):
 
 def test_builtin_capabilities_are_explicit_and_unknown_adapters_fail_closed():
     openai = api_registry.get_structured_output_capabilities("openai-responses")
-    codex = api_registry.get_structured_output_capabilities("openai-codex")
-    gemini_subscription = api_registry.get_structured_output_capabilities(
-        "gemini-subscription"
-    )
 
     assert openai.native == "supported"
     assert openai.strict_tool is True
@@ -471,7 +467,3 @@ def test_builtin_capabilities_are_explicit_and_unknown_adapters_fail_closed():
     assert api_registry.get_structured_output_capabilities("google-generative-ai").native == "supported"
     assert api_registry.get_structured_output_capabilities("bedrock-converse-stream").native == "unknown"
     assert api_registry.get_structured_output_capabilities("azure-openai-responses").native == "unknown"
-    assert codex.native == "unknown"
-    assert codex.strict_tool is True
-    assert gemini_subscription.native == "unknown"
-    assert gemini_subscription.strict_tool is False

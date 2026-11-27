@@ -72,8 +72,8 @@ export function LegacyTopbarBridge() {
 /* ---- Chips --------------------------------------------------------- */
 
 /** Strip a leading `provider:` qualifier from a model string. The chat
- *  model often arrives provider-qualified ("openai-codex:gpt-5.5") while
- *  the exec model is bare ("gpt-5.5"); this reduces both to the bare id. */
+ *  model often arrives provider-qualified ("anthropic:claude-sonnet-4-6") while
+ *  the exec model is bare ("claude-sonnet-4-6"); this reduces both to the bare id. */
 function bareModelId(provider?: string, model?: string): string {
   if (!model) return "";
   return provider && model.startsWith(provider + ":")
@@ -111,7 +111,7 @@ export function useChatModel(provider: string | undefined, model: string | undef
   }
   // Enabled-models list (shared cache with the AgentSelector dropdown —
   // same PICKER_QUERY_KEY, so the menu adds no extra fetch) → id-to-display-name map
-  // so the chip shows "GPT-5.5" instead of "openai-codex:gpt-5.5". Keyed
+  // so the chip shows "Claude Sonnet 4.6" instead of "anthropic:claude-sonnet-4-6". Keyed
   // both by "provider:id" and bare "id" for whichever form the chip has.
   // The same read carries each provider's picker state for the mark.
   const { data: picker } = useQuery({
@@ -145,7 +145,9 @@ export function useChatModel(provider: string | undefined, model: string | undef
     ? fmtAgentLabel(routed.provider, routed.model, nameById)
     : fmtAgentLabel(provider, model, nameById));
   const providerLabel = (provider && enabledModels?.find((m) => m.provider === provider)?.providerLabel) || provider;
-  return { provider, model, label, mark, markProvider, harness, providerLabel };
+  // `ready` once the model list is read: until then the label may be
+  // an id or empty, not the name it will settle on.
+  return { provider, model, label, mark, markProvider, harness, providerLabel, ready: !!picker };
 }
 
 /** The model menu's rows for a conversation's model (AgentSelector), in

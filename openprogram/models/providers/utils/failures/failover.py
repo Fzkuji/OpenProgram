@@ -329,17 +329,13 @@ def _record_switch(skipped: dict[str, str], nxt: Any) -> None:
     """Keep the switch in the usage ledger for the routing overview. A
     bookkeeping failure never stops the request from moving on."""
     try:
-        from openprogram.models.usage.context import current_usage_context
-        from openprogram.models.usage.ledger import default_ledger
-        scope = current_usage_context()
-        default_ledger.append_route_event(
+        from openprogram.models.providers.usage_port import record_route_switch
+        record_route_switch(
             from_provider=skipped["provider"],
             from_model=skipped["model"],
             to_provider=str(getattr(nxt, "provider", "") or ""),
             to_model=str(getattr(nxt, "id", "") or ""),
             reason=skipped["reason"],
-            session_id=scope.session_id,
-            parent_session_id=scope.parent_session_id,
         )
     except Exception as exc:  # noqa: BLE001
         _log.warning("could not record the switch: %s", exc, exc_info=True)

@@ -32,6 +32,32 @@
 </tbody>
 </table>
 
+<h2 id="layers">Layer order</h2>
+<p>The Python core is nine layers. A module imports its own layer and the ones below it, never one above, at module level or inside a function. Read as functional requirements and design parameters, the design matrix is lower triangular: a layer can change without going back to the ones below it.</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">Layer, bottom to top</th><th scope="col">Hears from the layers above through</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">host._platform</code></th><td><code translate="no">host_facts</code>: a setting's value, whether the sandbox is on</td></tr>
+<tr><th scope="row"><code translate="no">state</code></th><td><code translate="no">host_facts</code>, <code translate="no">model_facts</code>, <code translate="no">program_facts</code>, <code translate="no">execution_facts</code>, <code translate="no">setting_rules</code> (each setting's checks)</td></tr>
+<tr><th scope="row"><code translate="no">host</code></th><td><code translate="no">runtime_facts</code>, including <code translate="no">load_programs</code></td></tr>
+<tr><th scope="row"><code translate="no">models</code></th><td><code translate="no">usage.goal_port</code>, the recorder's system sections</td></tr>
+<tr><th scope="row"><code translate="no">runtime</code></th><td><code translate="no">program_host</code> (the tool registry), <code translate="no">maintenance</code> (self-update's gate), <code translate="no">extension_link</code>, the turn, loop and permission hooks Programs register</td></tr>
+<tr><th scope="row"><code translate="no">extensions</code></th><td>—</td></tr>
+<tr><th scope="row"><code translate="no">operations</code></th><td>—</td></tr>
+<tr><th scope="row"><code translate="no">programs</code></th><td>—</td></tr>
+<tr><th scope="row"><code translate="no">interfaces</code></th><td>—</td></tr>
+</tbody>
+</table>
+<p>Each upper layer fills the ports below it from its own <code translate="no">lower_layers.py</code>. Three composition roots may import any layer: <code translate="no">openprogram/__init__.py</code>, which installs how Programs load; <code translate="no">__main__.py</code>; and the worker's <code translate="no">runner.py</code>. <a href="https://github.com/Fzkuji/OpenProgram/blob/main/tests/contracts/repository/test_layer_order.py">The contract</a> scans every import, including imports inside functions and string imports, and allows no exceptions.</p>
+<p>Inside each layer the parts, its direct subpackages and modules, also import each other without a cycle, and none imports the layer's <code translate="no">__init__</code> or <code translate="no">lower_layers</code> (<a href="https://github.com/Fzkuji/OpenProgram/blob/main/tests/contracts/repository/test_layer_internals.py">the contract</a>).</p>
+<ul>
+<li>Programs: <code translate="no">_authoring</code> &lt; <code translate="no">_host</code> &lt; <code translate="no">tools</code> &lt; <code translate="no">applications</code>; the report helpers in <code translate="no">_authoring</code> reach the tools through <code translate="no">reports.tool_port</code>.</li>
+<li>State: <code translate="no">attachment_markers</code> and <code translate="no">paths</code> &lt; <code translate="no">store</code> &lt; <code translate="no">attachments</code> &lt; <code translate="no">worktree</code> &lt; <code translate="no">project_commit</code>.</li>
+<li>Host: <code translate="no">security</code> &lt; <code translate="no">worker</code> &lt; <code translate="no">backend</code> &lt; <code translate="no">machines</code> &lt; <code translate="no">processes</code>; in <code translate="no">host._platform</code>, <code translate="no">processes</code> &lt; <code translate="no">terminal</code> and <code translate="no">process_exits</code> &lt; <code translate="no">changes</code>.</li>
+</ul>
+<p>Inside the runtime the parts are ordered too: <code translate="no">agent_registry</code> &lt; <code translate="no">jobs</code> &lt; <code translate="no">conversation</code> &lt; <code translate="no">scheduler</code> &lt; <code translate="no">harnesses</code>, and <code translate="no">context</code> &lt; <code translate="no">execution</code> &lt; <code translate="no">permissions</code>. A lower part reaches a higher one through a link module filled by <code translate="no">runtime/lower_layers.py</code>: <code translate="no">conversation_link</code> for Jobs, <code translate="no">scheduler_link</code> and <code translate="no">harness_link</code> for conversations.</p>
+<p>Inside <code translate="no">models</code> the parts are ordered <code translate="no">auth</code> &lt; <code translate="no">providers</code> &lt; <code translate="no">usage</code> &lt; <code translate="no">listing</code> &lt; <code translate="no">gateway</code>: credentials, the adapters that send with them, the metering of what they sent, and what the interfaces show. A lower part reaches a higher one only through its own port (<code translate="no">auth.provider_port</code>, <code translate="no">providers.usage_port</code>), which <code translate="no">models/lower_layers.py</code> fills.</p>
+
 <h2 id="packages">Python core and packaging</h2>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>

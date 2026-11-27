@@ -52,11 +52,16 @@ def memory_dir(project_id: str | None, state: Path | str | None = None) -> Path:
     return project_dir(project_id, state) / MEMORY
 
 
+def personal_memory_dir(state: Path | str | None = None) -> Path:
+    """The personal memory: the home project's memory workspace."""
+    return memory_dir(DEFAULT_PROJECT_ID, state)
+
+
 def settings_path(project_id: str | None, state: Path | str | None = None) -> Path:
     return project_dir(project_id, state) / SETTINGS
 
 
 __all__ = [
-    "DEFAULT_PROJECT_ID", "CHATS", "MEMORY", "SETTINGS",
+    "DEFAULT_PROJECT_ID", "CHATS", "MEMORY", "SETTINGS", "personal_memory_dir",
     "projects_root", "project_dir", "chats_dir", "memory_dir", "settings_path",
 ]

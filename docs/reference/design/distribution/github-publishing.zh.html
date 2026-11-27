@@ -1,9 +1,9 @@
 <title>发布源码到 GitHub</title>
-<meta name="description" content="本地两条线、每天把 dev 压成 main 上一个提交的同步、由标签启动的发布，以及让工作历史留在本地的 hook。">
+<meta name="description" content="本地两条线、每天把 dev 压成 main 上一个提交并更新 latest.json 的同步、通过 channel.json 和 GitHub Release 通知用户的发布，以及让工作历史留在本地的 hook。">
 <h1>发布源码到 GitHub</h1>
 
 <figure>
-<svg class="fig-wide" viewBox="0 0 680 372" role="img" aria-label="三行。dev 接收主 checkout 或 worktree 里 git commit 的每个提交，供给开发版（端口 18200）。大约每天一次，scripts/publishing/publish-github.sh -m 把当前 dev 的文件树压成 main 上的一个提交。main 有自己的历史，一次同步一个提交，是 GitHub 唯一承载的线；推送它不启动任何工作流。偶尔一次同步再加 --tag vX.Y.Z 打标签，标签启动 Release 工作流，把签名的 App 发布成 GitHub Release。稳定版 App（端口 18100）就是这个 Release，并在 App 内更新到下一个。没有 dev 提交是 main 的祖先，两条线永不合并。">
+<svg class="fig-wide" viewBox="0 0 680 372" role="img" aria-label="三行。dev 接收主 checkout 或 worktree 里 git commit 的每个提交，供给开发版（端口 18200）。大约每天一次，scripts/publishing/publish-github.sh -m 把当前 dev 的文件树压成 main 上的一个提交，并让 latest.json 指向它，不通知任何人。main 有自己的历史，一次同步一个提交，是 GitHub 唯一承载的线；推送它不启动任何工作流。偶尔一次同步带 --tag 成为发布：channel.json 向每个安装宣告它，并有一个 GitHub Release。vX.Y.0 发布还会启动 Release 工作流，构建签名的安装包；vX.Y.Z 或 vX.Y.Z.W 发布只有代码。稳定版 App（端口 18100）在 App 内更新到每个发布。没有 dev 提交是 main 的祖先，两条线永不合并。">
   <defs>
     <marker id="p-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker>
   </defs>
@@ -22,16 +22,16 @@
 
   <text class="t-big" translate="no" x="0" y="164">main</text>
   <text class="t-soft" x="0" y="188">一次同步一个提交</text>
-  <text class="t-soft" x="0" y="208">GitHub；推送不触发工作流</text>
+  <text class="t-soft" x="0" y="208">GitHub；latest.json，不通知</text>
   <line class="ln" x1="240" y1="158" x2="680" y2="158"/>
   <circle class="gate" cx="272" cy="158" r="5"/><circle class="gate" cx="392" cy="158" r="5"/><circle class="gate" cx="512" cy="158" r="5"/><circle class="gate" cx="632" cy="158" r="5"/>
 
   <line class="ln-acc" x1="512" y1="166" x2="512" y2="290" marker-end="url(#p-a)"/>
   <text class="t-cmd mid" translate="no" x="372" y="232">publish-github.sh --tag vX.Y.Z</text>
-  <text class="t-soft mid" x="372" y="252">标签启动 Release</text>
+  <text class="t-soft mid" x="372" y="252">channel.json 和发布页</text>
 
   <text class="t-big" x="0" y="304">Release</text>
-  <text class="t-soft" x="0" y="328">GitHub 上签名的 App</text>
+  <text class="t-soft" x="0" y="328">X.Y.0 另有签名安装包</text>
   <text class="t-soft" x="0" y="348">稳定版 App，18100，App 内更新</text>
   <line class="ln" x1="300" y1="298" x2="680" y2="298"/>
   <circle class="gate" cx="512" cy="298" r="6"/>
@@ -40,13 +40,13 @@
 <ol class="flow fig-narrow">
   <li><strong translate="no">dev</strong><small>每个提交，在主 checkout 或 worktree 里 <code translate="no">git commit</code></small><small>开发版，端口 18200</small></li>
   <li class="via"><code translate="no">scripts/publishing/publish-github.sh -m</code>，大约每天一次</li>
-  <li><strong translate="no">main</strong><small>一次同步一个压缩提交，有自己的历史</small><small>GitHub；推送它不启动工作流</small></li>
+  <li><strong translate="no">main</strong><small>一次同步一个压缩提交，有自己的历史</small><small>GitHub；<code translate="no">latest.json</code> 跟着它，不通知任何人</small></li>
   <li class="via"><code translate="no">scripts/publishing/publish-github.sh --tag vX.Y.Z</code>，偶尔一次</li>
-  <li class="flow-end"><strong>Release</strong><small>由 Release 工作流构建、签名、公证</small><small>稳定版 App，端口 18100，在 App 内更新到它</small></li>
+  <li class="flow-end"><strong>Release</strong><small><code translate="no">channel.json</code> 和一个 GitHub Release；X.Y.0 另有 Release 工作流构建的安装包</small><small>稳定版 App，端口 18100，在 App 内更新到它</small></li>
 </ol>
 </figure>
 
-<p>GitHub 只承载 <code translate="no">main</code>。它的历史永不和 <code translate="no">dev</code> 合并，也没有东西把 GitHub 的 <code translate="no">main</code> 拉回来。本机的稳定版 App 就是发布出去的 Release，和每个用户拿到的是同一个构建。</p>
+<p>GitHub 只承载 <code translate="no">main</code>。它的历史永不和 <code translate="no">dev</code> 合并，也没有东西把 GitHub 的 <code translate="no">main</code> 拉回来。用户只通过发布得知新版本。本机的稳定版 App 和每个用户的一样，跟随发布。</p>
 
 <h2 id="branches">分支</h2>
 <table class="stack fixed">
@@ -59,42 +59,46 @@
 <p>worktree 分支合入 <code translate="no">dev</code> 后删除，放弃时也删除。想留着的放到 <code translate="no">refs/archive/</code>，任何命令都不会把它列为分支，也不会推送。</p>
 
 <h2 id="sync-and-release">每天同步，偶尔发布</h2>
+<p>两者都经过 <code translate="no">scripts/release/publish-updates.py</code>：它在本机构建 <code translate="no">main</code>，把代码放到滚动的 <code translate="no">updates</code> release 上，由两个签名指针指向（<a href="automatic-updates.zh.html">自动更新</a>）。</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">步骤</th><th scope="col">发生什么</th></tr></thead>
 <tbody>
-<tr><th scope="row">同步<span class="arg"><code translate="no">publish-github.sh -m "summary"</code></span></th><td>大约每天一次，<code translate="no">dev</code> 有新提交时。GitHub 拿到当天的源码，不运行任何工作流</td></tr>
-<tr><th scope="row">发布<span class="arg"><code translate="no">publish-github.sh -m "summary" --tag vX.Y.Z</code></span></th><td>版本准备好时。先推同步，再推标签，标签启动 Release 工作流</td></tr>
+<tr><th scope="row">同步<span class="arg"><code translate="no">publish-github.sh -m "summary"</code></span></th><td>大约每天一次，<code translate="no">dev</code> 有新提交时。GitHub 拿到当天的源码，<code translate="no">latest.json</code> 指向它，供开发和测试安装使用。不通知任何人，不运行工作流。运行时输入变了时，在 Release 工作流上传每个平台的运行时层之前一律拒绝（<code translate="no">gh workflow run release.yml -R Fzkuji/OpenProgram --ref main -f runtime_layers_only=true</code>）；之后重新运行就能通过</td></tr>
+<tr><th scope="row">功能发布<span class="arg"><code translate="no">--tag vX.Y.0</code></span></th><td>推送 <code translate="no">main</code> 和标签，启动 Release 工作流；工作流构建安装包、每个平台的运行时层、每个 App 的外壳层以及 GitHub Release。App 外壳的变化只随功能发布出去。工作流结束后，<code translate="no">publish-updates.py announce vX.Y.0</code> 签署 <code translate="no">channel.json</code>，向每个安装宣告它；那个 Release 发布、所有运行时层齐全、它发布的每个能替换自己的 App 都有外壳层之前，它一律拒绝</td></tr>
+<tr><th scope="row">纯代码发布<span class="arg"><code translate="no">--tag vX.Y.Z</code>、<code translate="no">vX.Y.Z.W</code></span></th><td>同上，但不跑工作流：<code translate="no">publish-updates.py release-page</code> 一次调用创建带发布说明的 GitHub Release。它不标为 latest，Latest 标记留在带安装包的 X.Y.0 发布上，说明里链接那些安装包。运行时或外壳的输入变了就在移动任何东西之前拒绝：那需要功能发布</td></tr>
 </tbody>
 </table>
-<p>推送 <code translate="no">main</code> 不启动任何东西，所以每天同步不花 Actions 时间：</p>
+<p>推送 <code translate="no">main</code> 或标签都不启动任何东西，所以同步和纯代码发布不花 Actions 时间：</p>
 <table class="stack fixed">
 <thead><tr><th scope="col">工作流</th><th scope="col">何时启动</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">release.yml</code></th><td>推送 <code translate="no">v*</code> 标签时，或手动给出 <code translate="no">tag</code>；<code translate="no">rehearse</code> 构建并检查全部内容但不发布</td></tr>
+<tr><th scope="row"><code translate="no">release.yml</code></th><td>只能手动给出 <code translate="no">tag</code>，<code translate="no">publish-github.sh --tag vX.Y.0</code> 就是这样启动它；<code translate="no">rehearse</code> 构建并检查全部内容但不发布</td></tr>
 <tr><th scope="row"><code translate="no">ci.yml</code>、<code translate="no">docs-pages.yml</code>、<code translate="no">contributors-readme.yml</code>、<code translate="no">linux-release-smoke.yml</code>、<code translate="no">windows-install-smoke.yml</code></th><td>只能手动（<code translate="no">workflow_dispatch</code>）</td></tr>
 </tbody>
 </table>
 
 <h2 id="stable-app">本机的稳定版 App</h2>
-<p><code translate="no">/Applications/OpenProgram.app</code>（端口 18100，数据在 <code translate="no">~/.openprogram</code>）就是官方 Release：从它的 DMG 安装一次，之后只由 App 自己的<a href="automatic-updates.zh.html">更新程序</a>更新：后台下载下一个 Release，显示 <strong>New</strong>，点 <strong>Restart to update</strong> 换上。</p>
+<p><code translate="no">/Applications/OpenProgram.app</code>（端口 18100，数据在 <code translate="no">~/.openprogram</code>）就是官方 Release：从它的 DMG 安装一次，之后只由 App 自己的<a href="automatic-updates.zh.html">更新程序</a>更新：读取签名的 <code translate="no">channel.json</code>，后台下载它宣告的发布，显示 <strong>New</strong>，点 <strong>Restart to update</strong> 换上。</p>
 <p>本机没有任何东西构建或安装它，所以所有者当稳定版用的，正是用户下载的那一个。</p>
 
 <h2 id="syncing">同步</h2>
 <pre><code translate="no">scripts/publishing/publish-github.sh -m "Sidebar run status, Launchpad, Agent cards" --dry-run
 scripts/publishing/publish-github.sh -m "Sidebar run status, Launchpad, Agent cards"
-python scripts/release/release-version.py set 1.3.0
-scripts/publishing/publish-github.sh -m "Office editor" --tag v1.3.0 --office-archive /path/to/OfficeAssets-….zip --dry-run
-scripts/publishing/publish-github.sh -m "Office editor" --tag v1.3.0 --office-archive /path/to/OfficeAssets-….zip</code></pre>
+python scripts/release/release-version.py set 1.6.0
+scripts/publishing/publish-github.sh -m "Office editor" --tag v1.6.0 --dry-run
+scripts/publishing/publish-github.sh -m "Office editor" --tag v1.6.0
+python scripts/release/release-version.py set 1.6.1
+scripts/publishing/publish-github.sh -m "Sidebar fixes" --tag v1.6.1</code></pre>
 
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">参数</th><th scope="col">作用</th></tr></thead>
 <tbody>
 <tr><th scope="row"><code translate="no">-m "summary"</code></th><td>这次同步带来什么；来源和 <code translate="no">main</code> 不同时必填</td></tr>
 <tr><th scope="row"><code translate="no">--source &lt;ref&gt;</code></th><td>改为压缩 <code translate="no">dev</code> 上的另一个提交；默认 <code translate="no">dev</code></td></tr>
-<tr><th scope="row"><code translate="no">--dry-run</code></th><td>显示提交说明和检查结果，不做改动</td></tr>
+<tr><th scope="row"><code translate="no">--dry-run</code></th><td>显示提交说明、检查结果和 <code translate="no">publish-updates.py plan</code>，不做改动</td></tr>
 <tr><th scope="row"><code translate="no">--no-push</code></th><td>第 7 步后停止</td></tr>
-<tr><th scope="row"><code translate="no">--tag vX.Y.Z</code></th><td>第 9 步；不能和 <code translate="no">--no-push</code> 同时使用</td></tr>
-<tr><th scope="row"><code translate="no">--office-archive &lt;file&gt;</code></th><td>配合 <code translate="no">--tag</code>：本地的 <a href="#office-archive">Office 归档</a>，按固定值校验；GitHub 上没有时放到这个 tag 的草稿 release 上</td></tr>
+<tr><th scope="row"><code translate="no">--tag vX.Y.Z[.W]</code></th><td>第 9、10 步；不能和 <code translate="no">--no-push</code> 同时使用</td></tr>
+<tr><th scope="row"><code translate="no">--office-archive &lt;file&gt;</code></th><td>配合 <code translate="no">--tag vX.Y.0</code>：本地的 <a href="#office-archive">Office 归档</a>，按固定值校验；GitHub 上没有时放到这个 tag 的草稿 release 上</td></tr>
 </tbody>
 </table>
 
@@ -107,23 +111,29 @@ scripts/publishing/publish-github.sh -m "Office editor" --tag v1.3.0 --office-ar
 <li>写提交说明：摘要、距上一次同步的本地提交数、<code translate="no">Local-Source:</code> trailer。</li>
 <li>用 <code translate="no">git commit-tree</code> 创建提交：来源的文件树，上一个 <code translate="no">main</code> 提交是唯一父提交（第一次同步没有），作者和提交者都是<a href="#publishing-identity">发布身份</a>。移动 <code translate="no">main</code>，把来源记入 <code translate="no">refs/publish/last</code>，下一次同步从这里开始计数。</li>
 <li>确认 GitHub 的 <code translate="no">main</code> 是本地 <code translate="no">main</code> 的更早位置后推送 <code translate="no">main</code>，所以只会 fast-forward。要上传的提交里有任何一个的作者或提交者不是发布身份，或提交说明提到停用账号时，拒绝推送。</li>
-<li>给推上去的提交打标签并推送标签。在移动任何东西之前，带标签的运行拒绝：
+<li>把新的 <code translate="no">main</code> 交给 <code translate="no">publish-updates.py run --commit &lt;main&gt;</code>（只含代码的标签加 <code translate="no">--release vX.Y.Z</code>）；功能发布跳过这一步。没有要同步的运行也会再跑一次，上传失败能自己补上。</li>
+<li>带 <code translate="no">--tag</code> 时给推上去的提交打标签并推送标签，然后 vX.Y.0 用这个标签启动 <code translate="no">release.yml</code> 并停下（工作流结束后再运行 <code translate="no">publish-updates.py announce</code>），其他版本运行 <code translate="no">publish-updates.py release-page --tag</code>。在移动任何东西之前，带标签的运行拒绝：
 <ul>
-<li>已经存在的标签；</li>
-<li>任何一处<a href="#version-places">版本位置</a>写着别的版本的源提交，逐处列出；</li>
+<li>已经存在的标签，或不是 <code translate="no">vX.Y.Z</code>、<code translate="no">vX.Y.Z.W</code> 形式的标签；</li>
+<li><a href="#version-places">版本位置</a>不一致的源提交，逐处列出；</li>
 <li>缺少 <code translate="no">.github/release-notes/vX.Y.Z.md</code>（开头必须是 <code translate="no"># OpenProgram X.Y.Z Release Notes</code>）的源提交；</li>
-<li>用 <code translate="no">--office-archive</code> 给出、却不是固定 <a href="#office-archive">Office 归档</a>的文件；</li>
-<li>真正运行时，最新 release 和这个 tag 的草稿都没有归档（用 <code translate="no">gh</code> 询问）且没有给文件。给了文件就改为 seed 草稿。</li>
+<li><code translate="no">publish-updates.py plan --release</code> 拒绝的发布（退出码 3），例如运行时或外壳输入变了的纯代码版本（vX.Y.0 缺运行时层而被拒绝是预期的，只显示，因为它的工作流会构建这些层）；</li>
+<li>vX.Y.0 时，用 <code translate="no">--office-archive</code> 给出、却不是固定 <a href="#office-archive">Office 归档</a>的文件；或真正运行时，最新 release 和这个 tag 的草稿都没有归档（用 <code translate="no">gh</code> 询问）且没有给文件。给了文件就改为 seed 草稿。</li>
 </ul>
-<code translate="no">--dry-run</code> 离线运行这些检查，只跳过询问 GitHub 那一步，说明有没有给本地归档、是否一致，并显示标签。</li>
+<code translate="no">--dry-run</code> 运行这些检查，只跳过询问 GitHub 那一步，说明有没有给本地归档、是否一致，并显示这次发布。</li>
 </ol>
 
 <h3 id="version-places">版本位置</h3>
-<p>一个版本号写在六个地方。<code translate="no">python scripts/release/release-version.py set X.Y.Z</code> 一次全部写好，有一处找不到就一处都不改；<code translate="no">check vX.Y.Z</code> 列出每一处不一致，第 9 步在源提交上运行的就是它。</p>
+<p>版本号是 <code translate="no">X.Y.Z</code> 或 <code translate="no">X.Y.Z.W</code>，写在六个地方：</p>
+<ul>
+<li><code translate="no">pyproject.toml</code> 和 <code translate="no">uv.lock</code> 是代码自己的位置，跟每个版本走。</li>
+<li>其余的安装包位置只在功能发布 X.Y.0 时改。纯代码版本下它们保留同一 X.Y 系列里上一次安装包构建的三段版本号。</li>
+</ul>
+<p><code translate="no">python scripts/release/release-version.py set VERSION</code> 写好它的位置，有一处找不到就一处都不改；<code translate="no">check vVERSION</code> 列出每一处不一致，第 10 步在源提交上运行的就是它。</p>
 <table class="stack fixed">
 <thead><tr><th scope="col">位置</th><th scope="col">漏改时谁拦下发布</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">pyproject.toml</code>、<code translate="no">apps/desktop/package.json</code></th><td>每个构建任务里的 <code translate="no">verify-release-version.py --tag</code></td></tr>
+<tr><th scope="row"><code translate="no">pyproject.toml</code>、<code translate="no">apps/desktop/package.json</code></th><td>每个构建任务里的 <code translate="no">verify-release-version.py --tag</code>；位置不全一致的标签它也拒绝，所以工作流只构建功能发布</td></tr>
 <tr><th scope="row"><code translate="no">scripts/release/install-release.sh</code> 和 <code translate="no">.ps1</code> 的默认版本</th><td>同一个检查</td></tr>
 <tr><th scope="row"><code translate="no">uv.lock</code> 里的 <code translate="no">openprogram</code> 条目</th><td>wheel、运行时和 Windows 契约步骤里的 <code translate="no">uv run --locked</code> 与 <code translate="no">uv sync --locked</code></td></tr>
 <tr><th scope="row"><code translate="no">package-lock.json</code> 里的 <code translate="no">apps/desktop</code> 条目</th><td>构建不检查；和其他几处一起改，代码树里就不会出现两个版本号</td></tr>
@@ -181,15 +191,14 @@ scripts/publishing/publish-github.sh -m "Office editor" --tag v1.3.0 --office-ar
 </table>
 
 <h2 id="what-a-release-builds">一次发布构建什么</h2>
-<p>Release 工作流由推送的标签触发。每个平台分支彼此独立。</p>
-<p>标签不会移动，所以发版前可以先演练。不带 <code translate="no">--tag</code> 发布 <code translate="no">main</code>，再运行 <code translate="no">gh workflow run release.yml -f tag=vX.Y.Z -f rehearse=true</code>：每个分支都从 <code translate="no">main</code> 构建，跑同样的检查，什么都不发布。</p>
-<p><code translate="no">gh workflow run windows-install-smoke.yml -f tag=vX.Y.Z -f run_id=&lt;演练运行&gt;</code> 在 Windows runner 上安装那次运行的 Windows 文件。有分支失败就修根因，再演练一次。</p>
-<p>两者都通过后，<code translate="no">scripts/publishing/publish-github.sh --source refs/publish/last --tag vX.Y.Z</code> 给同一个提交打标签，最早在演练通过 12 小时之后。不带 <code translate="no">--source</code> 时，这期间 <code translate="no">dev</code> 上的新提交会作为一次没演练过的新同步上传。</p>
+<p>每个平台分支彼此独立。纯代码发布在这里什么都不构建。</p>
+<p>标签不会移动，所以功能发布先演练。不带 <code translate="no">--tag</code> 发布 <code translate="no">main</code>，再运行 <code translate="no">gh workflow run release.yml -f tag=vX.Y.0 -f rehearse=true</code>：每个分支都从 <code translate="no">main</code> 构建，跑同样的检查，什么都不发布。</p>
+<p><code translate="no">gh workflow run windows-install-smoke.yml -f tag=vX.Y.0 -f run_id=&lt;演练运行&gt;</code> 在 Windows runner 上安装那次运行的 Windows 文件。有分支失败就修根因，再演练一次。</p>
+<p>两者都通过后，<code translate="no">scripts/publishing/publish-github.sh --source refs/publish/last --tag vX.Y.0</code> 发布同一个提交，最早在演练通过 12 小时之后。不带 <code translate="no">--source</code> 时，这期间 <code translate="no">dev</code> 上的新提交会作为一次没演练过的新同步上传。纯代码发布不需要演练，也不用等。</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">项目</th><th scope="col">行为</th></tr></thead>
 <tbody>
 <tr><th scope="row">失败的分支</th><td>只缺自己的文件；发布任务上传成功的部分</td></tr>
-<tr><th scope="row">薄 App 缺更新文件</th><td>该平台的更新文件没构建出来时，Windows 或 Linux App 分支在构建前先报错，但仍然构建并检查 App，同一次运行就能看到其他问题；发布时去掉这个 App 并写明原因</td></tr>
 <tr><th scope="row">Windows 检查</th><td>App 分支：先跑 <code translate="no">scripts/release/windows-contracts.txt</code> 里的平台契约测试，再用安装包安装、启动到 worker 健康、做一次工具调用、卸载并保留数据。契约测试失败不会拦住构建和安装检查，由上传前的一步把这个 App 去掉。运行时分支：安装好的命令做一次工具调用。失败只缺这一个包。Windows 分支失败时把日志存为 <code translate="no">diagnostics-windows-*</code> 工件，不会发布</td></tr>
 <tr><th scope="row"><code translate="no">release-manifest.json</code></th><td>只列实际存在的文件</td></tr>
 <tr><th scope="row">发布说明</th><td>多出 “Not in this release” 一节，写明缺什么、为什么缺</td></tr>
@@ -221,22 +230,22 @@ scripts/publishing/publish-github.sh -m "Office editor" --tag v1.3.0 --office-ar
 <tr><th scope="row"><code translate="no">OPENPROGRAM_RELEASE_DESKTOP_MAC</code>、<code translate="no">_WINDOWS</code>、<code translate="no">_LINUX</code></th><td>开；<code translate="no">false</code> 关闭</td><td>对应平台的 App</td></tr>
 <tr><th scope="row"><code translate="no">OPENPROGRAM_RELEASE_WINDOWS_RUNTIME</code></th><td>开；<code translate="no">false</code> 关闭</td><td>Windows 命令行运行时</td></tr>
 <tr><th scope="row"><code translate="no">OPENPROGRAM_RELEASE_WINDOWS_ARM64</code></th><td>关；<code translate="no">true</code> 打开</td><td>Windows on Arm 的 App 和运行时</td></tr>
-<tr><th scope="row"><code translate="no">OPENPROGRAM_RELEASE_MAC_THIN</code></th><td>关；<code translate="no">true</code> 打开</td><td>轻量版 macOS App，需要签名和更新密钥</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_RELEASE_MAC_THIN</code></th><td>开；<code translate="no">false</code> 强制完整 App</td><td>轻量版 macOS App，有签名和更新密钥时就用</td></tr>
 <tr><th scope="row"><code translate="no">OPENPROGRAM_RELEASE_CLI_SEEDS</code></th><td>关；<code translate="no">true</code> 打开</td><td>给命令行安装器的 <code translate="no">-seed-</code> 资产，需要更新密钥</td></tr>
 </tbody>
 </table>
 <p>在这两个开关打开之前，macOS 继续发完整 App，命令行继续用完整运行时：v1.0.0 的 App 和命令行依赖现有的 DMG 名字、运行时压缩包和 <code translate="no">release-manifest.json</code>，种子安装也需要已发布的网络更新程序。</p>
 
 <h2 id="office-archive">Office 归档</h2>
-<p>可选的 Office 编辑器从一个 zip 安装，约 699 MiB，文件名、大小和 SHA-256 固定在 <code translate="no">openprogram/programs/applications/office_editor/install.py</code>；<code translate="no">safe_http.py</code> 里 <code translate="no">office.assets</code> 的下载上限就是这个大小。从 1.3.0 起每个版本上传一份；1.0.0 到 1.2.0 都没有。</p>
+<p>可选的 Office 编辑器从一个 zip 安装，约 699 MiB，文件名、大小和 SHA-256 固定在 <code translate="no">openprogram/programs/applications/office_editor/install.py</code>；<code translate="no">safe_http.py</code> 里 <code translate="no">office.assets</code> 的下载上限就是这个大小。从 1.3.0 起每个功能发布上传一份；1.0.0 到 1.2.0 和纯代码发布都没有。</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">要点</th><th scope="col">行为</th></tr></thead>
 <tbody>
-<tr><th scope="row">App 去哪里找</th><td>先找自己版本的 release，再找 <code translate="no">releases/latest/download/</code>；后者给没有自己 release 的构建用，前提是固定值没变。两处的文件都按固定的大小和 SHA-256 校验</td></tr>
+<tr><th scope="row">App 去哪里找</th><td>先找自己版本的 release，再找 <code translate="no">releases/latest/download/</code>；后者给纯代码版本和没有自己 release 的构建用，前提是固定值没变：latest 是那个 X.Y.0 发布。两处的文件都按固定的大小和 SHA-256 校验</td></tr>
 <tr><th scope="row">为什么不只放最新版本</th><td>最新版本上的固定文件名，会在某个版本换掉资源包那天让所有已安装版本装不上；每个 release 各带一份，只要那个 release 在，那个版本就能装</td></tr>
 <tr><th scope="row">没有任何 release 带它</th><td>安装返回 <code translate="no">office_release_missing</code>：1.3.0 之前的版本提示更新到 1.3.0 或更高，其他版本提示更新到最新版。不把重试当作解决办法</td></tr>
 <tr><th scope="row">发布时从哪里拿</th><td>CI 里重建不了：有授权的字体和固定的编辑器构建是所有者手里的输入（<a href="https://github.com/Fzkuji/OpenProgram/blob/main/scripts/release/office/README.md">Office README</a>）。<code translate="no">office</code> 任务下载最新已发布版本的那一份，没有就取这个 tag 草稿 release 上的那一份，并校验字节</td></tr>
-<tr><th scope="row">第一个带它的版本</th><td><code translate="no">publish-github.sh --tag vX.Y.Z --office-archive /path/to/OfficeAssets-….zip</code> 校验文件，在移动任何东西之前把它放到这个 tag 的草稿 release 上（<code translate="no">office-archive.py seed</code>）。之后每个版本都沿用上一个版本的那份，不用手动上传</td></tr>
+<tr><th scope="row">第一个带它的版本</th><td><code translate="no">publish-github.sh --tag vX.Y.0 --office-archive /path/to/OfficeAssets-….zip</code> 校验文件，在移动任何东西之前把它放到这个 tag 的草稿 release 上（<code translate="no">office-archive.py seed</code>）。之后每个版本都沿用上一个版本的那份，不用手动上传</td></tr>
 <tr><th scope="row">两处都没有</th><td><code translate="no">office</code> 任务失败，写出文件名、大小、SHA-256 和 seed 命令。所有构建都等它，所以什么都不会构建或发布</td></tr>
 <tr><th scope="row">发布之后</th><td>对公开 latest release 的检查也要求归档恰好一份</td></tr>
 <tr><th scope="row">新的资源包</th><td>必须换文件名，不能在旧名字下放新字节，因为已安装版本按名字固定了字节。<code translate="no">office-archive.py pack</code> 把它命名为 <code translate="no">OfficeAssets-&lt;editor&gt;-&lt;patch&gt;-&lt;pack&gt;.zip</code>，最后一段取自资源包自己的清单摘要，字节不同名字一定不同</td></tr>
@@ -251,15 +260,15 @@ scripts/publishing/publish-github.sh -m "Office editor" --tag v1.3.0 --office-ar
 <li><code translate="no">python scripts/release/office/prepare.py --source … --font-pack … --font-input … --output /path/to/prepared-office</code></li>
 <li><code translate="no">python scripts/release/office-archive.py pack /path/to/prepared-office /path/to/out</code> 写出 zip，并把文件名、大小和 SHA-256 写进 <code translate="no">install.py</code>，把下载上限写进 <code translate="no">safe_http.py</code>。</li>
 <li>跑受影响的测试，在 <code translate="no">dev</code> 上提交并部署。</li>
-<li><code translate="no">scripts/publishing/publish-github.sh -m "…" --tag vX.Y.Z --office-archive /path/to/out/OfficeAssets-….zip --dry-run</code>，再去掉 <code translate="no">--dry-run</code> 运行一次。</li>
+<li><code translate="no">scripts/publishing/publish-github.sh -m "…" --tag vX.Y.0 --office-archive /path/to/out/OfficeAssets-….zip --dry-run</code>，再去掉 <code translate="no">--dry-run</code> 运行一次。</li>
 </ol>
 
 <h2 id="the-guards">Hook</h2>
 <table class="stack">
 <thead><tr><th scope="col">Hook</th><th scope="col">拒绝</th><th scope="col">放行</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">scripts/git-hooks/pre-push</code></th><td>没有 <code translate="no">OPENPROGRAM_GITHUB_PUBLISH=1</code>（脚本设置）或发送的不是本地 <code translate="no">main</code> 的 <code translate="no">refs/heads/main</code> 推送；任何其他分支的推送，那会上传工作历史；不是脚本推送或不指向本地 <code translate="no">main</code> 的标签，因为推送标签会启动 Release 工作流</td><td>删除远端分支或标签</td></tr>
-<tr><th scope="row"><code translate="no">scripts/git-hooks/pre-commit</code></th><td>检出 <code translate="no">main</code> 时的提交；暂存文档未通过 <code translate="no">scripts.docs_site.check</code> 的提交</td><td>其他所有分支</td></tr>
+<tr><th scope="row"><code translate="no">scripts/git-hooks/pre-push</code></th><td>没有 <code translate="no">OPENPROGRAM_GITHUB_PUBLISH=1</code>（脚本设置）或发送的不是本地 <code translate="no">main</code> 的 <code translate="no">refs/heads/main</code> 推送；任何其他分支的推送，那会上传工作历史；不是脚本推送或不指向本地 <code translate="no">main</code> 的标签，因为标签代表一次发布</td><td>删除远端分支或标签</td></tr>
+<tr><th scope="row"><code translate="no">scripts/git-hooks/pre-commit</code></th><td>检出 <code translate="no">main</code> 时的提交；暂存文档未通过 <code translate="no">scripts.docs_site.check</code> 的提交；暂存的 Python 导入了更高一层或在层内形成环的提交（<code translate="no">scripts.testing.layer_check</code>）</td><td>其他所有分支</td></tr>
 </tbody>
 </table>
 <p class="note">本机全局 hook（<code translate="no">core.hooksPath</code>）把两者委托给仓库的 <code translate="no">.git/hooks</code>，所以脚本装在那里。</p>
@@ -267,8 +276,8 @@ scripts/publishing/publish-github.sh -m "Office editor" --tag v1.3.0 --office-ar
 <h2 id="rules-for-sessions">会话规则</h2>
 <dl class="commands">
 <dt>提交</dt><dd>按需要频繁提交到 <code translate="no">dev</code>；部署见<a href="dev-instance.zh.html#deploying-to-the-development-instance">部署到开发版</a></dd>
-<dt>同步</dt><dd>大约每天一次，<code translate="no">dev</code> 有新提交时，不带 <code translate="no">--tag</code></dd>
-<dt>发布</dt><dd>版本准备好时，带 <code translate="no">--tag vX.Y.Z</code>；不是每个功能之后</dd>
+<dt>同步</dt><dd>大约每天一次，<code translate="no">dev</code> 有新提交时，不带 <code translate="no">--tag</code>；只更新 <code translate="no">latest.json</code></dd>
+<dt>发布</dt><dd>版本准备好时：用 <code translate="no">release-version.py set</code> 改版本号，写发布说明，再带 <code translate="no">--tag vX.Y.Z</code>。要重建安装包时用 vX.Y.0（先演练，再等 12 小时），否则用纯代码的 vX.Y.Z 或 vX.Y.Z.W</dd>
 <dt>禁止</dt><dd class="struck">在 <code translate="no">main</code> 上提交</dd>
 <dt>禁止</dt><dd class="struck">手动 <code translate="no">git push</code> <code translate="no">main</code></dd>
 <dt>禁止</dt><dd class="struck">把 <code translate="no">main</code> 合进 <code translate="no">dev</code></dd>
@@ -280,9 +289,9 @@ scripts/publishing/publish-github.sh -m "Office editor" --tag v1.3.0 --office-ar
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">状态</th><th scope="col">内容</th></tr></thead>
 <tbody>
-<tr><th scope="row">已实现</th><td><code translate="no">scripts/publishing/publish-github.sh</code>，含 dry run、<code translate="no">--no-push</code>、<code translate="no">--tag</code>、凭据扫描、停用账号扫描、发布身份检查和 <code translate="no">refs/publish/last</code>；两个 hook；除 Release 外的工作流都只能手动启动；<code translate="no">AGENTS.md</code> 中的规则；Release 工作流的独立分支；每个版本带 Office 归档，App 从自己版本的 release 下载</td></tr>
+<tr><th scope="row">已实现</th><td><code translate="no">scripts/publishing/publish-github.sh</code>，含 dry run、<code translate="no">--no-push</code>、功能发布和纯代码发布的 <code translate="no">--tag</code>、凭据扫描、停用账号扫描、发布身份检查和 <code translate="no">refs/publish/last</code>；两个 hook；所有工作流都只能手动启动；<code translate="no">AGENTS.md</code> 中的规则；Release 工作流的独立分支；每个版本带 Office 归档，App 从自己版本的 release 下载</td></tr>
 <tr><th scope="row">切换</th><td>本机的稳定版 App 仍是本地构建。下一个版本发布后从它的 DMG 安装，才换成官方 Release；避免把旧的官方版本装到更新的本地构建写过的数据上，所以等到那个版本再切换。</td></tr>
-<tr><th scope="row">尚未运行</th><td>一次完整的 Release 运行。目前唯一的一次是 v1.1.0，发布了 macOS 和 Linux App 以及全部命令行运行时；Windows 安装包构建出来但没有带上，因为 Windows 更新文件失败。1.2.0 的演练跑过一次：发布任务的检查列出了没通过的三个 App（两个 macOS 任务卡在签名，Windows 卡在 App 冒烟）。Windows install smoke 工作流还没有运行过</td></tr>
+<tr><th scope="row">尚未运行</th><td>一次完整的 Release 运行。目前唯一的一次是 v1.1.0，发布了 macOS 和 Linux App 以及全部命令行运行时；Windows 安装包构建出来但没有带上。1.2.0 的演练跑过一次：发布任务的检查列出了没通过的三个 App（两个 macOS 任务卡在签名，Windows 卡在 App 冒烟）。Windows install smoke 工作流还没有运行过</td></tr>
 <tr><th scope="row">等待 1.3.0</th><td>还没有哪个版本带 Office 归档。固定的文件 <code translate="no">OfficeAssets-d15d12b-dc31dd9d-24d2d8e1.zip</code> 由已安装的资源包<a href="#rebuilding-the-office-archive">打包</a>而成，放在所有者机器的 <code translate="no">~/OpenProgram-release/office/</code>；1.3.0 打 tag 时用 <code translate="no">--office-archive</code> 指向它</td></tr>
 </tbody>
 </table>

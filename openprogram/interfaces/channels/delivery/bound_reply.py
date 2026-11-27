@@ -74,7 +74,7 @@ class ReplyDelivery:
         streamer.close()
         body = (reply_text or "").strip()
         if streamed_only:
-            from openprogram.state.attachments import find_markers, strip_markers
+            from openprogram.state.attachment_markers import find_markers, strip_markers
             rest = strip_markers(streamer.streamed[streamer.sent_upto:]).strip()
             markers = [marker for marker, _name, _path in find_markers(body)]
             unsent = "\n\n".join(part for part in [rest, *markers] if part)

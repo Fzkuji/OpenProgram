@@ -1,8 +1,10 @@
 """Which capability a tool call needs, decided against the authority table.
 
 :mod:`openprogram.runtime.permissions.authority` owns the tiers and what
-each one may do; this module knows tool names. Every tool call maps onto
-exactly one capability, and an unclassified tool needs ``process.exec``.
+each one may do; this module knows tool names, and a tool whose arguments
+decide its capability says which in its profile (``tool_profiles``). Every
+tool call maps onto exactly one capability, and an unclassified tool needs
+``process.exec``.
 The permission decision (``policy.permission_decision``) and the MCP server
 check a call with :func:`decide_tool_authority`.
 """
@@ -10,6 +12,7 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
+from openprogram.runtime.permissions import tool_profiles
 from openprogram.state.authority import AuthorityDecision, decide_capability, normalize_authority
 
 _READ_TOOLS = {
@@ -49,6 +52,11 @@ _REPLY_LOCAL_TOOLS = {
 
 def capability_for_tool(tool_name: str, args: Mapping[str, Any] | None = None) -> str:
     name = str(tool_name or "")
+    tool_profile = tool_profiles.profile(name)
+    if tool_profile is not None and tool_profile.capability is not None:
+        # The tool says which capability its arguments need (``self_update``'s
+        # action, the target a ``computer_use`` call operates).
+        return tool_profile.capability(args)
     if name in {"cron", "scheduler"}:
         action = str((args or {}).get("action") or "").lower()
         return "schedule.create" if action == "create" else (
@@ -59,11 +67,6 @@ def capability_for_tool(tool_name: str, args: Mapping[str, Any] | None = None) -
     if name == "save_routine":
         # Writes a Skill file; with a cron schedule it also creates a task.
         return "schedule.create" if (args or {}).get("cron") else "fs.write"
-    if name == "self_update":
-        from openprogram.programs.tools.system.self_update import action_of
-        action = action_of(args)
-        return "fs.read" if action in ("status", "versions") else (
-            "runtime.control" if action == "cancel" else "process.exec")
     if name == "memory_update":
         return "memory.source.append"
     if name in _CHAT_REPLY_TOOLS:
@@ -76,12 +79,6 @@ def capability_for_tool(tool_name: str, args: Mapping[str, Any] | None = None) -
         return "fs.write"
     if name in _PROCESS_TOOLS:
         return "process.exec"
-    if name == "computer_use":
-        # The target's provider says: the conversation's own Pages are browser
-        # control; application windows, the whole screen, the user's own
-        # browser, another machine and code reach further and stay with the owner.
-        from openprogram.programs.tools.computer_use.computer_use import tool as screen
-        return screen.authority(dict(args or {}))
     if name in _NETWORK_TOOLS:
         return "network.send"
     if name in _REPLY_LOCAL_TOOLS:
@@ -92,13 +89,19 @@ def capability_for_tool(tool_name: str, args: Mapping[str, Any] | None = None) -
     return "process.exec"
 
 
-# Their capability depends on the call's arguments, so identity alone cannot hide them.
-_ARGUMENT_DEPENDENT_TOOLS = {"cron", "scheduler", "save_routine", "self_update", "computer_use"}
+# Their capability depends on the call's arguments, so identity alone cannot
+# hide them; so does that of every tool whose profile names a capability.
+_ARGUMENT_DEPENDENT_TOOLS = {"cron", "scheduler", "save_routine"}
 
 
 def static_capability(tool_name: str) -> str | None:
     """The one capability a tool always needs, or ``None`` when its arguments decide."""
-    return None if tool_name in _ARGUMENT_DEPENDENT_TOOLS else capability_for_tool(tool_name)
+    if tool_name in _ARGUMENT_DEPENDENT_TOOLS:
+        return None
+    tool_profile = tool_profiles.profile(tool_name)
+    if tool_profile is not None and tool_profile.capability is not None:
+        return None
+    return capability_for_tool(tool_name)
 
 
 def lacks_static_capability(value: Mapping[str, Any] | Any, tool_name: str) -> bool:

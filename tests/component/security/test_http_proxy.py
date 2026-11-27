@@ -7,7 +7,7 @@ import ipaddress
 import pytest
 
 from openprogram.models.providers.utils.http_transport.http_client import build_async_client
-from openprogram.models.providers.utils.http_transport.http_proxy import get_proxy_mounts
+from openprogram.host.security.http_proxy import get_proxy_mounts
 
 _PROXY_VARS = (
     "HTTP_PROXY", "http_proxy",
@@ -82,17 +82,17 @@ def test_managed_provider_client_keeps_managed_transport_with_proxy_snapshot(pro
         asyncio.run(client.aclose())
 
 
-@pytest.mark.parametrize("bypass", ["chatgpt.com", "*"])
+@pytest.mark.parametrize("bypass", ["api.openai.com", "*"])
 def test_no_proxy_bypasses_audited_service(proxy_env, bypass):
     from dataclasses import replace
-    from openprogram.state.settings import load_outbound_security_config
+    from openprogram.host.security.outbound_settings import load_outbound_security_config
     from openprogram.host.security.safe_http import ManagedHTTPTransport
     proxy_env.setenv("HTTPS_PROXY", "http://127.0.0.1:7897")
     proxy_env.setenv("NO_PROXY", bypass)
     security = replace(load_outbound_security_config("provider.configured_api", config={}), resolver=lambda *_: ("93.184.216.34",))
-    transport = ManagedHTTPTransport("provider.configured_api", configured_origin="https://chatgpt.com", security=security)
+    transport = ManagedHTTPTransport("provider.configured_api", configured_origin="https://api.openai.com", security=security)
     try:
-        assert transport._service_proxy(transport._evaluate("GET", "https://chatgpt.com/backend-api/codex/models")) is None
+        assert transport._service_proxy(transport._evaluate("GET", "https://api.openai.com/v1/models")) is None
     finally:
         transport.close()
 
@@ -104,7 +104,7 @@ def test_no_proxy_bypasses_audited_service(proxy_env, bypass):
 ])
 def test_ambient_proxy_does_not_expand_custom_routing(proxy_env, consumer, origin):
     from dataclasses import replace
-    from openprogram.state.settings import load_outbound_security_config
+    from openprogram.host.security.outbound_settings import load_outbound_security_config
     from openprogram.host.security.safe_http import ManagedHTTPTransport
     proxy_env.setenv("HTTPS_PROXY", "http://127.0.0.1:7897")
     security = replace(load_outbound_security_config(consumer, config={}), resolver=lambda *_: ("93.184.216.34",))
@@ -127,7 +127,7 @@ def test_ambient_proxy_does_not_expand_custom_routing(proxy_env, consumer, origi
 def test_public_consumers_follow_ambient_proxy_and_proxy_resolves(proxy_env, consumer, url):
     """A fake-IP answer is accepted only because the request goes via the proxy."""
     from dataclasses import replace
-    from openprogram.state.settings import load_outbound_security_config
+    from openprogram.host.security.outbound_settings import load_outbound_security_config
     from openprogram.host.security.safe_http import ManagedHTTPTransport
     proxy_env.setenv("HTTPS_PROXY", "http://127.0.0.1:7897")
     security = replace(
@@ -149,7 +149,7 @@ def test_public_consumers_follow_ambient_proxy_and_proxy_resolves(proxy_env, con
 def test_no_proxy_bypass_keeps_direct_policy_for_public_urls(proxy_env):
     """Bypassed hosts connect directly, so a fake-IP answer stays refused."""
     from dataclasses import replace
-    from openprogram.state.settings import load_outbound_security_config
+    from openprogram.host.security.outbound_settings import load_outbound_security_config
     from openprogram.host.security.safe_http import ManagedHTTPTransport
     from openprogram.host.security.url_policy import URLPolicyError
     proxy_env.setenv("HTTPS_PROXY", "http://127.0.0.1:7897")
@@ -169,7 +169,7 @@ def test_no_proxy_bypass_keeps_direct_policy_for_public_urls(proxy_env):
 
 def test_proxied_public_url_still_refuses_private_targets(proxy_env):
     from dataclasses import replace
-    from openprogram.state.settings import load_outbound_security_config
+    from openprogram.host.security.outbound_settings import load_outbound_security_config
     from openprogram.host.security.safe_http import ManagedHTTPTransport
     from openprogram.host.security.url_policy import URLPolicyError
     proxy_env.setenv("HTTP_PROXY", "http://127.0.0.1:7897")
@@ -205,13 +205,13 @@ def test_proxied_public_url_still_refuses_private_targets(proxy_env):
 def test_system_proxy_routes_official_provider(proxy_env):
     import httpx._utils
     from dataclasses import replace
-    from openprogram.state.settings import load_outbound_security_config
+    from openprogram.host.security.outbound_settings import load_outbound_security_config
     from openprogram.host.security.safe_http import ManagedHTTPTransport
     proxy_env.setattr(httpx._utils, "getproxies", lambda: {"https": "http://127.0.0.1:7897"})
     security = replace(load_outbound_security_config("provider.configured_api", config={}), resolver=lambda host, port: ("127.0.0.1",) if host == "127.0.0.1" else ("93.184.216.34",))
-    transport = ManagedHTTPTransport("provider.configured_api", configured_origin="https://chatgpt.com", security=security)
+    transport = ManagedHTTPTransport("provider.configured_api", configured_origin="https://api.openai.com", security=security)
     try:
-        proxy, decision = transport._service_proxy(transport._evaluate("GET", "https://chatgpt.com"))
+        proxy, decision = transport._service_proxy(transport._evaluate("GET", "https://api.openai.com"))
         assert str(proxy.url) == "http://127.0.0.1:7897"
         assert decision.hostname == "127.0.0.1"
     finally:
@@ -223,9 +223,9 @@ def test_shared_client_replaced_when_proxy_route_changes(proxy_env):
     async def exercise():
         try:
             proxy_env.setenv("HTTPS_PROXY", "http://127.0.0.1:7897")
-            first = get_shared_async_client("codex-proxy-test", consumer="provider.configured_api", configured_origin="https://chatgpt.com")
+            first = get_shared_async_client("openai-proxy-test", consumer="provider.configured_api", configured_origin="https://api.openai.com")
             proxy_env.setenv("HTTPS_PROXY", "http://127.0.0.1:7898")
-            second = get_shared_async_client("codex-proxy-test", consumer="provider.configured_api", configured_origin="https://chatgpt.com")
+            second = get_shared_async_client("openai-proxy-test", consumer="provider.configured_api", configured_origin="https://api.openai.com")
             assert first is not second
             assert ("https://", "http://127.0.0.1:7898") in second._transport._security.service_proxy_mounts
             await asyncio.sleep(0)

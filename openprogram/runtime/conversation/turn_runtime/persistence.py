@@ -134,7 +134,7 @@ def persist_assistant_message(
             "structured_output_mode": req.structured_output_mode,
             "structured_output_attempt": req.structured_output_attempt,
         })
-    from openprogram.runtime.permissions.authority import runtime_authority
+    from openprogram.state.authority import runtime_authority
     from openprogram.state.authority import stamp_schema
     assistant_msg.update(runtime_authority(req, f"agent/{req.agent_id}"))
     stamp_schema(assistant_msg)
@@ -233,7 +233,7 @@ def persist_assistant_message(
                     # The model wrote this text; a marker in it is not a
                     # file the turn attached (those ride the content, see
                     # send_file.with_attachments), so it reads as the name.
-                    from openprogram.state.attachments import markers_as_names
+                    from openprogram.state.attachment_markers import markers_as_names
                     blocks.append({**blk, "text": markers_as_names(blk["text"])})
                 else:
                     blocks.append(dict(blk))
@@ -308,7 +308,7 @@ def stopped_reply_interruption(blocks: list[dict]) -> dict:
 
     ``phase`` says whether tools were running; ``cut_tools`` whether a call
     was stopped or never ran, so the note warns it may have partly run
-    (``turn_context.interruption_note``).
+    (``stop_reasons.interruption_note``).
     """
     from openprogram.runtime.execution.run_control.stop_reasons import current_stop_reason
 

@@ -548,7 +548,6 @@ def test_matrix_configured_registry_entry_supports_real_local_service(
 def test_backend_owner_probe_uses_exact_runtime_origin_not_mcp_callback(
     monkeypatch,
 ):
-    from openprogram.operations.worker import ports as _ports
     from openprogram.host.security import backend_endpoint
     from openprogram.host.security import safe_http
 
@@ -591,7 +590,7 @@ def test_backend_owner_probe_uses_exact_runtime_origin_not_mcp_callback(
 
     monkeypatch.setattr(safe_http, "configured_safe_client", configured)
 
-    assert _ports.backend_accepts_owner_challenge(9443, origin=origin)
+    assert backend_endpoint.backend_accepts_owner_challenge(9443, origin=origin)
     assert seen["consumer"] == "runtime.local_probe"
     assert seen["configured_url"] == origin
     assert seen["owner_exception"].consumer == "runtime.local_probe"

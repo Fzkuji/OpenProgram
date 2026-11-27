@@ -22,7 +22,7 @@
 <tr><th scope="row"><code translate="no">capability_for_tool()</code><span class="arg">runtime/permissions/tool_authority.py</span></th><td>One capability per tool name, default <code translate="no">process.exec</code>. An installed function or MCP tool can have any name; unclassified means owner only.</td></tr>
 <tr><th scope="row"><code translate="no">_gated_execute</code><span class="arg">runtime/permissions/approvals/approval.py</span></th><td>Runs before the rule layer, the mode decision and the <code translate="no">bypass</code> short-circuit. No mode or saved allow rule skips it.</td></tr>
 <tr><th scope="row"><code translate="no">AuthorityDecision</code></th><td>Allowed, decisive check, stable reason code, tier, capability. Logged, so a denial is auditable.</td></tr>
-<tr><th scope="row"><code translate="no">runtime_authority()</code><span class="arg">runtime/permissions/authority.py</span></th><td>A subagent or runtime task copies the parent's authority, rewrites speaker fields, becomes non-interactive and keeps the tier. Inheritance never widens; no valid parent yields <code translate="no">{}</code>, which the gate denies. Non-interactive also means no path to interactive approval.</td></tr>
+<tr><th scope="row"><code translate="no">runtime_authority()</code><span class="arg">state/authority.py</span></th><td>A subagent or runtime task copies the parent's authority, rewrites speaker fields, becomes non-interactive and keeps the tier. Inheritance never widens; no valid parent yields <code translate="no">{}</code>, which the gate denies. Non-interactive also means no path to interactive approval.</td></tr>
 </tbody>
 </table>
 

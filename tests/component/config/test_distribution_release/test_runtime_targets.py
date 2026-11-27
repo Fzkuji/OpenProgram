@@ -99,8 +99,8 @@ def test_the_build_installs_through_the_target_arguments() -> None:
 def test_the_intel_mac_legs_build_cryptography_against_static_openssl() -> None:
     workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
     prepare = "run: scripts/release/prepare-macos-native-deps.sh"
-    # The runtime leg and the seed leg both build an Intel Mac base.
-    assert workflow.count(prepare) == 2
+    # The runtime, runtime-layer and seed legs each build an Intel Mac base.
+    assert workflow.count(prepare) == 3
     assert workflow.index(prepare) < workflow.index("scripts/release/build-product-runtime.sh")
     assert "runtime-wheels.py check" in workflow
     script = (RELEASE / "prepare-macos-native-deps.sh").read_text(encoding="utf-8")

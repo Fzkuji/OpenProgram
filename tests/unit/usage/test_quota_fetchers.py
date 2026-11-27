@@ -14,9 +14,7 @@ from openprogram.models.usage import quota, quota_fetchers
 from openprogram.models.usage.quota import QuotaStore
 from openprogram.models.usage.quota_fetchers import (
     FetchCredential,
-    codex_usage,
     deepseek,
-    github_copilot,
     minimax,
     opencode_go,
     openrouter,
@@ -37,25 +35,6 @@ def test_openrouter_keeps_the_amount_left_not_a_yes_or_no():
     (unlimited,) = openrouter.parse({"data": {"limit": None, "limit_remaining": None, "usage": 3.2}}, NOW)
     assert unlimited.remaining is None and unlimited.used == 3.2 and unlimited.status == "ok"
     assert openrouter.parse({"error": "nope"}, NOW) == []
-
-
-def test_codex_usage_payload():
-    payload = {
-        "plan_type": "pro",
-        "rate_limit": {"primary_window": {"used_percent": 30, "limit_window_seconds": 18000,
-                                          "reset_after_seconds": 600},
-                       "secondary_window": {"used_percent": 71, "limit_window_seconds": 604800,
-                                            "reset_at": NOW + 86400}},
-        "credits": {"has_credits": True, "unlimited": False, "balance": "40"},
-        "additional_rate_limits": [{"limit_name": "codex-other", "rate_limit": {
-            "primary_window": {"used_percent": 5, "limit_window_seconds": 18000}}}],
-    }
-    limits = {limit.limit_key: limit for limit in codex_usage.parse(payload, NOW)}
-    assert limits["primary"].label == "5h" and limits["primary"].resets_at == NOW + 600
-    assert limits["secondary"].label == "Weekly"
-    assert limits["credits"].remaining == 40
-    assert limits["codex_other:primary"].label == "codex-other 5h"
-    assert all(limit.source == "endpoint" for limit in limits.values())
 
 
 def test_zai_plan_windows():
@@ -135,33 +114,11 @@ def test_deepseek_balance():
     assert deepseek.parse({"error": "nope"}, NOW) == []
 
 
-def test_codex_usage_of_a_spent_week_with_credits():
-    # The shape of a recorded response (identity fields left out).
-    payload = {"plan_type": "prolite", "rate_limit": {"allowed": False, "limit_reached": True, "primary_window": {
-        "used_percent": 100, "limit_window_seconds": 604800, "reset_after_seconds": 147604, "reset_at": 1795083766},
-        "secondary_window": None}, "additional_rate_limits": None,
-        "credits": {"has_credits": True, "unlimited": False, "balance": "26871.6297055000"}}
-    limits = {limit.limit_key: limit for limit in codex_usage.parse(payload, NOW)}
-    assert limits["primary"].label == "Weekly" and limits["primary"].status == "exhausted"
-    assert limits["credits"].remaining == pytest.approx(26871.6297055)
-
-
-def test_copilot_premium_requests():
-    payload = {"copilot_plan": "pro", "quota_reset_date": "2027-02-01",
-               "quota_snapshots": {"premium_interactions": {"entitlement": 300, "remaining": 60,
-                                                            "percent_remaining": 20, "unlimited": False},
-                                   "chat": {"entitlement": 0, "remaining": 0, "percent_remaining": 100,
-                                            "unlimited": True}}}
-    (premium,) = github_copilot.parse(payload, NOW)
-    assert premium.used == 240 and premium.used_fraction == pytest.approx(0.8) and premium.status == "warning"
-    assert quota.report_kind([premium]) == "windowed"
-
-
 def test_only_verified_fetchers_are_sent():
     assert quota_fetchers.fetcher_for("openrouter") is openrouter
-    for provider in ("openai-codex", "opencode-go", "deepseek", "minimax-cn-coding-plan"):
+    for provider in ("opencode-go", "deepseek", "minimax-cn-coding-plan"):
         assert quota_fetchers.fetcher_for(provider) is not None
-    for provider in ("zai", "github-copilot"):
+    for provider in ("zai", "kimi-coding"):
         assert quota_fetchers.fetcher_for(provider) is None
     listed = {row["provider"]: row["verified"] for row in quota_fetchers.sources()}
     assert listed["openrouter"] is True and listed["zai"] is False
@@ -303,7 +260,7 @@ def test_a_failed_read_keeps_the_values_and_names_why_once(fake, monkeypatch, tm
     reads = quota_fetchers.last_reads("openrouter")
     assert reads["cred-1"]["error"] == "HTTP 401" and reads["cred-1"]["read_at"] == NOW + 60
 
-    from openprogram.models.usage import provider_status
+    from openprogram.models.listing import provider_status
     key = {"account": "a", "credential_id": "cred-1", "kind": "api_key", "status": "ready", "active": True,
            "cooldown_until": None, "last_error": None, "last_used_at": None, "use_count": 0}
     wire = provider_status.quota_of([report], [key], NOW + 120, reads)

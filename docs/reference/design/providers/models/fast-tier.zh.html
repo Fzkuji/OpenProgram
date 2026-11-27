@@ -4,11 +4,9 @@
 <table class="stack">
 <thead><tr><th scope="col">路线</th><th scope="col">线路形态</th><th scope="col">支持信息来自</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">openai-codex</code></th><td>请求体 <code translate="no">service_tier: "priority"</code></td><td>账号目录的 <code translate="no">service_tiers</code></td></tr>
 <tr><th scope="row">OpenAI Responses 和 Completions</th><td>请求体 <code translate="no">service_tier</code></td><td>配置行 <code translate="no">fast</code>，然后 models.dev <code translate="no">speed_modes</code></td></tr>
 <tr><th scope="row"><code translate="no">anthropic</code>，Opus 4.6、4.7、4.8</th><td><code translate="no">extra_body={"speed":"fast"}</code> 和 <code translate="no">anthropic-beta: fast-mode-2026-02-01</code>，追加且不覆盖其他 beta</td><td><code translate="no">Model.fast</code>，默认表</td></tr>
 <tr><th scope="row"><code translate="no">xai</code>，<code translate="no">grok-4.6</code>，<code translate="no">https://api.x.ai/v1</code></th><td><code translate="no">service_tier</code></td><td>限定供应商和端点的声明</td></tr>
-<tr><th scope="row"><code translate="no">xai-subscription</code>，<code translate="no">grok-4.6</code></th><td><code translate="no">service_tier</code></td><td>已声明；其他模型 <code translate="no">unknown</code></td></tr>
 <tr><th scope="row">其他线路</th><td>不传出进程</td><td>无</td></tr>
 </tbody>
 </table>
@@ -17,37 +15,22 @@
 <p><code translate="no">providers/settings/fast.py fast_capability</code>，代理设置投影和派发共用；<code translate="no">supports_fast</code> 是它的布尔形式。</p>
 <ol>
 <li>配置行 <code translate="no">fast: false</code>：不支持</li>
-<li><code translate="no">openai-codex</code>：账号目录的 <code translate="no">Model.fast</code></li>
 <li>配置行 <code translate="no">fast: true</code>：支持</li>
 <li>上面的 xAI 声明</li>
 <li>models.dev <code translate="no">speed_modes</code> 有 <code translate="no">priority</code> 或 <code translate="no">fast</code>：支持</li>
 <li>否则 <code translate="no">unknown</code></li>
 </ol>
 <p class="note"><code translate="no">Model.fast</code>：配置行的 <code translate="no">fast</code> 优先；没有时由 <code translate="no">enabled_models.default_fast</code> 回填。</p>
-<h2>Codex 来源</h2>
-<p><code translate="no">GET https://chatgpt.com/backend-api/codex/models?client_version=&lt;ver&gt;</code>，带订阅 bearer 和 <code translate="no">chatgpt-account-id</code>。</p>
-<table class="stack fixed">
-<thead class="sr"><tr><th scope="col">字段</th><th scope="col">提供</th></tr></thead>
-<tbody>
-<tr><th scope="row"><code translate="no">service_tiers</code> 含 <code translate="no">id:"priority"</code></th><td>快速档</td></tr>
-<tr><th scope="row"><code translate="no">supported_reasoning_levels</code></th><td>思考档位选择</td></tr>
-<tr><th scope="row"><code translate="no">context_window</code></th><td>真实的订阅值</td></tr>
-</tbody>
-</table>
-<p class="note">请求和派发都用 <code translate="no">originator: codex_cli_rs</code> 和 <code translate="no">version</code>：后端按客户端灰度 <code translate="no">gpt-5.6-luna</code> 这样的 id，换 originator 能看到模型，派发却 404。models.dev 跟踪的是 API 平台，不是这个入口。</p>
 <h2>存储</h2>
-<p>官方端点、规范化、最后一次完好的缓存和 <code translate="no">config.json</code>、注册表、<code translate="no">supports_fast</code> 和派发，依次流转。</p>
+<p><code translate="no">config.json</code>、注册表、<code translate="no">supports_fast</code> 和派发，依次流转。</p>
 <table class="stack">
 <thead><tr><th scope="col">层</th><th scope="col">位置</th><th scope="col">持久化</th></tr></thead>
 <tbody>
-<tr><th scope="row">官方端点、CLI 缓存</th><td><code translate="no">openai_codex/list_models.py</code></td><td>优先实时；<code translate="no">~/.codex/models_cache.json</code> 是过期显示回退</td></tr>
-<tr><th scope="row">订阅目录</th><td><code translate="no">catalog/subscription_catalog.py</code></td><td>原子的最后完好副本；登录后和定期刷新</td></tr>
-<tr><th scope="row">配置行</th><td><code translate="no">config.json</code></td><td>官方刷新增、改、退役；遵守已禁用项</td></tr>
+<tr><th scope="row">配置行</th><td><code translate="no">config.json</code></td><td>Fetch 增、改、退役；遵守已禁用项</td></tr>
 <tr><th scope="row"><code translate="no">Model.fast</code></th><td><code translate="no">_build_model_from_row</code></td><td>内存</td></tr>
 <tr><th scope="row">models.dev</th><td><code translate="no">catalog/sources/models_dev.py</code></td><td>远程，内存缓存 1 小时</td></tr>
 </tbody>
 </table>
-<p class="note">CLI 缓存行带错误信息，所以不会增删已配置的模型。</p>
 <h2>一轮请求</h2>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">时机</th><th scope="col">行为</th></tr></thead>
@@ -65,14 +48,12 @@
 <tbody>
 <tr><th scope="row"><code translate="no">models/providers/types.py</code></th><td><code translate="no">Model.fast</code></td></tr>
 <tr><th scope="row"><code translate="no">providers/catalog/enabled_models.py</code></th><td><code translate="no">default_fast</code>、配置行回填</td></tr>
-<tr><th scope="row"><code translate="no">adapters/openai_codex/{openai_codex,catalog}.py</code></th><td>透传、客户端身份</td></tr>
 <tr><th scope="row"><code translate="no">adapters/anthropic/anthropic.py</code></th><td>Claude 线路</td></tr>
-<tr><th scope="row"><code translate="no">adapters/openai_codex/list_models.py</code></th><td>官方拉取</td></tr>
 <tr><th scope="row"><code translate="no">listing/fetchers/__init__.py</code></th><td>传递 fast 和 thinking；补全不能覆盖</td></tr>
 <tr><th scope="row"><code translate="no">interfaces/server/routes/execution/runtime.py</code></th><td><code translate="no">chat.fast</code></td></tr>
 <tr><th scope="row"><code translate="no">apps/web/components/chat/composer/index.tsx</code></th><td>控件、发送门槛</td></tr>
 </tbody>
 </table>
-<p class="note">Codex 模型只要 Fetch。检测逻辑：<code translate="no">fast_capability</code>。Claude：<code translate="no">default_fast</code>。其他供应商：models.dev 知道即可。</p>
+<p class="note">检测逻辑：<code translate="no">fast_capability</code>。Claude：<code translate="no">default_fast</code>。其他供应商：models.dev 知道即可。</p>
 </details>
 <p class="next"><a href="thinking-effort.zh.html">思考强度</a></p>

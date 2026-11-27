@@ -119,6 +119,15 @@ def is_terminal(phase: UpdatePhase) -> bool:
     return phase in TERMINAL_PHASES
 
 
+def is_held(record: "UpdateRecord") -> bool:
+    """An update prepared ahead of a restart: it waits in ``ready`` until its owner asks for the switch.
+
+    Nothing advances it on its own, and any other update that needs the slot
+    cancels it first (``SelfUpdateStore.cancel_held``).
+    """
+    return record.state.phase is UpdatePhase.READY and record.state.detail.get("held") is True
+
+
 def can_transition(source: UpdatePhase, target: UpdatePhase) -> bool:
     return (source, target) in VALID_TRANSITIONS
 

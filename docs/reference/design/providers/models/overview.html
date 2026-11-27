@@ -55,22 +55,20 @@
 <tbody>
 <tr><th scope="row">Standard <code translate="no">/v1/models</code></th><td><code translate="no">listing/fetchers/openai_compat.py</code></td></tr>
 <tr><th scope="row">Anthropic, per-model capabilities</th><td><code translate="no">adapters/anthropic/list_models.py</code></td></tr>
-<tr><th scope="row">Account-level private</th><td><code translate="no">adapters/openai_codex/list_models.py</code>, <code translate="no">xai_subscription/list_models.py</code></td></tr>
-<tr><th scope="row">Vendor-specific</th><td><code translate="no">google</code> (query key), <code translate="no">amazon_bedrock</code> (SigV4), <code translate="no">github_copilot</code> (session bearer), <code translate="no">deepseek</code> (ids only, enriched)</td></tr>
+<tr><th scope="row">Vendor-specific</th><td><code translate="no">google</code> (query key), <code translate="no">amazon_bedrock</code> (SigV4), <code translate="no">deepseek</code> (ids only, enriched)</td></tr>
 </tbody>
 </table>
 <p class="note">A provider that departs from standard ships <code translate="no">list_models.py</code> exposing <code translate="no">fetch(provider_id, timeout)</code>; <code translate="no">_load_fetcher</code> imports it by directory, no central edit. Success: <code translate="no">list[dict]</code> with id and name. Failure: <code translate="no">{"error": …}</code>. <code translate="no">fetch_and_normalize</code> is the one normalisation point.</p>
-<p>Ordinary results use a short memory cache. Subscription catalogues also keep an atomic last-known-good copy: a failed request can show stale rows, but only a non-empty official catalogue can retire models.</p>
+<p>Results use a short memory cache.</p>
 <p>The models.dev catalogue is kept in memory and on disk, fresh for an hour. The disk copy's age is its file's: every command is a new process, and one that took the file for stale whatever its age downloaded the catalogue again and waited about three seconds for it on its way out.</p>
 <h2>Enable, disable, refresh</h2>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Action</th><th scope="col">Effect</th></tr></thead>
 <tbody>
 <tr><th scope="row">Enable (<code translate="no">toggle_model</code>)</th><td>Browse row, overrides, endpoint api and base_url, derived thinking levels go in <code translate="no">providers.&lt;p&gt;.models</code>; the registry reloads</td></tr>
-<tr><th scope="row">Disable</th><td>Deletes the row; a manual row stays with <code translate="no">enabled: false</code>. Subscription providers record the id in <code translate="no">disabled_models</code>.</td></tr>
+<tr><th scope="row">Disable</th><td>Deletes the row; a manual row stays with <code translate="no">enabled: false</code>.</td></tr>
 <tr><th scope="row">Refresh</th><td>Re-browses enabled models and overwrites their specs</td></tr>
 <tr><th scope="row">Manual model</th><td>Same list, <code translate="no">source: "manual"</code></td></tr>
-<tr><th scope="row">Subscription catalogue</th><td>After login, worker start when stale, every 6 h, manual Refresh: new ids enabled, changes refreshed, removed retired, disables kept. A change broadcasts <code translate="no">provider_models_changed</code>; web and desktop re-read, reconnecting clients too.</td></tr>
 </tbody>
 </table>
 <h2>Use</h2>
@@ -81,14 +79,14 @@
 <tr><th scope="row"><code translate="no">GET /api/providers/list</code></th><td>Provider list</td></tr>
 <tr><th scope="row"><code translate="no">GET /api/providers/{name}/models</code></th><td>That provider's cached browse and enabled flags; <code translate="no">POST …/fetch-models</code> queries now</td></tr>
 <tr><th scope="row"><code translate="no">GET /api/models/enabled</code></th><td>Chat picker: <code translate="no">ENABLED_MODELS</code> as is</td></tr>
-<tr><th scope="row"><code translate="no">interfaces/server/thinking_effort.py</code></th><td>Levels from enabled rows</td></tr>
+<tr><th scope="row"><code translate="no">runtime/harnesses/thinking_effort.py</code></th><td>Levels from enabled rows</td></tr>
 </tbody>
 </table>
 <p class="note">A failover or agent reference to a non-enabled model is a configuration error pointing at Settings. Old sessions keep their history but cannot continue on a deleted model.</p>
-<p>An unknown id is refused with the nearest ones (<code translate="no">catalog/suggestions.py</code>): "Unknown model 'openai-codex':'gpt6 sol'; did you mean openai-codex:gpt-6.1-sol, …?". Names compare by words: display-name word 4, id word 3; a version or provider id counts only beside those. Follows magpie (yetone/magpie, MIT).</p>
+<p>An unknown id is refused with the nearest ones (<code translate="no">catalog/suggestions.py</code>): "Unknown model 'openai':'gpt6 sol'; did you mean openai:gpt-6.1-sol, …?". Names compare by words: display-name word 4, id word 3; a version or provider id counts only beside those. Follows magpie (yetone/magpie, MIT).</p>
 <h2 id="invariants">Invariants</h2>
 <ol>
-<li>The only persisted model data is enabled specs in config, plus the subscription last-known-good copy.</li>
+<li>The only persisted model data is enabled specs in config.</li>
 <li>Ordinary browsing is never written to a file.</li>
 <li>Human data in git, program data in user config.</li>
 <li><code translate="no">provider.json</code> has only what machines cannot obtain.</li>
@@ -99,8 +97,7 @@
 <details><summary>What a change must preserve</summary>
 <ul>
 <li>A config row resolves through <code translate="no">get_model</code> to the same <code translate="no">Model</code> for every provider.</li>
-<li><code translate="no">google-gemini-cli/*</code> and <code translate="no">gemini-subscription/*</code> are distinct keys; rows carry their own.</li>
-<li><code translate="no">cost</code>, multimodal <code translate="no">input</code>, <code translate="no">headers</code> (copilot) and <code translate="no">compat</code> travel in the spec.</li>
+<li><code translate="no">cost</code>, multimodal <code translate="no">input</code>, <code translate="no">headers</code> and <code translate="no">compat</code> travel in the spec.</li>
 <li>Multi-wire providers need one exec per <code translate="no">(api, base_url, headers, compat)</code>.</li>
 <li><code translate="no">test_provider_wire_invariants.py</code> and <code translate="no">test_model_fetch_routing.py</code> stay green.</li>
 </ul>

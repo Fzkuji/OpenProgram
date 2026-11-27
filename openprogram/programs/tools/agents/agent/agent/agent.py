@@ -33,7 +33,7 @@ from collections import OrderedDict
 
 from openprogram.programs._host.runtime import ToolReturn, function
 from openprogram.runtime.permissions import refusal
-from openprogram.programs.tools.agents.send_message.send_message.depth import (
+from openprogram.runtime.jobs.chain_budgets import (
     delegation_budget_left as _delegation_budget_left,
 )
 
@@ -43,56 +43,22 @@ import logging
 _log = logging.getLogger(__name__)
 
 
+# Spawn and fan-out budgets: how many generations of NEW agents a chain
+# may create, and how many NEW agents one parent turn may create; the
+# reasoning and the peers they follow are in chain_budgets.py.
 # Spawn budget: how many generations of NEW agents a chain may create.
 # 1 by default (depth.MAX_SPAWN_DEPTH): the main agent delegates and a
 # helper does the work itself; the helper's tool list has no ``agent``
 # (depth.delegation_budget_left), so the limit costs no refused calls.
 # The reasoning and the peers it follows are in depth.py.
-from openprogram.programs.tools.agents.send_message.send_message.depth import (  # noqa: E402
+from openprogram.runtime.jobs.chain_budgets import (  # noqa: E402
     MAX_SPAWN_DEPTH,
+    MAX_SPAWN_FANOUT,
     max_spawn_depth,
+    max_spawn_fanout,
 )
 
 
-# Fan-out budget: how many NEW agents ONE parent turn may create. The
-# spawn budget above bounds the chain downward and the message budget
-# bounds it sideways between existing agents, but neither counts
-# siblings: a spawn hands the child one more generation and leaves the
-# parent's own count untouched, so before this guard a single turn could
-# call ``agent`` until the user stops the turn, i.e. unbounded
-# nested agent runs from one runaway turn unless a caller cap is set.
-#
-# 8 comes from the two reference implementations that guard the same
-# thing, read for what they actually count rather than for their number:
-#
-#   * openclaw caps live children per parent session at 5, range 1-20
-#     (config/agent-limits.ts:5, enforced agents/subagent-spawn.ts:793).
-#     That is the only true fan-out cap among the eight and it is a
-#     spawn-time refusal, exactly like this one.
-#   * hermes caps the task list of one ``delegate_task`` call at 3
-#     (tools/delegate_tool.py:132) and separately truncates extra
-#     ``delegate_task`` calls within one turn (run_agent.py:2344) —
-#     that second guard is this one, aimed at the same runaway.
-#   * pi-mono's 8 (examples/extensions/subagent/index.ts:27) caps one
-#     call's task array and nothing else, so a parent there can still
-#     spawn without bound over a conversation.
-#
-# hermes' 3 and pi-mono's 8 are batch-argument validation and do not
-# transfer: ``agent`` creates one child per call, so a per-call cap
-# would always read 1. openclaw's unit transfers, its number does not:
-# it runs a pool of 8 against a per-parent cap of 5, we run 8 too
-# (resource_governance.limits.DEFAULT_JOB_WORKERS) and background children
-# queue on it, so a per-parent cap below the pool width would refuse fan-out
-# that the pool is sized to absorb. 8 was two pool widths of 4 — a turn can
-# fill the pool and keep one wave queued behind it, and the ninth spawn
-# is refused with the existing agents' addresses so the model reuses
-# them instead. It is also the most permissive of the three references,
-# which is the right side to err on: this guard exists to stop a
-# runaway, not to shape normal parallelism.
-#
-# Off by default (0); the job pool bounds how many run at once, and
-# OPENPROGRAM_JOB_WORKERS raises that.
-MAX_SPAWN_FANOUT = 0
 
 # Children already created by each parent turn, keyed (session, turn).
 # Module state rather than a ContextVar because every tool body runs in
@@ -103,14 +69,6 @@ MAX_SPAWN_FANOUT = 0
 _FANOUT_TURNS = 256
 _fanout_lock = threading.Lock()
 _fanout_used: OrderedDict[tuple[str, str], int] = OrderedDict()
-
-
-def max_spawn_fanout() -> int:
-    """``agent.max_spawn_fanout`` from config; 0 = unlimited."""
-    from openprogram.programs.tools.agents.send_message.send_message.depth import (
-        config_limit,
-    )
-    return config_limit("max_spawn_fanout", MAX_SPAWN_FANOUT)
 
 
 def claim_fanout_slot(session_id: str, turn_id: str) -> int | None:
@@ -398,7 +356,7 @@ def _agent_impl(
     # an agent that collects a batch of replies can create the next
     # batch. A fresh helper at the limit has no agent tool at all; a
     # forked one keeps it for the shared cache and is refused here.
-    from openprogram.programs.tools.agents.send_message.send_message.depth import (
+    from openprogram.runtime.jobs.chain_budgets import (
         current_chain_generations,
         current_chain_messages,
         max_messages,
@@ -535,12 +493,12 @@ def _agent_impl(
                 write_attach_placeholder_for_spawn,
             )
             from openprogram.runtime.jobs.types import mint_job_id
-            from openprogram.programs._host.runtime import current_tool_call_id
+            from openprogram.runtime.agent.call_state import current_tool_call_id
             import uuid as _uuid
 
             job_id = isolated_job_id or mint_job_id()
             attach_id = _uuid.uuid4().hex[:12]
-            tool_call_id = current_tool_call_id()
+            tool_call_id = current_tool_call_id() or None
 
             # Admission owns the first external side effect. Persist the
             # placeholder, including its durable job id, before the runner is
@@ -616,9 +574,9 @@ def _agent_impl(
     # id is minted here and reused for the end write, so the card is
     # updated in place.
     import uuid as _uuid
-    from openprogram.programs._host.runtime import current_tool_call_id
+    from openprogram.runtime.agent.call_state import current_tool_call_id
     _card_id = _uuid.uuid4().hex[:12]
-    _tool_call_id = current_tool_call_id()
+    _tool_call_id = current_tool_call_id() or None
     accepted: dict[str, object] = {}
     try:
         from openprogram.runtime.conversation.peer_agents.sub_agent_run import (

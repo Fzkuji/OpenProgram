@@ -25,8 +25,8 @@ def isolated_commands(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(registry, "_loaded", False)
     monkeypatch.setattr(registry, "load_user", lambda: [])
     monkeypatch.setattr(registry, "load_project", lambda cwd=None: [])
-    import openprogram.runtime.commands._plugin_adapter as plugin_adapter
-    import openprogram.runtime.commands._skill_adapter as skill_adapter
+    import openprogram.extensions.plugins.commands as plugin_adapter
+    import openprogram.extensions.skills.commands as skill_adapter
 
     monkeypatch.setattr(plugin_adapter, "sync_into_registry", lambda: None)
     monkeypatch.setattr(skill_adapter, "sync_into_registry", lambda: None)

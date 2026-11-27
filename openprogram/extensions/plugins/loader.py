@@ -2,8 +2,9 @@
 
 A plugin is declarative (see ``manifest``): its skills, slash commands,
 agents, hooks, MCP servers and provider directories mount through one
-:class:`ProgramContext` owned by ``plugin:<name>``, and disposing the
-context takes all of them out again. No plugin code runs in the worker; a
+:class:`ProgramContext` owned by ``plugin:<name>`` (the Program host's, reached
+through ``runtime.program_host``), and disposing the context takes all of
+them out again. No plugin code runs in the worker; a
 manifest that names code is refused with a pointer to applications.
 
 Sources, later ones winning a name clash: npm
@@ -19,10 +20,10 @@ import traceback
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import RLock
-from typing import Any, Optional
+from typing import Any
 
 from . import hooks as _hooks, paths, registry, trust as _trust
-from openprogram.programs._host.context import ProgramContext
+from openprogram.runtime import program_host
 from .manifest import (
     PluginContainsCode,
     PluginManifest,
@@ -43,7 +44,7 @@ class Plugin:
     loaded: bool = False
     error: str = ""
     contrib: dict[str, Any] = field(default_factory=dict)
-    ctx: Optional[ProgramContext] = None  # registrations of the running plugin
+    ctx: Any = None  # the ProgramContext holding the running plugin's registrations
 
     @property
     def name(self) -> str:
@@ -237,7 +238,7 @@ def _agent_definitions(plugin: Plugin, value: Any) -> list[dict[str, Any]]:
     return rows
 
 
-def _install_agents(ctx: ProgramContext, plugin: Plugin, value: Any) -> None:
+def _install_agents(ctx: Any, plugin: Plugin, value: Any) -> None:
     """Create the plugin's Agents that do not exist yet.
 
     Agents are user records with their own sessions, so they stay when the
@@ -287,7 +288,7 @@ def _activate(plugin: Plugin) -> None:
     refusal = code_refusal(mf)
     if refusal:
         raise PluginContainsCode(refusal)
-    ctx = ProgramContext(mf.name, mf.root, _options(mf.name))
+    ctx = program_host.host().ProgramContext(mf.name, mf.root, _options(mf.name))
     plugin.ctx = ctx
     ep = dict(mf.entrypoints)
     contrib: dict[str, Any] = {}

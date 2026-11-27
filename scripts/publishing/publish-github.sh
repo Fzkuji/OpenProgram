@@ -4,24 +4,40 @@
 # Two local lines: `dev` takes every commit and feeds the development
 # instance; `main` is the line GitHub carries, one squashed commit per sync,
 # each holding a `dev` tree on top of the previous `main` commit, so it never
-# contains dev's history. A sync without --tag is the daily upload: pushing
-# `main` starts no workflow. Only a `v*` tag starts the Release workflow,
-# whose published App is the stable install everyone updates to in the App.
-# refs/publish/last records the commit the latest sync was made from, so the
-# next one lists only what is new.
+# contains dev's history. refs/publish/last records the commit the latest
+# sync was made from, so the next one lists only what is new. Pushing `main`
+# or a tag starts no workflow.
 #
-# Usage: scripts/publishing/publish-github.sh -m "summary" [--source <ref>] [--tag vX.Y.Z]
+# A push of main is followed by scripts/release/publish-updates.py run, which
+# builds that main here and puts its code on the rolling `updates` release
+# under a signed latest.json: the pointer development and testing installs
+# follow. It notifies nobody. Every update needs a runtime layer per platform
+# for its base; when the base changed, the run is refused until the Release
+# workflow uploaded them (dispatched with -f runtime_layers_only=true), and
+# running this again then publishes it. Only a release notifies anyone:
+#   vX.Y.0           a feature release: main and the tag are pushed and the
+#                    Release workflow is dispatched; it builds the installers,
+#                    the runtime layers and the release page. Once it
+#                    finished, publish-updates.py announce vX.Y.0 signs
+#                    channel.json, which every install offers.
+#   vX.Y.Z (Z > 0), vX.Y.Z.W
+#                    a code-only release: no workflow; the run also signs
+#                    channel.json, then publish-updates.py release-page creates
+#                    the page with the notes. One whose runtime or shell inputs
+#                    changed needs a feature release and is refused before
+#                    anything moves.
+#
+# Usage: scripts/publishing/publish-github.sh -m "summary" [--source <ref>] [--tag vX.Y.Z[.W]]
 #                                  [--office-archive <file>] [--no-push] [--dry-run]
 #   -m         what this sync brings; required when the source differs from main
 #   --source   commit to squash (default: dev)
-#   --tag      after pushing main, tag that commit and push the tag, which
-#              starts the Release workflow; needs every version place
-#              (scripts/release/release-version.py), the notes, and the
-#              pinned Office archive on GitHub
+#   --tag      release main: needs the version places
+#              (scripts/release/release-version.py) and the notes; a feature
+#              release also needs the pinned Office archive on GitHub
 #   --office-archive
-#              the local copy of the pinned Office archive: checked against
-#              its pin, and put on the tag's draft release when neither the
-#              newest release nor that draft has it
+#              a feature release's local copy of the pinned Office archive:
+#              checked against its pin, and put on the tag's draft release
+#              when neither the newest release nor that draft has it
 #   --no-push  add the sync to local main only
 #   --dry-run  show the sync's message and checks, change nothing
 set -euo pipefail
@@ -49,6 +65,15 @@ done
 
 if test -n "$office_archive" && test -z "$tag"; then
   printf -- '--office-archive is for a release, so it needs --tag\n' >&2
+  exit 2
+fi
+# vX.Y.0 builds installers in Actions; any other release is code only.
+feature_release=0
+if printf '%s\n' "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.0$'; then
+  feature_release=1
+fi
+if test -n "$office_archive" && test "$feature_release" -eq 0; then
+  printf -- '--office-archive is for a feature release (vX.Y.0); %s builds no installers\n' "$tag" >&2
   exit 2
 fi
 if test -n "$tag" && test "$push" -eq 0 && test "$dry_run" -eq 0; then
@@ -103,11 +128,11 @@ if ! test -x "$python"; then
   exit 1
 fi
 
-# A tag starts the Release workflow, whose builds stop when any version place,
-# the notes or the Office archive is wrong. Refuse here, before anything has moved.
+# A release is refused here, before anything has moved, when a version place,
+# the notes or (for a feature release) the Office archive is wrong.
 check_tag() {
-  if ! printf '%s\n' "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
-    printf 'a release tag looks like v1.2.3, not %s\n' "$tag" >&2
+  if ! printf '%s\n' "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$'; then
+    printf 'a release tag looks like v1.2.3 or v1.2.3.4, not %s\n' "$tag" >&2
     exit 2
   fi
   local version="${tag#v}" notes
@@ -156,7 +181,32 @@ ensure_office_released() {
 
 if test -n "$tag"; then
   check_tag
-  check_office_local
+  if test "$feature_release" -eq 1; then
+    check_office_local
+  fi
+fi
+
+# What the update publisher would put on the `updates` release. A code-only
+# release it refuses (exit 3: runtime or shell inputs changed) stops here,
+# before anything has moved. A feature release's new base has no runtime
+# layers until its Release workflow built them, so a refusal is expected and
+# only shown; any other failure stops it. For a plain sync it is shown only.
+updates_tool="$repo_root/scripts/release/publish-updates.py"
+updates_plan() {
+  local status=0
+  "$python" -B "$updates_tool" plan --commit "$source_commit" ${tag:+--release "$tag"} || status=$?
+  if test -z "$tag" || test "$status" -eq 0; then
+    return 0
+  fi
+  if test "$feature_release" -eq 1 && test "$status" -eq 3; then
+    printf 'the Release workflow of %s builds the runtime layers its update needs; announce it once that finished\n' "$tag"
+    return 0
+  fi
+  printf 'refusing to release %s: the update publisher said no (exit %s)\n' "$tag" "$status" >&2
+  exit 1
+}
+if test -n "$tag" && test "$dry_run" -eq 0; then
+  updates_plan
 fi
 
 # The project's retired GitHub accounts are never named in anything published:
@@ -197,7 +247,7 @@ check_docs() {
 
 if test -n "$main_head" && test "$(git rev-parse "$source_commit^{tree}")" = "$(git rev-parse "$main_head^{tree}")"; then
   printf 'main already holds this tree; nothing to sync\n'
-  if test -n "$tag" && test "$dry_run" -eq 0; then
+  if test -n "$tag" && test "$feature_release" -eq 1 && test "$dry_run" -eq 0; then
     ensure_office_released
   fi
 else
@@ -247,12 +297,13 @@ else
   git diff --shortstat "${main_head:-$empty_tree}" "$source_commit"
   if test "$dry_run" -eq 1; then
     if test -n "$tag"; then
-      printf '\nwould tag the new main commit %s and push the tag, starting the Release workflow\n' "$tag"
+      printf '\nwould release the new main commit as %s\n' "$tag"
     fi
+    updates_plan
     exit 0
   fi
 
-  if test -n "$tag"; then
+  if test -n "$tag" && test "$feature_release" -eq 1; then
     ensure_office_released
   fi
 
@@ -268,8 +319,10 @@ else
 fi
 
 if test "$dry_run" -eq 1 && test -n "$tag"; then
-  printf 'would tag main %s as %s and push the tag, starting the Release workflow\n' \
-    "$(git rev-parse --short "$main_head")" "$tag"
+  printf 'would release main %s as %s\n' "$(git rev-parse --short "$main_head")" "$tag"
+fi
+if test "$dry_run" -eq 1; then
+  updates_plan
 fi
 if test "$push" -eq 0 || test "$dry_run" -eq 1; then
   exit 0
@@ -305,8 +358,36 @@ fi
 OPENPROGRAM_GITHUB_PUBLISH=1 git push origin refs/heads/main:refs/heads/main
 printf 'published %s to GitHub main\n' "$(git rev-parse --short "$main_head")"
 
+short_main="$(git rev-parse --short "$main_head")"
+
+# A feature release is announced only after its Release workflow published
+# the installers and every platform's runtime layer: tag and dispatch here,
+# announce later.
+if test "$feature_release" -eq 1; then
+  git tag "$tag" "$main_head"
+  OPENPROGRAM_GITHUB_PUBLISH=1 git push origin "refs/tags/$tag:refs/tags/$tag"
+  gh workflow run release.yml -R Fzkuji/OpenProgram --ref main -f tag="$tag"
+  printf 'tagged %s as %s; the Release workflow builds its installers, runtime layers and release page from here.\n' \
+    "$short_main" "$tag"
+  printf 'next, once that workflow finished: python scripts/release/publish-updates.py announce %s\n' "$tag"
+  exit 0
+fi
+
+# latest.json always; channel.json too for a code-only release, which announces it.
+updates_status=0
+"$python" -B "$updates_tool" run --commit "$main_head" ${tag:+--release "$tag"} || updates_status=$?
+if test "$updates_status" -ne 0; then
+  printf 'main %s is published; its update was not (exit %s)%s\n' "$short_main" \
+    "$updates_status" "${tag:+, and $tag was not tagged}" >&2
+  if test "$updates_status" -eq 3 && test -z "$tag"; then
+    printf 'if it lacks runtime layers for a new base, build them from main, then run this again when it finished:\n  gh workflow run release.yml -R Fzkuji/OpenProgram --ref main -f runtime_layers_only=true\n' >&2
+  fi
+  exit "$updates_status"
+fi
+
 if test -n "$tag"; then
   git tag "$tag" "$main_head"
   OPENPROGRAM_GITHUB_PUBLISH=1 git push origin "refs/tags/$tag:refs/tags/$tag"
-  printf 'tagged %s as %s; the Release workflow builds it from here\n' "$(git rev-parse --short "$main_head")" "$tag"
+  "$python" -B "$updates_tool" release-page --tag "$tag"
+  printf 'released %s as %s\n' "$short_main" "$tag"
 fi

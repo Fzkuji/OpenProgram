@@ -17,15 +17,9 @@ from openprogram.models.auth.provider_contract import (
 )
 
 
-# Known adapters that ship with this codebase. Codex and Gemini CLI read an
-# external vendor-CLI credential store, so their import helper is
-# mandatory. Copilot signs in with a device code or a pasted token (its
-# token variables are read as keys), and Anthropic takes an API key, so the
-# file-import helper is optional there.
+# Known adapters that ship with this codebase. Anthropic takes an API key,
+# so the file-import helper is optional there.
 _ADAPTER_MODULES = [
-    ("openprogram.models.providers.adapters.openai_codex.auth_adapter", True),
-    ("openprogram.models.providers.adapters.google_gemini_cli.auth_adapter", True),
-    ("openprogram.models.providers.adapters.github_copilot.auth_adapter", False),
     ("openprogram.models.providers.adapters.anthropic.auth_adapter", False),
 ]
 

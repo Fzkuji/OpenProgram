@@ -114,7 +114,7 @@ def test_an_agents_permissions_are_validated_and_replaced_whole():
 
 def _sub_agent_request(owner, *, asks_through=None, mode="ask"):
     from openprogram.runtime.agent.turn_request import TurnRequest
-    from openprogram.runtime.permissions.authority import runtime_authority
+    from openprogram.state.authority import runtime_authority
 
     return TurnRequest(session_id="s1", user_text="go", agent_id="main", source="agent_spawn",
                        permission_mode=mode, asks_through=asks_through,
@@ -160,7 +160,7 @@ def test_a_background_sub_agent_is_refused_at_once_with_what_to_do(owner):
         "c1", {"command": "make"}) is None
     # A route on a turn that is not a sub-agent's grants nothing.
     from openprogram.runtime.agent.turn_request import TurnRequest
-    from openprogram.runtime.permissions.authority import runtime_authority
+    from openprogram.state.authority import runtime_authority
     other = TurnRequest(session_id="s1", user_text="", agent_id="main", source="cron",
                         asks_through=ROUTE, **runtime_authority(owner, "cron"))
     assert not can_approve(other)
@@ -283,7 +283,7 @@ def test_an_unreadable_permissions_block_in_a_trial_profile_refuses_the_start(ow
 def test_a_sandbox_the_callers_project_turns_on_travels_with_the_snapshot(monkeypatch):
     from types import SimpleNamespace
 
-    from openprogram.host.sandbox import MODE_WORKSPACE_WRITE
+    from openprogram.state.sandbox_settings import MODE_WORKSPACE_WRITE
     from openprogram.runtime.permissions.approvals import lifecycle
     from openprogram.state.store.project import project_store
 
@@ -317,7 +317,7 @@ def _tools(*names):
 
 
 def test_a_helper_loses_the_scheduling_channel_and_memory_writing_tools():
-    from openprogram.programs.tools.agents.send_message.send_message import depth
+    from openprogram.runtime.jobs import chain_budgets as depth
     from openprogram.runtime.conversation.turn_runtime.loop_runner import DELEGATE_BLOCKED, delegate_blocked
     # Every registered scheduling, channel-sending and memory-writing tool,
     # old names included (``cron`` is the scheduler's alias).

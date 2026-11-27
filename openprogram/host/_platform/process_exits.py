@@ -21,7 +21,8 @@ compared with the one recorded: a process that already differs is reported
 as ended at once, and from then on the held process cannot be confused with
 another.
 
-An exit is announced as :func:`changes.signal(topic, key)
+An exit is announced through :func:`announce_exits`, which ``changes``
+fills with its :func:`signal(topic, key)
 <openprogram.host._platform.changes.signal>`. As with file events, the
 thread starts only when the Worker calls :func:`start` (through
 ``changes.start_watching``); in the CLI and in tests a watch is only kept.
@@ -59,6 +60,7 @@ _queued: list[_Watch] = []
 _thread: threading.Thread | None = None
 _waker: "_Backend | None" = None
 _running = False
+_announce: Callable[[str, str], None] | None = None
 
 
 def _start_token(pid: int) -> str | None:
@@ -121,11 +123,19 @@ def stop() -> None:
         thread.join(timeout=2.0)
 
 
+def announce_exits(announce: Callable[[str, str], None]) -> None:
+    """Have ``announce(topic, key)`` say that a watched process ended.
+    ``changes`` installs its :func:`signal <openprogram.host._platform.changes.signal>`
+    when it loads; process exits are one of the sources it gathers."""
+    global _announce
+    _announce = announce
+
+
 def _ended(entry: _Watch) -> None:
     with _lock:
         _watches.discard(entry)
-    from . import changes
-    changes.signal(entry.topic, entry.key)
+    if _announce is not None:
+        _announce(entry.topic, entry.key)
 
 
 def _same(entry: _Watch) -> bool:

@@ -76,7 +76,7 @@ def resolve_at(value: str, now: dt.datetime) -> dt.datetime:
 
 def next_cron(expr: str, now: dt.datetime, days: int = 8) -> dt.datetime | None:
     """The next minute ``expr`` fires within ``days``, in local time."""
-    from openprogram.programs.tools.jobs.cron.worker import match
+    from openprogram.runtime.scheduler.worker import match
 
     minute = now.replace(second=0, microsecond=0) + dt.timedelta(minutes=1)
     for _ in range(days * 24 * 60):
@@ -100,7 +100,7 @@ def remind(
     wake_agent: bool | None = None,
 ) -> str:
     """Create a Scheduler reminder task and say when it fires."""
-    from openprogram.programs.tools.jobs.cron import cron as cron_tool
+    from openprogram.runtime.scheduler import store as task_store
     from openprogram.runtime.scheduler import service
 
     message = (message or "").strip()
@@ -110,7 +110,7 @@ def remind(
              if value not in (None, "")]
     if len(given) != 1:
         return "Error: give exactly one of `at`, `in_minutes`, or `cron`."
-    authority, error = cron_tool._authorize("create")
+    authority, error = task_store._authorize("create")
     if error:
         return error
     now = _now()

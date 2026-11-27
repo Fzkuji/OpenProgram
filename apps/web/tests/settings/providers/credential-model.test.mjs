@@ -72,7 +72,7 @@ test("a card's count names the failing parts, and one key what tells it apart", 
   assert.deepEqual(M.credentialCount([key("ready", { label: "Work", key_tail: "a1b2" })], true, NOW, en), [{ label: "1 key" }, { label: "Work" }]);
   assert.deepEqual(M.credentialCount([key("ready", { env_var: "OPENAI_API_KEY" })], true, NOW, en), [{ label: "1 key" }, { label: "$OPENAI_API_KEY" }]);
   assert.deepEqual(M.credentialCount([account({ email: "a@example.com" })], false, NOW, en), [{ label: "1 account" }, { label: "a@example.com" }]);
-  assert.deepEqual(M.credentialCount([account({ signin_name: "ChatGPT" })], false, NOW, en), [{ label: "1 account" }, { label: "ChatGPT sign-in" }]);
+  assert.deepEqual(M.credentialCount([account({ signin_name: "Qwen" })], false, NOW, en), [{ label: "1 account" }, { label: "Qwen sign-in" }]);
   assert.deepEqual(M.credentialCount([account(), account()], true, NOW, en), [{ label: "2 accounts" }], "the rows decide, not the provider");
   assert.deepEqual(
     M.credentialCount([key("ready"), key("cooling", { cooldown_until: later }), key("invalid_key")], true, NOW, en),
@@ -101,9 +101,9 @@ test("a row is named by its label, then its email, then what it is", () => {
   assert.equal(name({ identity: { email: "a@example.com" }, kind: "oauth" }), "a@example.com");
   assert.equal(name({ env_var: "OPENAI_API_KEY", source: "env" }), "Environment key");
   assert.equal(name({}), "API key");
-  assert.equal(name({ kind: "oauth", signin_name: "ChatGPT" }), "ChatGPT sign-in");
+  assert.equal(name({ kind: "oauth", signin_name: "Qwen" }), "Qwen sign-in");
   assert.equal(name({ kind: "oauth" }), "Sign-in");
-  assert.equal(M.credentialName(credential("a1b2", { kind: "oauth", signin_name: "ChatGPT" }), (_e, zh) => zh), "ChatGPT 登录");
+  assert.equal(M.credentialName(credential("a1b2", { kind: "oauth", signin_name: "Qwen" }), (_e, zh) => zh), "Qwen 登录");
 });
 
 test("out of quota names a reset only for a limit with a window", () => {

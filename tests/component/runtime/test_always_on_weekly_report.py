@@ -70,7 +70,7 @@ def test_report_reads_tasks_handoffs_memory_and_run_lengths(tmp_path, monkeypatc
     from openprogram.runtime.context.session_db import default_db
     from openprogram.runtime.conversation.always_on import store
     from openprogram.runtime.scheduler import task_runs
-    from openprogram.state.paths import get_memory_dir
+    from openprogram.state.store.project.layout import personal_memory_dir
 
     state, _agent_id, session_id = _world(tmp_path, monkeypatch)
     now = time.time()
@@ -80,8 +80,8 @@ def test_report_reads_tasks_handoffs_memory_and_run_lengths(tmp_path, monkeypatc
     store.save_handoffs({"late": {"phase": "waiting", "at": now - 2 * 86400},
                          "finished": {"phase": "done", "at": now - 2 * 86400},
                          "recent": {"phase": "running", "at": now - 60}})
-    get_memory_dir().mkdir(parents=True, exist_ok=True)
-    (get_memory_dir() / "notes.md").write_text("x" * 321, encoding="utf-8")
+    personal_memory_dir().mkdir(parents=True, exist_ok=True)
+    (personal_memory_dir() / "notes.md").write_text("x" * 321, encoding="utf-8")
     default_db().append_run_rows(session_id, [
         {"t": "executions", "r": {"execution_id": "s", "status": "completed", "created_at": now - 100,
                                   "terminal_at": now - 10}},

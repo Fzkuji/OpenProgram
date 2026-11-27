@@ -14,7 +14,7 @@ can set the env var before any getter runs):
 
 Usage:
 
-    from openprogram.state.paths import get_config_path, get_sessions_dir
+    from openprogram.state.paths import get_config_path
     cfg = json.loads(get_config_path().read_text())
 
 Do NOT cache the returned paths in module-level constants — tests
@@ -252,16 +252,6 @@ def program_sources_path() -> Path:
     return get_state_dir() / "program-sources.json"
 
 
-def get_sessions_dir() -> Path:
-    """Root of the conversation store, ``<state>/projects``.
-
-    Conversations sit in ``<project-id>/chats/`` below it; see
-    :mod:`openprogram.state.store.project.layout`.
-    """
-    from openprogram.state.store.project.layout import projects_root
-    return projects_root(get_state_dir())
-
-
 def get_logs_dir() -> Path:
     return get_state_dir() / "logs"
 
@@ -278,12 +268,6 @@ def get_recordings_dir() -> Path:
     if sys.platform != "win32" and stat.S_IMODE(directory.stat().st_mode) != 0o700:
         raise PermissionError(f"recordings directory must have mode 0700: {directory}")
     return directory
-
-
-def get_memory_dir() -> Path:
-    """The personal memory: the home project's memory workspace."""
-    from openprogram.state.store.project.layout import DEFAULT_PROJECT_ID, memory_dir
-    return memory_dir(DEFAULT_PROJECT_ID, get_state_dir())
 
 
 def get_usage_db_path() -> Path:

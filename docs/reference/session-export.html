@@ -26,7 +26,7 @@
 </table>
 
 <h2>Redaction</h2>
-<p>Title, session id, role label, tool name, turn text, arguments and results all pass through <code translate="no">remove_secret_values</code> (<code translate="no">openprogram/models/providers/recording/recording.py</code>), before clipping. The stored conversation is not changed.</p>
+<p>Title, session id, role label, tool name, turn text, arguments and results all pass through <code translate="no">remove_secret_values</code> (<code translate="no">openprogram/state/secret_removal.py</code>), before clipping. The stored conversation is not changed.</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Matches</th><th scope="col">Becomes</th></tr></thead>
 <tbody>

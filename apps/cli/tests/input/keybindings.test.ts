@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from 'fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { describe, expect, it } from 'vitest';
@@ -104,16 +104,20 @@ describe('resolved bindings', () => {
 
   it('reads the file from the state dir and reports bad JSON', () => {
     const dir = mkdtempSync(join(tmpdir(), 'op-keys-'));
-    expect(loadBindings(join(dir, 'missing.json')).warnings).toEqual([]);
-    const good = join(dir, 'good.json');
-    writeFileSync(good, '﻿{"app.toolsExpand": "ctrl+t"}');
-    const loaded = loadBindings(good);
-    expect(loaded.source).toBe(good);
-    expect(bindingLabel(loaded, 'app.toolsExpand')).toBe('ctrl+t');
-    const bad = join(dir, 'bad.json');
-    writeFileSync(bad, '{nope');
-    const broken = loadBindings(bad);
-    expect(broken.warnings[0]).toMatch(/is not valid JSON/);
-    expect(bindingLabel(broken, 'app.toolsExpand')).toBe('ctrl+o');
+    try {
+      expect(loadBindings(join(dir, 'missing.json')).warnings).toEqual([]);
+      const good = join(dir, 'good.json');
+      writeFileSync(good, '﻿{"app.toolsExpand": "ctrl+t"}');
+      const loaded = loadBindings(good);
+      expect(loaded.source).toBe(good);
+      expect(bindingLabel(loaded, 'app.toolsExpand')).toBe('ctrl+t');
+      const bad = join(dir, 'bad.json');
+      writeFileSync(bad, '{nope');
+      const broken = loadBindings(bad);
+      expect(broken.warnings[0]).toMatch(/is not valid JSON/);
+      expect(bindingLabel(broken, 'app.toolsExpand')).toBe('ctrl+o');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

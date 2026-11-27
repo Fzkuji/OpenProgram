@@ -1,14 +1,14 @@
 <title>安装、打包、发布与升级</title>
 <meta name="description" content="谁用什么方式安装 OpenProgram，每个发行版包含什么，以及如何校验、升级和卸载。">
 <h1>安装、打包、发布与升级</h1>
-<p><strong>正式版本</strong>：v1.5.1 是这棵代码树构建的版本；v1.4.0 是最新打了标签的版本。每个平台和架构一份完整产品运行时。macOS App 只多 Electron 外壳，CLI 只多启动器；Windows 和 Linux App 是<a href="#thin-shell">薄壳</a>加 seed。检查、下载和平台交接见<a href="automatic-updates.zh.html">自动更新</a>。</p>
+<p><strong>正式版本</strong>：v1.5.1 是这棵代码树构建的版本；v1.4.0 是最新打了标签的版本。每个平台和架构一份完整产品运行时。App 是<a href="#thin-shell">薄壳</a>加 seed；未签名的 macOS App 保持完整布局。CLI 只多启动器。检查、下载和平台交接见<a href="automatic-updates.zh.html">自动更新</a>。</p>
 
 <h2>谁拿到什么</h2>
 <table class="stack">
 <thead><tr><th scope="col"></th><th scope="col">Desktop</th><th scope="col">CLI / 服务端</th><th scope="col">开发</th></tr></thead>
 <tbody>
 <tr><th scope="row">来源</th><td>GitHub Release</td><td>同一 Release</td><td>Git 检出</td></tr>
-<tr><th scope="row">产品运行时</th><td>macOS：平台归档 + Electron。Windows、Linux：薄壳 + seed</td><td>平台归档</td><td>相同能力 + 开发覆盖层</td></tr>
+<tr><th scope="row">产品运行时</th><td>薄壳 + seed。macOS 没有签名或更新密钥时：平台归档 + Electron</td><td>平台归档</td><td>相同能力 + 开发覆盖层</td></tr>
 <tr><th scope="row">系统 Python、Node.js</th><td>不需要</td><td>不需要</td><td>需要工具链</td></tr>
 <tr><th scope="row">Git</th><td>内置、固定版本，排在 <code translate="no">PATH</code> 最前</td><td>相同</td><td>需要系统 Git</td></tr>
 <tr><th scope="row">升级目标</th><td>已发布的运行时</td><td>同左</td><td>明确的 Git ref</td></tr>
@@ -50,24 +50,24 @@
 <thead class="sr"><tr><th scope="col">产物</th><th scope="col">平台</th></tr></thead>
 <tbody>
 <tr><th scope="row">运行时归档 + 校验和</th><td>macOS arm64、x64；Linux x86_64、arm64；Windows x86_64（ZIP），arm64 由开关控制</td></tr>
-<tr><th scope="row">桌面</th><td>macOS DMG 和 ZIP；Windows NSIS EXE；Linux deb 和 AppImage；各一份，文件名带版本号</td></tr>
-<tr><th scope="row">更新资产</th><td><code translate="no">version-</code>、<code translate="no">base-</code> 和 <code translate="no">toolchain-&lt;platform&gt;.tar.zst</code>、<code translate="no">repo.bundle</code>、<code translate="no">SHA256SUMS</code>、已签名的 <code translate="no">update-manifest.json</code></td></tr>
+<tr><th scope="row">桌面</th><td>macOS DMG 和 ZIP；Windows NSIS EXE；Linux deb 和 AppImage；各一份，文件名带版本号。ZIP 里公证过的 App、Windows 安装目录和 AppImage 也作为外壳层发布在 <code translate="no">updates</code> 发行版上（<a href="automatic-updates.zh.html#format">自动更新</a>）</td></tr>
+<tr><th scope="row">更新</th><td>发行版上没有。App 内更新放在滚动发行版 <code translate="no">updates</code> 上（<a href="automatic-updates.zh.html">自动更新</a>）</td></tr>
 <tr><th scope="row">开发者</th><td>wheel 和 sdist，不是用户入口</td></tr>
 <tr><th scope="row"><code translate="no">release-manifest.json</code></th><td>Schema 1：版本，以及每个文件的路径、字节数、SHA-256</td></tr>
 </tbody>
 </table>
 <p class="note">arm64 和 x64 分开构建，没有 universal2。失败的平台任务不产出文件，并列在 "Not in this release" 下；只有 wheel 或全部 macOS 和 Linux 运行时缺失时才停止发布。薄壳 App 需要受信任的更新签名密钥，否则永远无法更新。</p>
-<p class="note">产物里没有安装包或归档的平台任务按失败处理，什么都不发布。计划内的包或某个平台的更新文件缺失时，publish 任务在发行版公开之后变红，并逐个列出。开关或缺少密钥而略去的不算。</p>
+<p class="note">产物里没有安装包或归档的平台任务按失败处理，什么都不发布。计划内的包缺失时，publish 任务在发行版公开之后变红，并逐个列出。开关或缺少密钥而略去的不算。</p>
 <details id="one-copy-per-file">
 <summary>每个文件一份，文件名带版本号</summary>
 <p>每个发行版的每个文件只上传一次。v1.2.0 及以前还为每个 App 安装包另传一份不带版本号的副本（<code translate="no">OpenProgram-mac-arm64.dmg</code> 等七个），每个 App 任务另传一个 <code translate="no">SHA256SUMS-&lt;os&gt;-&lt;arch&gt;</code>；从 v1.3.0 起两者都不再上传，少 12 个文件。</p>
 <table class="stack fixed">
 <thead><tr><th scope="col">问题</th><th scope="col">答案</th></tr></thead>
 <tbody>
-<tr><th scope="row">为什么用带版本号的名字</th><td>已安装的 v1.2.0 App 在最新发行版里按名字找 <code translate="no">OpenProgram-&lt;version&gt;-mac-&lt;arch&gt;.dmg</code>（或 <code translate="no">-unsigned</code>），能替换自己的已签名 App 先找 <code translate="no">OpenProgram-&lt;version&gt;-mac-&lt;arch&gt;.zip</code>，这些名字必须存在。Codex、OpenCode 和 Goose 只发布不带版本号的名字，同样是一个文件一个名字；我们去掉的是同一份内容的第二个名字</td></tr>
+<tr><th scope="row">为什么用带版本号的名字</th><td>已安装的 v1.2.0 App 在最新发行版里按名字找 <code translate="no">OpenProgram-&lt;version&gt;-mac-&lt;arch&gt;.dmg</code>（或 <code translate="no">-unsigned</code>），这些名字必须存在。Codex、OpenCode 和 Goose 只发布不带版本号的名字，同样是一个文件一个名字；我们去掉的是同一份内容的第二个名字</td></tr>
 <tr><th scope="row">最新版下载链接</th><td><code translate="no">latest.html?OpenProgram-mac-arm64.dmg</code>（由 <code translate="no">docs/_static_root/latest.html</code> 发布在文档旁，用相对链接指向） 从 GitHub API 读最新发行版的文件列表，打开对应文件；拿不到答复就打开最新发行版页面。安装页和下载页上的 App 链接都经过它，所以没有哪个安装页写死某个版本，发新版时也不会过时。Claude Code 也是这样解析"最新"：靠指针和清单，而不是重复文件</td></tr>
 <tr><th scope="row">校验值</th><td>GitHub 在发布页上显示每个文件的 SHA-256，<code translate="no">release-manifest.json</code> 列出每个文件的路径、大小和 SHA-256。App 更新器按这份清单校验，发布说明的 App 表格在校验值一栏链接到它</td></tr>
-<tr><th scope="row">仍然上传</th><td>运行时归档的 <code translate="no">.sha256</code>：v1.2.0 的 <code translate="no">openprogram upgrade</code> 更新前要求按名字找到它。更新用的 <code translate="no">SHA256SUMS</code>，签名的更新清单记着它的哈希。种子的 <code translate="no">.sha256</code>，命令行安装器会读</td></tr>
+<tr><th scope="row">仍然上传</th><td>运行时归档的 <code translate="no">.sha256</code>：v1.2.0 的 <code translate="no">openprogram upgrade</code> 更新前要求按名字找到它。种子的 <code translate="no">.sha256</code>，命令行安装器会读</td></tr>
 </tbody>
 </table>
 </details>
@@ -75,7 +75,8 @@
 <thead><tr><th scope="col">仓库变量</th><th scope="col">任务</th></tr></thead>
 <tbody>
 <tr><th scope="row"><code translate="no">OPENPROGRAM_RELEASE_WINDOWS_RUNTIME</code>, <code translate="no">OPENPROGRAM_RELEASE_DESKTOP_MAC</code>, <code translate="no">_WINDOWS</code>, <code translate="no">_LINUX</code></th><td>默认开启，设为 <code translate="no">false</code> 才关闭</td></tr>
-<tr><th scope="row"><code translate="no">OPENPROGRAM_RELEASE_WINDOWS_ARM64</code>, <code translate="no">_MAC_THIN</code>, <code translate="no">_CLI_SEEDS</code></th><td>默认关闭，设为 <code translate="no">true</code> 才开启</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_RELEASE_WINDOWS_ARM64</code>, <code translate="no">_CLI_SEEDS</code></th><td>默认关闭，设为 <code translate="no">true</code> 才开启</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_RELEASE_MAC_THIN</code></th><td>默认开启：有 Apple 密钥和可信更新密钥时 macOS App 就是薄壳。设为 <code translate="no">false</code> 强制构建完整 App</td></tr>
 </tbody>
 </table>
 <details>
@@ -123,7 +124,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">安装</th><th scope="col">做法</th></tr></thead>
 <tbody>
-<tr><th scope="row">桌面</th><td>macOS：设置页下载并校验，用户在安装程序里确认。Windows、Linux：在版本库上运行 <code translate="no">openprogram upgrade</code>，只有发行版需要更新的外壳时才取 App 文件</td></tr>
+<tr><th scope="row">桌面</th><td>薄壳 App：在版本库上运行 <code translate="no">openprogram upgrade</code>，取 <code translate="no">channel.json</code> 宣布的版本；需要更新的外壳时，macOS、Windows 和 AppImage 上外壳作为外壳层到达，在 App 旁用它自己的文件拼好，<strong>重启以更新</strong>时换上；deb 取 App 文件，因为只有 root 能写 <code translate="no">/opt</code>。完整 macOS App：设置页下载 DMG 给用户打开</td></tr>
 <tr><th scope="row">CLI、服务端</th><td><code translate="no">openprogram upgrade</code>。任何默认资产校验失败都阻止激活。运行中的 worker 自己重启</td></tr>
 <tr><th scope="row">开发</th><td>同一命令对明确的 ref 拉取、构建、探测和重启</td></tr>
 <tr><th scope="row">Program</th><td>在独立环境迁移；失败只禁用该 Program</td></tr>
@@ -135,6 +136,7 @@
 <p class="note">worker 启动时绝不应用产品更新。</p>
 
 <h2>Desktop 包</h2>
+<p>完整的 macOS 布局：发行版没有 Apple 签名或更新密钥，或设了 <code translate="no">OPENPROGRAM_RELEASE_MAC_THIN=false</code> 时构建。</p>
 <pre translate="no" tabindex="0">OpenProgram.app/Contents/
 ├── MacOS/OpenProgram         # Electron launcher
 ├── Frameworks/               # Electron Framework and helpers
@@ -159,7 +161,7 @@
 <summary>运行时禁止</summary>
 <ul>
 <li>从 PATH 查找 <code translate="no">openprogram</code>、<code translate="no">python</code>、<code translate="no">node</code>、<code translate="no">git</code>。</li>
-<li>App 或更新器改写自身 bundle。AppImage 更新在校验后替换它旁边的文件。</li>
+<li>App 或更新器原地改写自身 bundle。新 App 在旁边拼好、检查后，重启时整体换上。</li>
 <li>首次使用时下载 Python、Web、Browser、OCR 或检测器权重。</li>
 <li>从仓库读取 <code translate="no">apps/web/out</code>、Program 检出或开发配置。</li>
 <li>在用户机器上运行 <code translate="no">npm build</code>、pip 依赖解析或 <code translate="no">git clone</code>。</li>
@@ -244,7 +246,13 @@
 </details>
 
 <h2 id="thin-shell">签名薄壳</h2>
-<p>薄壳 App 只有 <code translate="no">apps/desktop/shell/</code> 里的外壳，加上 <code translate="no">Resources/seed</code> 下的 seed。Windows 和 Linux App 是薄壳。macOS App 保持内嵌，除非打开 <code translate="no">OPENPROGRAM_RELEASE_MAC_THIN</code>。</p>
+<p>薄壳 App 只有 <code translate="no">apps/desktop/shell/</code> 里的外壳，加上 <code translate="no">Resources/seed</code> 下的 seed。Windows 和 Linux App 总是薄壳；发行版已签名且有可信更新密钥时，macOS App 也是薄壳。</p>
+<p>已安装的完整 macOS App 需要手动换一次：</p>
+<ol>
+<li>它的更新下载 DMG，里面现在是薄壳 App；用户把它拖过去覆盖旧的。</li>
+<li>薄壳 App 找不到 <code translate="no">Resources/runtime</code>，首次启动时铺好 <code translate="no">~/.openprogram/runtime</code>。</li>
+<li>旧的后台进程报告的版本不同，App 就从版本库重启它。</li>
+</ol>
 <table class="stack fixed">
 <thead><tr><th scope="col">模式</th><th scope="col">启动时的依据</th></tr></thead>
 <tbody>
@@ -323,11 +331,10 @@
 <tr><th scope="row">单端口 worker、健康与恢复、运行时内的 Web、能力清单、共用运行时归档、固定 App 安装、图标、CLI 安装器、标签驱动的 Release</th><td>已实现</td></tr>
 <tr><th scope="row">macOS 已签名 DMG 和 ZIP</th><td>已实现；Apple 关卡属于<a href="developer-id.zh.html">外部</a></td></tr>
 <tr><th scope="row">Windows 桌面</th><td>已实现，v1.2.0 首次发布；未在真实 Windows 上运行过。<a href="windows-support.zh.html#implementation-status">Windows 支持</a></td></tr>
-<tr><th scope="row">薄壳和 seed</th><td>已实现，Linux App 从 v1.1.0 起使用，Windows App 从 v1.2.0 起使用。打包后的外壳通过 macOS 冒烟；Linux deb 和 AppImage 在 arm64 的 Xvfb 下通过。待完成：x86_64 Linux 安装包、真实 Windows 运行，以及 macOS App 转为薄壳前的隐私授权门禁（<a href="developer-id.zh.html">Developer ID</a>）。supervisor 中仍有 <code translate="no">legacy_app</code> 和对 App 的依赖</td></tr>
+<tr><th scope="row">薄壳和 seed</th><td>已实现，Linux App 从 v1.1.0 起使用，Windows App 从 v1.2.0 起使用。打包后的外壳通过 macOS 冒烟；Linux deb 和 AppImage 在 arm64 的 Xvfb 下通过。签名的 macOS App 默认是薄壳。待完成：x86_64 Linux 安装包、真实 Windows 运行，以及 macOS 隐私授权检查（<a href="developer-id.zh.html">Developer ID</a>）。supervisor 中仍有 <code translate="no">legacy_app</code> 和对 App 的依赖</td></tr>
 <tr><th scope="row">Linux 桌面</th><td>已实现，v1.1.0 首次发布。Linux 上的更新激活和回退还需要再跑一次端到端验证</td></tr>
 <tr><th scope="row">Release 工作流</th><td>独立任务和未签名形态已实现并作为脚本测试；工作流本身还没有在 GitHub 上运行过</td></tr>
 <tr><th scope="row">每个文件一份</th><td>已实现；第一个不再带无版本号副本和各任务校验文件的发行版是 v1.3.0。等受支持的版本里没有哪个 <code translate="no">openprogram upgrade</code> 还要运行时 <code translate="no">.sha256</code>，它们也可以去掉</td></tr>
-<tr><th scope="row"><code translate="no">openprogram update</code></th><td>遗留命令：处理函数导入的辅助函数已不存在，会抛 <code translate="no">ImportError</code>。更新命令是 <code translate="no">upgrade</code></td></tr>
 </tbody>
 </table>
 <p class="note">范围之外：App Store、凭据存储集成、替换 Python 或 Electron、按 Program 的进程隔离、自动安装第三方 Program。</p>

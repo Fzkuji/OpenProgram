@@ -6,7 +6,10 @@ written before Codex had those records counts each ``token_count`` event's
 ``last_token_usage`` instead, skipping a snapshot whose running total did
 not move. In newer files each record comes before its ``token_count``, so
 once a file has shown a record its counts are not billed. ``token_count``
-also carries the plan windows (``rate_limits``) at the time it was written.
+also carries the plan windows (``rate_limits``) at the time it was written;
+the app-server's live reading (``runtime/harnesses/codex/rate_limits.py``)
+is the other source, and the store keeps the newer. Only the plan's own
+limit family (``limit_id`` ``codex``, or none) counts.
 """
 from __future__ import annotations
 
@@ -18,6 +21,12 @@ from typing import Iterable, Iterator
 
 from .common import cut_prompt, parse_ts, real_homes
 from .store import Batch, Call
+
+
+def _plan_family(limit_id: object) -> bool:
+    """Whether a ``rate_limits`` reading is the plan's own family (none named counts)."""
+    return not limit_id or str(limit_id).strip().lower().replace("-", "_") == "codex"
+
 
 AGENT = "codex"
 LABEL = "Codex"
@@ -112,8 +121,9 @@ def parse(path: str, lines: Iterable[bytes], state: dict, batch: Batch, main: bo
             _call(batch, state, f"r:{key}", d.get("timestamp"), usage)
         elif kind == "event_msg" and sub == "token_count":
             ts = parse_ts(d.get("timestamp"))
-            if isinstance(p.get("rate_limits"), dict) and ts is not None:
-                batch.observe_quota(ts, p["rate_limits"])
+            limits = p.get("rate_limits")
+            if isinstance(limits, dict) and ts is not None and _plan_family(limits.get("limit_id")):
+                batch.observe_quota(ts, limits)
             info = p.get("info")
             if state.get("records") or not isinstance(info, dict):
                 continue

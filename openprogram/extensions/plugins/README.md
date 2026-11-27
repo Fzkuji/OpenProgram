@@ -19,6 +19,7 @@ persisted state.
 ## Files in this directory
 
 - **`autoupdate.py`** — Plugin auto-update
+- **`commands.py`** — Bridge the existing plugin loader's ``contrib._commands`` list into
 - **`hooks.py`** — A plugin's hooks: shell commands subscribed to bus events
 - **`inspect.py`** — What a plugin can contain, and how entries are exposed, read from the live registries
 - **`installer.py`** — Plugin installer

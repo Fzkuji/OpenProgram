@@ -79,12 +79,12 @@ def test_a_universal_python_under_rosetta_is_x86_64(slice_: str) -> None:
 
 def test_the_build_and_the_updater_ask_the_interpreter(monkeypatch) -> None:
     from openprogram.host._platform import environment
-    from openprogram.operations.self_update.official import assets
+    from openprogram.operations.self_update.official.repository import current_platform
 
     # The machine lies the way Windows on Arm does to an x64 Python.
     monkeypatch.setattr(platform, "machine", lambda: "ARM64" if interpreter_architecture() == "x86_64" else "AMD64")
     assert environment.managed_release_target()[1] == interpreter_architecture()
-    assert assets.current_platform().endswith("-" + interpreter_architecture())
+    assert current_platform().endswith("-" + interpreter_architecture())
     target = subprocess.run([sys.executable, "-I", str(ROOT / "scripts/release/runtime-wheels.py"), "target"],
                             capture_output=True, text=True, check=True).stdout.strip()
     assert target.endswith("-" + interpreter_architecture())
@@ -93,7 +93,7 @@ def test_the_build_and_the_updater_ask_the_interpreter(monkeypatch) -> None:
 @pytest.mark.parametrize("relative", [
     "scripts/release/runtime-wheels.py",
     "scripts/release/verify-product-runtime.py",
-    "openprogram/operations/self_update/official/assets.py",
+    "openprogram/operations/self_update/official/repository.py",
     "openprogram/operations/self_update/delivery/controller_bundle.py",
 ])
 def test_nothing_that_picks_a_package_reads_the_machine(relative: str) -> None:

@@ -17,14 +17,14 @@ from pathlib import Path
 import pytest
 
 from openprogram.operations.worker import lifecycle, runner
-from openprogram.operations.worker import ports
+from openprogram.host.worker import ports
 from openprogram.interfaces.cli.commands.services import web as web_command
 
 
 # ---- recognising the worker ------------------------------------------------
 
 def test_the_holder_pid_reads_while_another_handle_holds_the_lock(tmp_path, monkeypatch):
-    from openprogram.operations.worker import lock as worker_lock
+    from openprogram.host.worker import lock as worker_lock
 
     lock_file = tmp_path / "worker.lock"
     monkeypatch.setattr(worker_lock, "lock_path", lambda: lock_file)
@@ -146,19 +146,24 @@ def test_the_worker_moves_off_a_chosen_port_and_refuses_a_set_one(state, monkeyp
 def test_a_pid_file_without_the_lock_is_not_the_worker(tmp_path, monkeypatch):
     import os
 
-    from openprogram.operations.worker import lock as worker_lock
+    from openprogram.host.worker import lock as worker_lock
 
     monkeypatch.setattr(worker_lock, "lock_path", lambda: tmp_path / "worker.lock")
-    monkeypatch.setattr(lifecycle, "read_holder_pid", lambda: None)
+    from openprogram.host.worker import process
+
+    monkeypatch.setattr(process, "read_holder_pid", lambda: None)
     pid_file = tmp_path / "worker.pid"
     pid_file.write_text(f"{os.getpid()}\n0\n", encoding="utf-8")
     monkeypatch.setattr(lifecycle.paths, "pid_path", lambda: pid_file)
-    assert lifecycle.current_worker_pid() is None
+    assert process.current_worker_pid() is None
 
 
 def test_a_listener_without_this_profiles_worker_is_never_reported_as_ours(monkeypatch):
+    from openprogram.host.worker import process
+
+    monkeypatch.setattr(process, "current_worker_pid", lambda: None)
     monkeypatch.setattr(lifecycle, "current_worker_pid", lambda: None)
-    assert lifecycle.read_worker_port() is None
+    assert process.read_worker_port() is None
     assert lifecycle.find_running_webui() == (None, None, "none")
 
 

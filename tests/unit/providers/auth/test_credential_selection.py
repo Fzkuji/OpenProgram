@@ -8,6 +8,7 @@ import time
 import pytest
 
 from openprogram.models.auth import selection
+from openprogram.models.providers.streaming import credential_failover
 from openprogram.models.auth.credential_provider import (
     CredentialProvider, set_credential_provider_for_testing,
 )
@@ -30,7 +31,7 @@ def store(tmp_path, monkeypatch):
     sessions = SessionStore(tmp_path / "sessions")
     monkeypatch.setattr("openprogram.state.store.session.session_store.shared._default_store",
                         sessions, raising=False)
-    monkeypatch.setattr(selection.asyncio, "sleep", _no_sleep)
+    monkeypatch.setattr(credential_failover.asyncio, "sleep", _no_sleep)
     selection.forget_bindings()
     value.sessions = sessions
     yield value
@@ -222,7 +223,7 @@ def _attempt(failures: dict[str, list[BaseException]], seen: list[str]):
 def _run(attempt, **opts):
     async def go():
         events = []
-        async for event in selection.with_credential(_model(), SimpleStreamOptions(**opts), attempt):
+        async for event in credential_failover.with_credential(_model(), SimpleStreamOptions(**opts), attempt):
             events.append(event)
         return events
     return asyncio.run(go())
@@ -362,7 +363,7 @@ def test_a_key_back_within_a_minute_is_waited_for(store, monkeypatch):
         waited.append(seconds)
         selection.clear(P, a.id)  # the cooldown runs out while it waits
 
-    monkeypatch.setattr(selection.asyncio, "sleep", sleep)
+    monkeypatch.setattr(credential_failover.asyncio, "sleep", sleep)
     seen: list[str] = []
     events = _run(_attempt({}, seen))
     assert seen == ["a"] and 15 < waited[0] <= 20.1
@@ -406,7 +407,7 @@ def test_a_callers_own_key_is_sent_as_given(store):
     (_Http(400, "bad request"), "other"),
 ])
 def test_each_failure_is_classified(exc, kind):
-    assert selection.classify(exc).kind == kind
+    assert credential_failover.classify(exc).kind == kind
 
 
 # ---------------------------------------------------------------------------
@@ -421,7 +422,7 @@ def test_one_key_that_hits_a_rate_limit_waits_and_is_sent_again(store, monkeypat
         slept.append(seconds)
         selection.clear(P, a.id)  # the cooldown runs out while it waits
 
-    monkeypatch.setattr(selection.asyncio, "sleep", sleep)
+    monkeypatch.setattr(credential_failover.asyncio, "sleep", sleep)
     seen: list[str] = []
     events = _run(_attempt({"a": [_Http(429, "Too Many Requests")]}, seen))
     assert seen == ["a", "a"]
@@ -475,7 +476,7 @@ def test_a_pinned_key_that_is_only_cooling_is_a_rate_limit(store):
 
 
 def test_a_stored_error_never_holds_the_key(store, monkeypatch):
-    from openprogram.models.auth.manage import credential_row, provider_credentials
+    from openprogram.models.listing.manage import credential_row, provider_credentials
     secret = "sk-proj-SECRETSECRETSECRET0123456789"
     a = _key(store, "a", value=secret)
     monkeypatch.setenv("TESTPROV_ECHO", "x")
@@ -509,7 +510,7 @@ def test_programs_and_sub_agents_spend_the_conversations_pinned_key(store):
 
 
 def test_a_card_lists_a_key_that_is_not_in_use(store):
-    from openprogram.models.usage.provider_status import in_use, keys_of
+    from openprogram.models.listing.provider_status import in_use, keys_of
     a, b = _key(store, "a"), _key(store, "b")
     store.update(P, a.id, lambda r: setattr(r, "enabled", False))
     rows = keys_of(P)
@@ -540,20 +541,6 @@ def test_a_runtime_is_made_while_the_only_key_cools_down(store, monkeypatch):
         create_runtime(provider="openai")
 
 
-def test_a_sign_in_in_a_quota_hold_still_makes_its_runtime(store):
-    from openprogram.models.providers.adapters.openai_codex import credentials as codex
-    login = store.add_credential(Credential(
-        provider_id="openai-codex", kind="oauth",
-        payload=CredentialData(kind="oauth", auth_value="t", data={"refresh_token": "r"})))
-    selection.mark("openai-codex", login.id, "quota", until_ms=int(time.time() * 1000) + 3600_000)
-    codex.require_sign_in()
-    store.remove_credential("openai-codex", login.id)
-    store.add_credential(Credential(provider_id="openai-codex", kind="api_key",
-                                    payload=CredentialData(kind="api_key", auth_value="sk-plain-0001")))
-    with pytest.raises(AuthConfigError):
-        codex.require_sign_in()
-
-
 def test_a_pin_to_a_key_that_is_gone_says_how_to_get_back_to_auto(store):
     sid = _session(store)
     _key(store, "a")
@@ -573,7 +560,7 @@ def test_a_pinned_key_that_is_turned_off_is_a_setting_not_a_failed_sign_in(store
 
 
 def test_a_key_that_is_an_environment_variables_value_is_stored_and_listed_once(store, monkeypatch):
-    from openprogram.models.auth import manage
+    from openprogram.models.listing import manage
     monkeypatch.setattr("openprogram.models.auth.login.login_method_registry.env_vars",
                         lambda provider: ["TESTPROV_API_KEY"])
     monkeypatch.setenv("TESTPROV_API_KEY", "sk-from-the-environment-01")
@@ -586,7 +573,7 @@ def test_a_key_that_is_an_environment_variables_value_is_stored_and_listed_once(
 def test_a_report_with_no_credential_named_is_the_only_or_active_keys(store, monkeypatch):
     from types import SimpleNamespace
 
-    from openprogram.models.auth import manage
+    from openprogram.models.listing import manage
     from openprogram.models.usage import quota
 
     report = lambda account: SimpleNamespace(account=account, wire=lambda now: {"limits": [{"label": account or "unnamed"}]})

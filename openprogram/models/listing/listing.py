@@ -132,15 +132,8 @@ def _browse_models_with_error(
             row["id"] = mid
             rows.append(row)
     else:
-        # No key or official API failed → last successful subscription
-        # catalogue, then models.dev. This keeps newly discovered subscription
-        # models visible across restarts and temporary auth/network failures.
-        from openprogram.models.providers.catalog.subscription_catalog import SUBSCRIPTION_PROVIDERS, load_catalog
-
-        if provider_id in SUBSCRIPTION_PROVIDERS and not error:
-            error = "No current subscription catalogue is available"
-        cached, _ = load_catalog(provider_id)
-        rows = cached or [{**row, "id": mid} for mid, row in md.items()]
+        # No key or official API failed → models.dev.
+        rows = [{**row, "id": mid} for mid, row in md.items()]
 
     # Don't cache a failed fetch: an empty ``rows`` here is only trustworthy
     # when the official API actually answered (or models.dev filled in). When
@@ -162,7 +155,7 @@ def _base_capabilities(model_id: str, catalogue: dict[str, dict[str, Any]]) -> d
     model its id extends (``grok-4.7-build-fast`` → ``grok-4.7``).
 
     An official list often says nothing about what a model accepts, and a
-    row with no word on it is taken for text only: a subscription's own
+    row with no word on it is taken for text only: a provider's own
     variant of a model that reads images then refuses them."""
     bases = [known for known in catalogue if model_id.startswith(known + "-")]
     if not bases:
@@ -220,10 +213,8 @@ def _list_providers() -> list[dict[str, Any]]:
          plus anything with rows in the runtime registry. Enumerated
          from the shipped dirs, NOT from ``ENABLED_MODELS`` — the
          registry is enabled-only since the enabled-models migration,
-         so a fresh install has it empty and the subscription providers
-         (openai-codex / claude-code / gemini-subscription, none of
-         which models.dev lists) must still get a sidebar row to log
-         into.
+         so a fresh install has it empty and a shipped provider models.dev
+         does not list must still get a sidebar row to add a key to.
 
       2. **Community catalogue** (``sources.models_dev``) — every
          provider models.dev knows about, including ones we don't
@@ -233,12 +224,13 @@ def _list_providers() -> list[dict[str, Any]]:
          ``fireworks`` or ``together`` without us shipping a code
          change first.
 
-    Static-registry entries take precedence on id collisions (so e.g.
-    our ``openai-codex`` keeps its OpenProgram-specific routing rather
-    than getting overwritten by models.dev's ``openai`` row).
+    Static-registry entries take precedence on id collisions (a shipped
+    provider keeps its OpenProgram-specific routing rather than getting
+    overwritten by models.dev's row).
     """
     from openprogram.models.providers import get_providers, get_models
     from openprogram.models.auth.account.aliases import resolve as _resolve_alias
+    from openprogram.models.auth.provider_policy import is_withdrawn
     from openprogram.models.auth.login.login_method_registry import login_method_payload as _login_methods
 
     from openprogram.models.providers.catalog.metadata import provider_base_url
@@ -321,9 +313,13 @@ def _list_providers() -> list[dict[str, Any]]:
     seen: set[str] = set()
     for pid in sorted(set(get_providers()) | _shipped_provider_ids()):
         # An id that's a known alias of another provider (e.g. legacy
-        # ``chatgpt-subscription`` → ``openai-codex``) must not surface as its
+        # ``bailian`` → ``alibaba-token-plan-cn``) must not surface as its
         # own sidebar row — it's the same service. The canonical id carries it.
         if _resolve_alias(pid) != pid:
+            continue
+        # A withdrawn provider (see provider_policy) can still be
+        # named by an old setting; it is not listed, like an unknown id.
+        if is_withdrawn(pid):
             continue
         seen.add(pid)
         pcfg = cfg.get(pid, {})
@@ -358,6 +354,10 @@ def _list_providers() -> list[dict[str, Any]]:
         if pid in seen:
             continue
         if _resolve_alias(pid) != pid:
+            continue
+        # A withdrawn provider (see provider_policy) can still be
+        # named by an old setting; it is not listed, like an unknown id.
+        if is_withdrawn(pid):
             continue
         seen.add(pid)
         pcfg = cfg.get(pid, {})
@@ -467,7 +467,6 @@ def list_models_for_provider(
         # Settings must render without waiting for an authenticated network
         # request. Explicit Fetch remains the remote refresh entry point.
         from .provider_models import _models_dev_for
-        from openprogram.models.providers.catalog.subscription_catalog import load_catalog
 
         with _browse_lock:
             cached = _browse_cache.get(provider_id)
@@ -475,10 +474,9 @@ def list_models_for_provider(
         if cached_rows is not None:
             all_rows = cached_rows
         else:
-            saved, _ = load_catalog(provider_id)
-            all_rows = saved or ([] if is_local_provider(provider_id) else [
+            all_rows = [] if is_local_provider(provider_id) else [
                 dict(row, id=mid) for mid, row in _models_dev_for(provider_id).items()
-            ])
+            ]
     else:
         all_rows = _browse_models(provider_id, force_refresh=force_refresh)
     present = {r.get("id") for r in all_rows}

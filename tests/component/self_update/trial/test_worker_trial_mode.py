@@ -6,7 +6,7 @@ import time
 
 from openprogram.operations.self_update.delivery import launcher
 from openprogram.operations.self_update.trial import instance
-from openprogram.operations.self_update.versions.layout import Layout
+from openprogram.host._platform.runtime_layout import Layout
 from openprogram.operations.worker.runner import trial_mode
 
 

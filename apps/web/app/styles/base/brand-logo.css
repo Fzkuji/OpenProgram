@@ -1,0 +1,6 @@
+/* A logo with a picture for each theme (BrandLogo.darkUrl) shows the one that matches the
+ * app's theme; dark is the default, as Tailwind's `dark:` takes it, until a light theme is set. */
+:root[data-theme-mode="light"] [data-logo-theme="dark"],
+:root:not([data-theme-mode="light"]) [data-logo-theme="light"] {
+  display: none;
+}

@@ -42,8 +42,10 @@ from __future__ import annotations
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from enum import StrEnum
+from enum import Enum, StrEnum
 from typing import Any
+
+from openprogram.state import model_facts
 
 
 class MemoryWriteFailureCode(StrEnum):
@@ -121,8 +123,6 @@ def classify_memory_write_failure(
     exc: BaseException,
 ) -> MemoryWriteFailureClassification:
     """Map a runtime exception to the closed memory-writer taxonomy."""
-    from openprogram.models.providers.utils.failures.errors import ErrorReason, classify_error
-
     try:
         from .management.transaction import TransactionError
     except ImportError:  # pragma: no cover - base backend can load alone
@@ -140,33 +140,29 @@ def classify_memory_write_failure(
             or getattr(exc, "retryable", False) is True
         )
         if code is MemoryWriteFailureCode.EMBEDDING_UNAVAILABLE:
-            _reason, retryable = classify_error(exc.__cause__ or exc)
+            _reason, retryable = model_facts.classify_failure(exc.__cause__ or exc)
         return MemoryWriteFailureClassification(code, retryable)
 
+    # A model failure names its reason with an ``ErrorReason`` (a string
+    # enum of the models layer) or its plain value.
     explicit_reason = getattr(exc, "reason", None)
-    try:
-        model_reason = ErrorReason(
-            explicit_reason.value
-            if isinstance(explicit_reason, ErrorReason)
-            else explicit_reason
-        )
-    except (TypeError, ValueError):
-        model_reason = None
-    if model_reason is not None:
+    if isinstance(explicit_reason, Enum):
+        explicit_reason = explicit_reason.value
+    if isinstance(explicit_reason, str) and explicit_reason in _MODEL_REASON_CODES:
         verdict = getattr(exc, "retryable", None)
         if not isinstance(verdict, bool):
-            _classified, verdict = classify_error(exc.__cause__ or exc)
+            _classified, verdict = model_facts.classify_failure(exc.__cause__ or exc)
         return MemoryWriteFailureClassification(
-            _MODEL_REASON_CODES[model_reason.value], bool(verdict),
+            _MODEL_REASON_CODES[explicit_reason], bool(verdict),
         )
 
-    classified_reason, classified_retryable = classify_error(
+    classified_reason, classified_retryable = model_facts.classify_failure(
         exc.__cause__ or exc
     )
-    if classified_reason is not ErrorReason.UNKNOWN:
+    if classified_reason != model_facts.UNKNOWN_REASON:
         verdict = getattr(exc, "retryable", None)
         return MemoryWriteFailureClassification(
-            _MODEL_REASON_CODES[classified_reason.value],
+            _MODEL_REASON_CODES[classified_reason],
             classified_retryable if not isinstance(verdict, bool) else verdict,
         )
     if isinstance(exc, ValueError):

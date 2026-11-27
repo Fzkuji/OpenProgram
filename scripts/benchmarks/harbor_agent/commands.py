@@ -114,7 +114,7 @@ DEFAULT_GIT_URL = "https://github.com/Fzkuji/OpenProgram"
 #: ``<PROVIDER>_API_KEY`` (``openprogram/models/providers/settings/
 #: env_api_keys.py``); ``key_env`` in the agent kwargs names any other.
 _KEY_ENV = {
-    "google": "GEMINI_API_KEY", "gemini-subscription": "GEMINI_API_KEY",
+    "google": "GEMINI_API_KEY",
     "vercel-ai-gateway": "AI_GATEWAY_API_KEY", "huggingface": "HF_TOKEN",
     "kimi-coding": "KIMI_API_KEY", "kimi_coding": "KIMI_API_KEY",
     "opencode-go": "OPENCODE_API_KEY",
@@ -546,7 +546,6 @@ _STALLED = re.compile(r"\bno \S+(?: \S+){0,2} (?:event|response|bytes) for \d+(?
 #: store that could not be read is OpenProgram's own failure (``None``).
 RECORDED_KINDS: dict[str, str | None] = {
     "stream_idle": "stalled",
-    "stream_total": "stalled",
     "model_unavailable": "model_not_found",
     "auth": "authentication",
     "memory_unavailable": None,

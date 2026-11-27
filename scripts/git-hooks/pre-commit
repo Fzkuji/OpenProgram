@@ -7,6 +7,21 @@ if test "$(git symbolic-ref -q HEAD)" = "refs/heads/main"; then
   exit 1
 fi
 
+# Staged Python under openprogram/ must keep the layers lower triangular: no
+# import of a higher layer, no cycle between the parts of one layer. Like the
+# docs check, only a real finding blocks.
+common_dir="$(git rev-parse --path-format=absolute --git-common-dir)"
+python="$(dirname "$common_dir")/.venv/bin/python"
+if test -x "$python" && test -f scripts/testing/layer_check.py \
+  && ! git diff --cached --quiet --diff-filter=ACMR -- 'openprogram/*.py'; then
+  "$python" -B -m scripts.testing.layer_check --staged
+  case "$?" in
+    0) ;;
+    1) exit 1 ;;
+    *) echo "layer check failed to run; not blocking this commit" >&2 ;;
+  esac
+fi
+
 # Staged docs must pass the docs check. It reads the index, so another
 # session's unsaved page cannot stop this commit. The baseline and the policy
 # are gated with them: both decide what the check lets through. Only a real

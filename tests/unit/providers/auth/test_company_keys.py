@@ -274,7 +274,7 @@ def test_the_persons_placement_comes_before_the_name():
 
 def test_a_moved_request_uses_only_the_key_it_follows(store):
     from types import SimpleNamespace
-    from openprogram.models.auth.selection import _Run
+    from openprogram.models.providers.streaming.credential_failover import _Run
     first = store.add_credential(_key("minimax", "sk-cp-own-0123456789"))
     other = store.add_credential(_key("minimax", "sk-cp-followed-0123456789"))
     opts = SimpleNamespace(session_id=None, only_credentials=frozenset({other.id}), credential=None)

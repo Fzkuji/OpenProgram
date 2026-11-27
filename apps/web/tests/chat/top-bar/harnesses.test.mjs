@@ -27,7 +27,7 @@ test("a harness's models pin its own provider, which shows its maker's logo", ()
   assert.equal(H.harnessOf("codex-harness"), "codex");
   assert.equal(H.harnessOf("openai"), null);
   assert.ok(H.isHarnessProvider("codex-harness"));
-  assert.ok(!H.isHarnessProvider("openai-codex"));
+  assert.ok(!H.isHarnessProvider("openai"));
   assert.equal(H.harnessMark("codex-harness"), "openai");
   assert.equal(H.harnessMark("deepseek"), "deepseek");
 });

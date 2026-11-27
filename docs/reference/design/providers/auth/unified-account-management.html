@@ -20,7 +20,7 @@
 <li class="flow-end"><strong>Strategy</strong><small><code translate="no">in_order</code>, <code translate="no">evenly</code>, <code translate="no">least_used</code> (fewest uses today)</small></li>
 </ol>
 <p>The binding and the pin live in the session's metadata (<code translate="no">credential_binding</code>, <code translate="no">credential_pin</code>); a call reads the conversation in its context before the cache key a <code translate="no">Runtime</code> sends (<code translate="no">op-…</code>), and a child session follows its <code translate="no">parent_session_id</code> up to the conversation, so programs, agent methods, sub-agents and Goal turns spend the conversation's pinned or bound key.</p>
-<p>One <code translate="no">with_credential()</code> (<code translate="no">models/auth/selection.py</code>) wraps every adapter's stream; adapter SDKs do not retry on their own.</p>
+<p>One <code translate="no">with_credential()</code> (<code translate="no">models/providers/streaming/credential_failover.py</code>) wraps every adapter's stream; adapter SDKs do not retry on their own.</p>
 <h2>What a failure does</h2>
 <table class="stack fixed">
 <thead><tr><th scope="col">Failure</th><th scope="col">Credential</th><th scope="col">Request</th></tr></thead>
@@ -46,7 +46,7 @@
 <tr><th scope="row">Usage</th><td>Each usage row records <code translate="no">credential_id</code>; quota is read per credential</td></tr>
 </tbody>
 </table>
-<p>A pasted key is checked with <code translate="no">POST /api/providers/{p}/credentials/check-key</code>, which stores nothing; Add key or Replace key stores it with its name in one request and reuses that check. Adding a sign-in reuses <code translate="no">/api/providers/{p}/login/{start,poll,submit,cancel}</code>. Changes to the list go through <code translate="no">models/auth/manage.py</code>, which the routes and the CLI share.</p>
+<p>A pasted key is checked with <code translate="no">POST /api/providers/{p}/credentials/check-key</code>, which stores nothing; Add key or Replace key stores it with its name in one request and reuses that check. Adding a sign-in reuses <code translate="no">/api/providers/{p}/login/{start,poll,submit,cancel}</code>. Changes to the list go through <code translate="no">models/listing/manage.py</code>, which the routes and the CLI share.</p>
 <h2>Carry-over</h2>
 <p>The first start on this layout carries the old per-account files over once (<code translate="no">models/auth/carry_over.py</code>):</p>
 <ol>

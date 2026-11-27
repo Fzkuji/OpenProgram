@@ -125,8 +125,8 @@ def test_fresh_install_lists_shipped_providers(mem_cfg, _offline, monkeypatch):
     monkeypatch.setattr(P, "get_models", lambda pid: [])
     monkeypatch.setattr(cat, "is_configured", lambda pid: False)
     ids = {p["id"] for p in listing.list_providers()}
-    # Subscription providers models.dev doesn't list MUST still be present.
-    assert {"openai-codex", "gemini-subscription"} <= ids
+    # Sign-ins that call a vendor's internal endpoints are gone for good.
+    assert not ({"openai-codex", "gemini-subscription", "github-copilot", "xai-subscription"} & ids)
     assert "claude-code" not in ids
     # Regular shipped key providers too.
     assert {"openai", "anthropic", "deepseek", "atlascloud"} <= ids

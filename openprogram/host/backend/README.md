@@ -5,7 +5,7 @@
 ## Overview
 
 The ``bash`` tool (and any future sibling that wants to) routes
-command execution through ``get_active_backend().run(...)`` instead
+command execution through ``machines.get_active_backend().run(...)`` instead
 of calling ``subprocess`` directly. That keeps the tool code
 backend-agnostic.
 
@@ -15,12 +15,14 @@ Three backends ship out of the box:
     ssh      — ``ssh <target> "..."`` per call, one shared connection
 
 Which one runs is decided by the session's environment
-(``openprogram.host.machines``): a conversation runs on its project's
-machine, and the backend follows that machine's connection method. This
-module registers the methods ``ssh`` and ``docker`` with the device layer
-(their settings, check and labels) and keeps, in ``SHELLS``, which methods
-commands run through: ``local``, ``ssh`` and ``docker``. The device layer
-knows nothing of shells; it asks ``shell_for``.
+(``openprogram.host.machines``, which sits above the backends): a
+conversation runs on its project's machine, and the backend follows that
+machine's connection method. This module keeps, in ``SHELLS``, which
+methods commands run through: ``local``, ``ssh`` and ``docker``; the
+machines ask ``shell_for`` and ``backend_for``, build the backend for the
+running session (``machines.get_active_backend``) and register ``ssh``
+and ``docker`` as connection methods (``machines.shells``). The backends
+know nothing of configured machines.
 
 ## Files in this directory
 

@@ -28,6 +28,9 @@ Public surface:
   * :func:`load_mcp_servers` — call from worker startup
   * :func:`shutdown_mcp_servers` — call from worker shutdown
   * :func:`server_status` — diagnostic status dump (for the webui)
+
+The MCP server, through which outside programs talk to OpenProgram, is an
+interface: ``openprogram.interfaces.mcp_server``.
 """
 from __future__ import annotations
 

@@ -152,10 +152,14 @@ class ExecutionOperations:
         from contextlib import ExitStack
         goal_context = ExitStack()
         try:
-            if not isinstance(request, shared.ForcedToolActivation) and request.source in {"web", "tui", "acp"}:
-                from openprogram.programs.tools.planning.goal.chat import turn_context
-                goal_context.enter_context(turn_context(request.session_id, attempt.execution_id,
-                                                      getattr(request, "goal_context", None)))
+            if not isinstance(request, shared.ForcedToolActivation):
+                # What a Program binds for the length of a chat turn (the
+                # Goal the turn works for).
+                from openprogram.runtime.conversation import turn_hooks
+                for scope in turn_hooks.handlers("turn_scope"):
+                    entered = scope(request, attempt.execution_id)
+                    if entered is not None:
+                        goal_context.enter_context(entered)
             job_context = getattr(request, "_job_context", None)
             if isinstance(job_context, shared.Mapping):
                 from openprogram.models.usage.context import bind_goal
@@ -188,7 +192,7 @@ class ExecutionOperations:
                 ))
                 chain = job_context.get("chain")
                 if isinstance(chain, shared.Mapping):
-                    from openprogram.programs.tools.agents.send_message.send_message.depth import (
+                    from openprogram.runtime.jobs.chain_budgets import (
                         set_chain_ancestors,
                         set_chain_generations,
                         set_chain_messages,
@@ -202,7 +206,7 @@ class ExecutionOperations:
                 # A helper forked with the conversation keeps its parent's
                 # tool list (shared prompt cache); depth.forked_turn tells
                 # the agent tool to stay listed and refuse at run time.
-                from openprogram.programs.tools.agents.send_message.send_message.depth import (
+                from openprogram.runtime.jobs.chain_budgets import (
                     set_forked_turn,
                     set_helper_turn,
                 )

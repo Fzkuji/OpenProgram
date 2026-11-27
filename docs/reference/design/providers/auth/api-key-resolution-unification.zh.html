@@ -18,7 +18,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">函数</th><th scope="col">回答</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">selection.with_credential(model, opts, attempt)</code></th><td>每个模型请求：选择、准备、切换凭据（<a href="unified-account-management.zh.html">Provider 的 key 与故障切换</a>）</td></tr>
+<tr><th scope="row"><code translate="no">credential_failover.with_credential(model, opts, attempt)</code></th><td>每个模型请求：选择、准备、切换凭据（<a href="unified-account-management.zh.html">Provider 的 key 与故障切换</a>）</td></tr>
 <tr><th scope="row"><code translate="no">resolve_provider_key(provider)</code></th><td>key 形态的凭据（key、环境变量、辅助命令）或哨兵值，否则 <code translate="no">None</code>。不含登录 token，因为这些调用方发 <code translate="no">x-api-key</code> 或 Bearer，access token 会 401。</td></tr>
 <tr><th scope="row"><code translate="no">is_configured(provider_id)</code></th><td>有 key，或云端凭据链已满足</td></tr>
 <tr><th scope="row"><code translate="no">resolve_api_key_with_auth_store(provider_id)</code></th><td>模型列表和探测：请求此刻会用的任意类型 bearer，经 <code translate="no">resolve_api_key_sync</code></td></tr>
@@ -26,7 +26,7 @@
 <tr><th scope="row"><code translate="no">provider_id_for_env_var(env_var)</code></th><td>反查，取列出的第一个归属；非 LLM key 为 <code translate="no">None</code></td></tr>
 </tbody>
 </table>
-<p class="note">这些名称只在一张表里：<code translate="no">auth/login/login_method_registry.py</code>，和每个 provider 的连接方式放在一起。<code translate="no">openprogram/models/providers/settings/env_api_keys.py</code> 从它作答，运行时和服务端导入它不会循环。</p>
+<p class="note">这些名称只在一张表里：<code translate="no">auth/login/login_method_registry.py</code>，和每个 provider 的连接方式放在一起。<code translate="no">openprogram/models/auth/env_api_keys.py</code> 从它作答，运行时和服务端导入它不会循环。</p>
 
 <details>
 <summary><code translate="no">resolve_api_key_sync</code> 内部顺序</summary>

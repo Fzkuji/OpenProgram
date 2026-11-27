@@ -3,6 +3,7 @@ import plistlib
 
 import pytest
 
+from openprogram.host._platform import processes
 from openprogram.host._platform import terminal
 
 
@@ -10,7 +11,7 @@ def test_macos_bundle_metadata_does_not_require_a_macos_host(tmp_path, monkeypat
     contents = tmp_path / "OpenProgram.app" / "Contents"
     contents.mkdir(parents=True)
     (contents / "Info.plist").write_bytes(plistlib.dumps({"CFBundleShortVersionString": "0.8.1"}))
-    monkeypatch.setattr(terminal, "_windows_powershell", lambda *a, **kw: pytest.fail("unexpected Windows probe"))
+    monkeypatch.setattr(processes, "_windows_powershell", lambda *a, **kw: pytest.fail("unexpected Windows probe"))
     assert terminal.desktop_bundle_metadata(contents.parent) == (contents / "Resources", "0.8.1")
 
 
@@ -20,5 +21,5 @@ def test_windows_bundle_version_keeps_nonzero_revision(tmp_path, monkeypatch, na
     resources = tmp_path / "resources"
     resources.mkdir()
     (resources / "app.asar").write_bytes(b"fixture")
-    monkeypatch.setattr(terminal, "_windows_powershell", lambda *a, **kw: native)
+    monkeypatch.setattr(processes, "_windows_powershell", lambda *a, **kw: native)
     assert terminal.desktop_bundle_metadata(tmp_path) == (resources, expected)

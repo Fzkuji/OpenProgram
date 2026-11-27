@@ -1,10 +1,7 @@
 """Which native form a request uses to load a searched tool.
 
 A provider declares, per wire API, the native tool-search form its
-endpoint takes, under the ``tool_search`` key of its ``provider.json``::
-
-    "tool_search": {"openai-codex": "responses"}
-
+endpoint takes, under the ``tool_search`` key of its ``provider.json``.
 A model may opt out in its own table entry (``Model.tool_search = False``),
 or the provider may list model-id fragments that never take its form under
 the block's ``models_off`` key (Anthropic lists ``haiku``, as Claude Code
@@ -18,10 +15,6 @@ the request's API and the model does not opt out. Everything else gets
 ``None`` and keeps loading a searched tool into the tools array.
 
 Forms:
-  "responses"           — the Responses client-executed ``tool_search``:
-                          the search is a ``tool_search_call`` item and its
-                          result a ``tool_search_output`` carrying the
-                          loaded definitions.
   "anthropic-reference" — the Messages API's ``tool_reference``: a loaded
                           tool is appended to the tools array with
                           ``defer_loading: true`` and the search's result is
@@ -35,7 +28,7 @@ from typing import Any
 from openprogram.models.providers.settings.thinking_spec import _load_folded
 
 #: The forms an adapter knows how to render.
-FORMS = frozenset({"responses", "anthropic-reference"})
+FORMS = frozenset({"anthropic-reference"})
 
 
 @lru_cache(maxsize=None)

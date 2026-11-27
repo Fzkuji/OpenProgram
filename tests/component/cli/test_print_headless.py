@@ -166,6 +166,7 @@ def test_each_stop_signal_exits_128_plus_its_number():
     assert print_stop.stopped_exit_code(None) == 130
 
 
+@pytest.mark.slow
 @pytest.mark.skipif(os.name != "posix", reason="POSIX signals")
 @pytest.mark.parametrize("sig, code", [
     (signal.SIGINT, 130), (signal.SIGTERM, 143), (signal.SIGHUP, 129),

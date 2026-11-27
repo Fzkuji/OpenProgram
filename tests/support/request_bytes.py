@@ -39,8 +39,6 @@ WIRES = {
                       base_url="https://api.openai.com/v1"),
     "completions": dict(api="openai-completions", provider="openai",
                         base_url="https://api.openai.com/v1"),
-    "codex": dict(api="openai-codex", provider="openai-codex",
-                  base_url="https://chatgpt.com/backend-api"),
 }
 
 

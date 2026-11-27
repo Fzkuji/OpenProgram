@@ -117,7 +117,7 @@ def _decision(
 
 
 def _safe_display(value: str) -> str:
-    from openprogram.host.security.identity_header import normalize_identity_header_part
+    from openprogram.state.identity_header import normalize_identity_header_part
 
     return normalize_identity_header_part(str(value or ""))
 
@@ -142,7 +142,7 @@ def access_path(channel: str, account_id: str) -> Path:
 @contextmanager
 def _state_file_lock(channel: str, account_id: str):
     path = access_path(channel, account_id)
-    from openprogram.models.auth.credentials import _private_file_lock
+    from openprogram.state.private_files import _private_file_lock
     from openprogram.state.paths import get_state_dir
 
     with _private_file_lock(path, root=get_state_dir(), timeout=10):
@@ -165,7 +165,7 @@ def _rows(value: Any) -> dict[str, dict[str, Any]]:
 
 def _load(channel: str, account_id: str) -> dict[str, Any]:
     path = access_path(channel, account_id)
-    from openprogram.models.auth.credentials import _private_file_lock, _read_private_bytes
+    from openprogram.state.private_files import _private_file_lock, _read_private_bytes
     from openprogram.state.paths import get_state_dir
 
     try:
@@ -193,7 +193,7 @@ def _save(
 ):
     path = access_path(channel, account_id)
     payload = (json.dumps(data, indent=2, sort_keys=True) + "\n").encode("utf-8")
-    from openprogram.models.auth.credentials import _private_atomic_write
+    from openprogram.state.private_files import _private_atomic_write
     from openprogram.state.paths import get_state_dir
 
     return _private_atomic_write(

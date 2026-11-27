@@ -86,7 +86,7 @@
 <tbody>
 <tr><th scope="row">Compacted branch</th><td><code translate="no">[ROOT, S, kept tail…]</code></td></tr>
 <tr><th scope="row">Covered turns that loaded deferred tools</th><td>Left out with their turns. S carries the tools' names (<code translate="no">carried_tool_names</code>, written with S: most recently loaded or called first, cut where the definitions would pass 5% of the window), so every request still loads them</td></tr>
-<tr><th scope="row">The carried tools, on openai-codex</th><td>One <code translate="no">tool_search_call</code> / <code translate="no">tool_search_output</code> pair just before S, with the definitions the conversation first sent; the tools array stays as it was. Any other provider offers them in its tools array, and the request opens on S. A bounded background tail keeps only S of the covered part</td></tr>
+<tr><th scope="row">The carried tools</th><td>The provider offers them in its tools array, and the request opens on S. A bounded background tail keeps only S of the covered part</td></tr>
 <tr><th scope="row">Any checkout, any time</th><td>Deterministic from data; nothing depends on where HEAD was</td></tr>
 <tr><th scope="row">Summaries no chain reads</th><td>Never elide anything</td></tr>
 </tbody>
@@ -315,7 +315,7 @@
 <tr><th scope="row">Under the window a turn's requests only grow at the end; over it, one checkpoint and no per-result summary</th><td><code translate="no">tests/component/context/test_request_checkpoint_only.py</code></td></tr>
 <tr><th scope="row">A request is sized by the last single-pass count plus the change; a count of several passes, a failed reply's or an implausible one is not used</th><td><code translate="no">tests/unit/context/token_accounting/test_request_measure.py</code></td></tr>
 <tr><th scope="row">A request over the limit is fitted, history untouched; only a latest message over the window fails</th><td><code translate="no">tests/component/context/test_request_checkpoints.py</code></td></tr>
-<tr><th scope="row">S carries the tools its turns loaded, ordered and cut to the window; on openai-codex one pair before S keeps the tools array the same before and after compaction; any other provider reads S first</th><td><code translate="no">tests/unit/context/compaction/test_compaction_keeps_loaded_tools.py</code></td></tr>
+<tr><th scope="row">S carries the tools its turns loaded, ordered and cut to the window; the provider offers them in its tools array and reads S first</th><td><code translate="no">tests/unit/context/compaction/test_compaction_keeps_loaded_tools.py</code></td></tr>
 <tr><th scope="row">Compaction never moves HEAD</th><td>Scenario suite</td></tr>
 <tr><th scope="row"><code translate="no">covers_ids</code> never names a node off the summarized chain</th><td><code translate="no">tests/unit/dag/test_graph_builder_covers.py</code></td></tr>
 <tr><th scope="row">HEAD survives restart, session load, model switch, meta save</th><td><code translate="no">tests/integration/dag/test_dag_mutation_scenarios.py</code></td></tr>

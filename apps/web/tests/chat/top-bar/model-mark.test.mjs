@@ -27,8 +27,8 @@ async function mark(provider) {
 }
 
 test("a one-colour logo is a BrandMark masked in the text colour", async () => {
-  const html = await mark("openai-codex");
-  assert.match(html, /data-provider-logo="openai-codex"/);
+  const html = await mark("openai");
+  assert.match(html, /data-provider-logo="openai"/);
   assert.match(html, /data-brand-mark="fill"/);
   assert.match(html, /background-color:currentColor/);
   assert.match(html, /mask:url\(&quot;\/images\/providers\/openai\.svg&quot;\)/);
@@ -36,7 +36,7 @@ test("a one-colour logo is a BrandMark masked in the text colour", async () => {
 
 test("a logo fills its 16 px box", async () => {
   // OpenAI's ink is 24 x 23.79 units: 16 px wide, centred.
-  const html = await mark("openai-codex");
+  const html = await mark("openai");
   assert.match(html, /^<span style="width:16px;height:16px[;"]/);
   assert.match(html, /<span style="position:absolute;left:0;top:0\.07px;width:16px;height:16px;/);
 });
@@ -54,9 +54,9 @@ test("providers without a logo show the cpu glyph", async () => {
   }
 });
 
-test("local Ollama and the Gemini CLI use the logos already shipped", () => {
+test("local Ollama and Google use the logos already shipped", () => {
   assert.equal(providerLogo("ollama")?.url, "/images/providers/ollama.svg");
-  assert.equal(providerLogo("google-gemini-cli")?.url, "/images/providers/gemini-color.svg");
+  assert.equal(providerLogo("google")?.url, "/images/providers/gemini-color.svg");
 });
 
 test("the model chip draws the mark, not the old speech bubble", () => {

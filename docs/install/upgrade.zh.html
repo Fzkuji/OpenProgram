@@ -12,7 +12,7 @@
 <tr><th scope="row">源码 checkout</th><td data-label="更新"><a href="development-checkout.zh.html"><code translate="no">openprogram dev deploy</code></a> 更新开发版，或 <a href="../server/upgrading.zh.html"><code translate="no">openprogram upgrade</code></a>。自动重启。</td><td data-label="回退"><a href="conversational-self-update.zh.html#undoing-a-change">撤销修改</a></td></tr>
 </tbody>
 </table>
-<p class="note">stable 安装只在已发布版本之间移动，不跟随 <code translate="no">origin/main</code>。<code translate="no">~/.openprogram</code> 下的状态保持不变。终端命令本身坏了时，重装最新版本：</p>
+<p class="note">安装从不直接跟随 <code translate="no">origin/main</code>：只接收<a href="#which-updates">在 GitHub Releases 上发布的版本</a>。<code translate="no">~/.openprogram</code> 下的状态保持不变。终端命令本身坏了时，重装最新版本：</p>
 <pre translate="no"><code>curl -fsSL https://fzkuji.github.io/OpenProgram/install | sh
 irm https://fzkuji.github.io/OpenProgram/install.ps1 | iex</code></pre>
 
@@ -20,7 +20,8 @@ irm https://fzkuji.github.io/OpenProgram/install.ps1 | iex</code></pre>
 <summary>App 更新器做了什么</summary>
 <ul>
 <li>macOS：选择架构匹配的完整 DMG，下载到你指定的位置，验证字节数和 SHA-256 后打开。应用外壳和完整 product runtime 一起替换。未签名安装包：<a href="install.zh.html#macos">仍要打开</a>。</li>
-<li>Windows、Linux：在版本库里运行 <code translate="no">openprogram upgrade</code>，只有发行版需要更新的外壳时才取 App 文件。</li>
+<li>App 在启动 30 秒后检查更新，之后每小时一次。</li>
+<li>Windows、Linux：在版本库里运行 <code translate="no">openprogram upgrade</code>；更新的 App 外壳随同一次更新到达，重启时换上。只有 deb 在发行版需要更新的外壳时取 App 文件。</li>
 <li>Windows App 文件：验证 release metadata、文件长度和 SHA-256。已签名的 App 还要求同一发布者的有效 Authenticode 签名；只有未签名构建的 App 才接受未签名的安装程序。</li>
 <li>下载走系统代理，断线后接着下。GitHub API 拒绝或不响应时，App 通过 GitHub 网页找到发行版。</li>
 </ul>
@@ -107,34 +108,33 @@ irm https://fzkuji.github.io/OpenProgram/install.ps1 | iex</code></pre>
 </details>
 
 <h2 id="official-updates">版本库安装的正式更新</h2>
-<p>把 release 当作一组签名文件接收，并带上你自己的提交。Windows 和 Linux App 这样更新。macOS App 和普通终端安装走上面的路径。</p>
+<p>只下载变了的文件，并带上你自己的提交。Windows 和 Linux App 这样更新，macOS App 从第一个薄外壳构建的版本起也这样更新。其他 macOS App 和普通终端安装走上面的路径。</p>
 <pre translate="no"><code>openprogram upgrade --check
 openprogram upgrade
-openprogram upgrade --from &lt;directory&gt;     # files already on this computer</code></pre>
+openprogram upgrade --from &lt;directory&gt;     # a local copy of the update files</code></pre>
 <table class="stack fixed">
-<thead class="sr"><tr><th scope="col">Release 文件</th><th scope="col">内容</th></tr></thead>
+<thead class="sr"><tr><th scope="col">更新文件</th><th scope="col">内容</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">version-&lt;platform&gt;.tar.zst</code></th><td>某平台的封存版本，例如 <code translate="no">macos-arm64</code></td></tr>
-<tr><th scope="row"><code translate="no">repo.bundle</code></th><td>到这次 release 为止的官方源码线</td></tr>
-<tr><th scope="row"><code translate="no">base-&lt;platform&gt;.tar.zst</code></th><td>Python 和第三方包。只有这台电脑没有这个 base 时才下载</td></tr>
-<tr><th scope="row"><code translate="no">toolchain-&lt;platform&gt;.tar.zst</code></th><td>Web 构建的 <code translate="no">node_modules</code>。只有你有自己的提交要构建时才下载</td></tr>
-<tr><th scope="row"><code translate="no">SHA256SUMS</code></th><td>上面每个文件的哈希</td></tr>
-<tr><th scope="row"><code translate="no">update-manifest.json</code> <code translate="no">update-manifest.json.sig</code></th><td>Release 内容及其 Ed25519 签名</td></tr>
+<tr><th scope="row"><code translate="no">channel.json</code></th><td>最新的版本，Ed25519 签名就在文件里</td></tr>
+<tr><th scope="row"><code translate="no">pack-&lt;hash&gt;.pack</code></th><td>源码、构建好的 Web、Python 及其依赖包，每个文件以哈希命名。只下载这台电脑缺少的文件</td></tr>
 </tbody>
 </table>
-<p class="note">先检查签名、校验和及本平台需要的每个文件。未签名或被改动的 release 不造成任何变化。</p>
+<p class="note">先检查签名，再按哈希检查每个文件。未签名、被改动或更旧的 release 不造成任何变化。<a href="../reference/design/distribution/automatic-updates.zh.html">更新如何发布</a>。</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">情况</th><th scope="col">结果</th></tr></thead>
 <tbody>
-<tr><th scope="row">没有自己的提交</th><td>解包预构建版本并试运行</td></tr>
+<tr><th scope="row">没有自己的提交</th><td>用预构建的 Web 在本机构建这个版本，再试运行</td></tr>
 <tr><th scope="row">有自己的提交</th><td>按从旧到新应用到 release 上，再构建并试运行</td></tr>
 <tr><th scope="row">提交冲突</th><td>保存它，其余继续</td></tr>
 <tr><th scope="row">release 已包含</th><td>跳过</td></tr>
 <tr><th scope="row">构建或试运行失败</th><td>保存最新的提交，用其余的重试，最后退到未修改的 release。重试 5 次后，剩余提交一起保存，试未修改的 release。</td></tr>
 <tr><th scope="row">未修改的 release 失败</th><td>什么都不变：仍是当前版本，提交还在</td></tr>
-<tr><th scope="row">需要更新的签名外壳，或 Python 小版本与启动器不同</th><td>等外壳更新：不解包，官方源码线不动</td></tr>
+<tr><th scope="row">需要更新的签名外壳，或 Python 小版本与启动器不同</th><td>等下一个 App 安装包（<code translate="no">waiting_for_shell</code>）：什么都不变</td></tr>
+<tr><th scope="row">这台电脑的 Python 和依赖包还没发布</th><td>等待（<code translate="no">waiting_for_runtime</code>）：什么都不变</td></tr>
 </tbody>
 </table>
+<h3 id="which-updates">会收到哪些更新</h3>
+<p>只有在 <a href="https://github.com/Fzkuji/OpenProgram/releases">GitHub Releases</a> 上发布的版本会到达安装。两次发版之间同步到 GitHub 的代码不会。</p>
 <p class="note">结果列出带过去和保存的提交。保存的提交是 <code translate="no">&lt;state&gt;/runtime/unreplayable/&lt;release&gt;/&lt;commit&gt;.patch</code>，<code translate="no">git format-patch</code> 格式，可作为新改动应用。</p>
 
 <h2 id="other-routes">其他路径</h2>

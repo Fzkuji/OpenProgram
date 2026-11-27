@@ -34,6 +34,10 @@ export interface RecentsView {
   projectOrder: string[];
   projectSort: ProjectSort;
   pinnedProjects: string[];
+  /** The default project (where a chat with no project is saved) is
+   *  pinned until the person unpins it, so the list shows from the start
+   *  where such chats go. */
+  defaultUnpinned: boolean;
   projectSectionNames: string[];
   projectSections: Record<string, string>;
   sortDirection: "asc" | "desc";
@@ -57,6 +61,7 @@ export const DEFAULT_RECENTS_VIEW: RecentsView = {
   projectOrder: [],
   projectSort: "recency",
   pinnedProjects: [],
+  defaultUnpinned: false,
   projectSectionNames: [],
   projectSections: {},
   sortDirection: "desc",
@@ -84,6 +89,7 @@ function _read(): RecentsView {
       projectOrder: Array.isArray(p.projectOrder) && p.projectOrder.every((id) => typeof id === "string") ? [...new Set(p.projectOrder)] : [],
       projectSort: ["recency", "oldest", "name", "manual"].includes(p.projectSort ?? "") ? p.projectSort! : (Array.isArray(p.projectOrder) && p.projectOrder.length ? "manual" : "recency"),
       pinnedProjects: Array.isArray(p.pinnedProjects) ? [...new Set(p.pinnedProjects.filter((id) => typeof id === "string"))] : [],
+      defaultUnpinned: p.defaultUnpinned === true,
       projectSectionNames: Array.isArray(p.projectSectionNames) ? [...new Set(p.projectSectionNames.filter((name) => typeof name === "string" && name.trim() && name !== "__pinned__"))] : [],
       projectSections: p.projectSections && typeof p.projectSections === "object" && !Array.isArray(p.projectSections) ? Object.fromEntries(Object.entries(p.projectSections).filter(([, value]) => typeof value === "string")) : {},
       sortDirection: p.sortDirection === "asc" || p.sortDirection === "desc" ? p.sortDirection : p.sort === "title" ? "asc" : "desc",
@@ -98,6 +104,22 @@ function _read(): RecentsView {
   } catch {
     return DEFAULT_RECENTS_VIEW;
   }
+}
+
+/** The pinned projects' ids, the default project's among them unless it
+ *  was unpinned. */
+export function pinnedProjectIds(view: RecentsView, defaultId: string | null | undefined): string[] {
+  const ids = view.pinnedProjects.filter((id) => id !== defaultId);
+  return defaultId && !view.defaultUnpinned ? [defaultId, ...ids] : ids;
+}
+
+/** Pins or unpins a project; the default project's choice is kept apart. */
+export function setProjectPinned(id: string, pinned: boolean, isDefault: boolean): void {
+  const view = getRecentsView();
+  const rest = view.pinnedProjects.filter((other) => other !== id);
+  setRecentsView(isDefault
+    ? { pinnedProjects: rest, defaultUnpinned: !pinned }
+    : { pinnedProjects: pinned ? [...rest, id] : rest });
 }
 
 export function getRecentsView(): RecentsView {

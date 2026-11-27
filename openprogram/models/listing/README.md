@@ -61,8 +61,10 @@ The optional touch-points, only when something can't be derived:
 - **`detected.py`** — What Add provider offers before anything is typed
 - **`key_check.py`** — A key's check as one line, and what connecting a provider turns on
 - **`listing.py`** — Catalog listing
-- **`probe_log.py`** — The requests OpenProgram sends a provider on its own behalf
+- **`manage.py`** — Changing a provider's credential list, for the Providers page and the CLI
 - **`provider_models.py`** — models.dev enrichment for the live browse path
+- **`provider_status.py`** — One status per connected provider: health, quota, 30-day spend, keys
+- **`provider_views.py`** — Provider state where the chat and the detail page need it
 - **`setup_hints.py`** — Provider-specific setup instructions surfaced in the web UI's
 - **`test_provider.py`** — Connectivity probe
 - **`toggle.py`** — Enable / disable a provider or one of its models

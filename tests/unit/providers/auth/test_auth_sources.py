@@ -16,71 +16,10 @@ from pathlib import Path
 
 
 from openprogram.models.auth.sources import (
-    CodexCliSource,
     GhCliSource,
     QwenCliSource,
 )
 from openprogram.models.auth.sources.gh_cli import _parse_hosts_yml
-
-
-# ---- CodexCliSource -------------------------------------------------------
-
-def test_codex_source_imports_from_file(tmp_path: Path, monkeypatch):
-    # Force the "codex binary is on PATH" branch so the test asserts
-    # the imported-login path regardless of whether the test runner
-    # (e.g. GitHub Actions ubuntu image) actually has codex installed.
-    # Without this the CI box hits the fallback adoption path that
-    # tags the credential as ``oauth`` instead.
-    monkeypatch.setattr(
-        "openprogram.models.auth.sources.codex_cli._codex_binary_present",
-        lambda: True,
-    )
-    path = tmp_path / "codex" / "auth.json"
-    path.parent.mkdir()
-    path.write_text(json.dumps({
-        "tokens": {
-            "access_token": "A", "refresh_token": "R", "account_id": "acc_1",
-        }
-    }))
-    src = CodexCliSource(override_path=str(path))
-    [cred] = src.try_import(tmp_path)
-    assert cred.kind == "import"
-    assert cred.payload.data["store_path"] == str(path)
-    assert cred.payload.data["access_key_path"] == ["tokens", "access_token"]
-    assert cred.payload.data.get("expires_key_path", []) == []
-    assert cred.metadata["account_id"] == "acc_1"
-    assert cred.read_only is True
-
-
-def test_codex_source_missing_file_returns_empty(tmp_path):
-    src = CodexCliSource(override_path=str(tmp_path / "nope.json"))
-    assert src.try_import(tmp_path) == []
-
-
-def test_codex_source_corrupt_file_returns_empty(tmp_path):
-    path = tmp_path / "auth.json"
-    path.write_text("{not json")
-    src = CodexCliSource(override_path=str(path))
-    assert src.try_import(tmp_path) == []
-
-
-def test_codex_source_empty_tokens_returns_empty(tmp_path):
-    path = tmp_path / "auth.json"
-    path.write_text(json.dumps({"tokens": {}}))
-    src = CodexCliSource(override_path=str(path))
-    assert src.try_import(tmp_path) == []
-
-
-def test_codex_source_removal_does_not_delete_file(tmp_path):
-    path = tmp_path / "auth.json"
-    path.write_text(json.dumps({"tokens": {"access_token": "A", "refresh_token": "R"}}))
-    src = CodexCliSource(override_path=str(path))
-    [cred] = src.try_import(tmp_path)
-    steps = src.removal_steps(cred)
-    assert len(steps) == 1
-    assert steps[0].executable is False
-    assert steps[0].kind == "external_cli"
-    assert "codex logout" in steps[0].description
 
 
 # ---- QwenCliSource --------------------------------------------------------

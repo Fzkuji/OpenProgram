@@ -26,6 +26,7 @@ from __future__ import annotations
 from typing import Any, TYPE_CHECKING
 
 from openprogram.state.store.session.nodes import Call
+from openprogram.state.store.session.session_store.preview import message_preview
 
 if TYPE_CHECKING:
     from .session_store import SessionStore
@@ -56,26 +57,34 @@ class SessionNodeWriter:
         if pair is None:
             return
         session_log, idx = pair
-        if node.id in idx.nodes_by_id:
-            # A previous append may have updated the index before its history
-            # write failed. Replaying the same ID must complete persistence.
-            existing = idx.nodes_by_id[node.id]
-            session_log.write_history(existing.seq, existing.role, existing.id, existing.to_dict())
-            return
         meta = node.metadata or {}
         # The conv edge lives ONLY on the top-level field.
         predecessor = node.predecessor or ""
         caller = node.caller or meta.get("caller") or ""
-        from .session_store import _check_append_invariant
-        _check_append_invariant(self.session_id, idx, node, predecessor, caller)
-        seq = idx.append(node, predecessor=predecessor, caller=caller)
-        self.store.spill_large_node(self.session_id, node)
-        session_log.write_history(seq, node.role, node.id, node.to_dict())
-        activity_at = _time.time()
-        # A background append must not write its stale page selection back
-        # over a concurrent checkout. Merge only this append's metadata while
-        # holding the same durable lock used by branch/settings changes.
+        # The index entry, its history line and the head move are made
+        # under the conversation's write lock. Another thread of this
+        # process reading the conversation rebuilds the index from disk
+        # under the same lock when another process wrote; between an index
+        # append and its history line, that rebuild would drop the node
+        # from this process's index while its line still reached disk.
         with self.store._head_file_lock(session_log):
+            if node.id in idx.nodes_by_id:
+                # A previous append may have updated the index before its
+                # history write failed. Replaying the same ID must complete
+                # persistence.
+                existing = idx.nodes_by_id[node.id]
+                session_log.write_history(existing.seq, existing.role, existing.id, existing.to_dict())
+                return
+            from .session_store import _check_append_invariant
+            _check_append_invariant(self.session_id, idx, node, predecessor, caller)
+            seq = idx.append(node, predecessor=predecessor, caller=caller)
+            self.store.spill_large_node(self.session_id, node)
+            session_log.write_history(seq, node.role, node.id, node.to_dict())
+            activity_at = _time.time()
+            # A background append must not write its stale page selection
+            # back over a concurrent checkout. Merge only this append's
+            # metadata while holding the same durable lock used by
+            # branch/settings changes.
             durable = session_log.read_meta()
             if not caller and self.advance_head and not meta.get("structural"):
                 from .branch_config import advance_branch
@@ -96,8 +105,7 @@ class SessionNodeWriter:
         # insertion order after a refresh (new sessions sank to the bottom).
         fields: dict = {"updated_at": activity_at}
         if node.role == "user" and node.output:
-            text = str(node.output or "").strip().replace("\n", " ")
-            fields["preview"] = (text[:77] + "…") if len(text) > 80 else text
+            fields["preview"] = message_preview(str(node.output))
         self.store._update_index_entry(self.session_id, **fields)
         self.store._schedule_index_flush()
 

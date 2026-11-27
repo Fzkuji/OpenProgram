@@ -152,6 +152,40 @@ def test_process_cleans_up_after_a_writer_that_raised(memory):
     assert _stage_dirs() == before
 
 
+# ---- stages nobody can close ------------------------------------------
+
+
+def test_a_workspace_that_fails_to_open_leaves_no_stage(memory, monkeypatch):
+    from openprogram.state.memory.management import workspace as workspace_mod
+
+    def broken(self):
+        raise OSError("copy failed")
+
+    monkeypatch.setattr(workspace_mod.MemoryWorkspace, "_refresh_stage_locked", broken)
+    with pytest.raises(OSError):
+        workspace_mod.MemoryWorkspace(memory)
+    assert _stage_dirs() == set()
+
+
+def test_a_stage_whose_process_is_gone_is_removed(memory, monkeypatch):
+    """A process killed mid-write cannot close its stage, a copy of memory."""
+    from contextlib import closing
+
+    from openprogram.state.memory.management import workspace as workspace_mod
+
+    gone = os.path.join(tempfile.gettempdir(), "scriptorium-topics-999999-abc")
+    live = os.path.join(tempfile.gettempdir(), f"scriptorium-topics-{os.getppid()}-abc")
+    for stage in (gone, live):
+        os.makedirs(os.path.join(stage, "topics"))
+    monkeypatch.setattr(workspace_mod, "process_alive", lambda pid: pid != 999999)
+    monkeypatch.setattr(workspace_mod, "_orphans_removed", False)
+
+    with closing(workspace_mod.MemoryWorkspace(memory)):
+        pass
+
+    assert _stage_dirs() == {live}
+
+
 # -- the state file's own temporary ----------------------------------------
 
 

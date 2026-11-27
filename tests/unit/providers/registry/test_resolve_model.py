@@ -13,7 +13,6 @@ from __future__ import annotations
 import pytest
 
 from openprogram.runtime.conversation.turn_runtime import _resolve_model
-from openprogram.models.providers.catalog.models import get_model
 from openprogram.models.providers.utils.failures.errors import ErrorReason, LLMError
 
 from tests.component.providers._registry_fixture import install_registry
@@ -23,34 +22,26 @@ from tests.component.providers._registry_fixture import install_registry
 def _seed_registry(monkeypatch):
     # The runtime registry now holds only the user's enabled models, so these
     # resolver tests must seed the exact ids they reference (empty config in CI
-    # would otherwise leave get_model returning None). openai-codex/gpt-5.5 is
-    # seeded with api "openai-codex" so ensure_codex_model_registered can mirror
-    # it (it needs an existing codex-api template) and derive thinking fields.
+    # would otherwise leave get_model returning None).
     install_registry(monkeypatch, {
         "openai": {"models": [
             {"id": "gpt-4o", "name": "GPT-4o", "api": "openai-responses"},
         ]},
-        "openai-codex": {"models": [
-            {"id": "gpt-5.5", "name": "GPT-5.5", "api": "openai-codex"},
+        "anthropic": {"models": [
+            {"id": "claude-sonnet-4-6", "name": "Claude Sonnet 4.6", "api": "anthropic-messages"},
         ]},
     })
-    # Re-derive the codex model's thinking picker (levels/default) the same way
-    # the runtime does at import; install_registry loads a plain config row.
-    from openprogram.models.providers.adapters.openai_codex.catalog import (
-        ensure_codex_model_registered,
-    )
-    ensure_codex_model_registered("gpt-5.5")
 
 
 def test_dict_model_normalizes_to_string() -> None:
-    """Profile model = {"provider": "openai-codex", "id": "gpt-5.5"}
+    """Profile model = {"provider": "anthropic", "id": "claude-sonnet-4-6"}
     must resolve to a real Model, not a dict-id stub."""
     m = _resolve_model({
-        "model": {"provider": "openai-codex", "id": "gpt-5.5"},
+        "model": {"provider": "anthropic", "id": "claude-sonnet-4-6"},
     })
     assert isinstance(m.id, str)
-    assert m.id == "gpt-5.5"
-    assert m.provider == "openai-codex"
+    assert m.id == "claude-sonnet-4-6"
+    assert m.provider == "anthropic"
 
 
 def test_bare_string_model_still_works() -> None:
@@ -92,16 +83,3 @@ def test_unknown_bare_id_raises() -> None:
     with pytest.raises(LLMError):
         _resolve_model({"model": {"id": "mystery-model"}})
 
-
-def test_codex_55_exposes_full_thinking_levels() -> None:
-    """Runtime-injected Codex models keep the abstract picker set.
-
-    gpt-5.5 dropped ``minimal`` (the API 400s on it), so its picker is
-    low/medium/high/xhigh/max — see ``thinking_spec.supports_minimal_effort``.
-    """
-    import openprogram.models.providers.adapters.openai_codex.catalog  # noqa: F401
-
-    m = get_model("openai-codex", "gpt-5.5")
-    assert m is not None
-    assert m.thinking_levels == ["low", "medium", "high", "xhigh", "max"]
-    assert m.default_thinking_level == "xhigh"

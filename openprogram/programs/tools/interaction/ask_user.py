@@ -4,11 +4,11 @@ ask_user —— 在 Agent method 执行途中向用户提问。
 这不是范式原语，是一个内置工具函数。它需要"暂停执行→等回答→恢复"的能力，
 所以一起捆绑了：
   - ask_user(question)            用户向的接口
-  - set_ask_user(handler)         外部（WebUI / CLI）注册应答回调
+  - 外部（WebUI / CLI）用 runtime.agent.questions.set_ask_user 注册应答回调
   - FollowUp                      "函数暂停"的载体对象
   - run_with_follow_up(func, ...) 把 ask_user 转成非阻塞返回值
 
-``set_ask_user`` 注册全局 frontend handler；``run_with_follow_up`` 的
+``runtime.agent.questions.set_ask_user`` 注册全局 frontend handler；``run_with_follow_up`` 的
 临时 handler 只属于当前执行上下文，不影响其他并发 Workflow。
 """
 
@@ -21,6 +21,8 @@ import threading
 from typing import Callable, Optional
 import logging
 
+from openprogram.runtime.agent.questions import ask_user_handler
+
 _log = logging.getLogger(__name__)
 
 
@@ -28,23 +30,9 @@ _log = logging.getLogger(__name__)
 # Handler registry (模块级单例)
 # ---------------------------------------------------------------------------
 
-_ask_user_handler_global: Optional[Callable] = None
-_ask_user_lock = threading.Lock()
 _follow_up_handler: contextvars.ContextVar[Optional[Callable]] = contextvars.ContextVar(
     "workflow_follow_up_handler", default=None,
 )
-
-
-def set_ask_user(handler: Optional[Callable[[str], str]]) -> None:
-    """
-    注册一个全局 ask_user 回调。
-
-    handler 接收问题字符串，返回用户的答案（可阻塞，例如等 WebSocket）。
-    线程安全 —— 跨线程工作（ContextVar 做不到）。
-    """
-    global _ask_user_handler_global
-    with _ask_user_lock:
-        _ask_user_handler_global = handler
 
 
 def has_ask_user_handler() -> bool:
@@ -61,9 +49,8 @@ def has_ask_user_handler() -> bool:
     """
     if _follow_up_handler.get() is not None:
         return True
-    with _ask_user_lock:
-        if _ask_user_handler_global is not None:
-            return True
+    if ask_user_handler() is not None:
+        return True
     from openprogram.runtime.agent.call_state import _current_runtime
     runtime = _current_runtime.get(None)
     if runtime is not None and runtime.can_ask():
@@ -94,8 +81,7 @@ def ask_user(question: str) -> Optional[str]:
     # 1. 全局 handler（给 CLI / 后台服务用：set_ask_user 注册）
     handler = _follow_up_handler.get()
     if handler is None:
-        with _ask_user_lock:
-            handler = _ask_user_handler_global
+        handler = ask_user_handler()
     if handler is not None:
         try:
             answer = handler(question)
@@ -302,7 +288,6 @@ def run_with_follow_up(func, *args, **kwargs):
 
 __all__ = [
     "ask_user",
-    "set_ask_user",
     "has_ask_user_handler",
     "FollowUp",
     "run_with_follow_up",

@@ -1,7 +1,6 @@
 """Import credentials from another CLI tool's on-disk auth store.
 
-Used to adopt existing ``codex login`` / ``claude login`` / ``gh auth
-login`` / ``qwen login`` state without asking the user to log in twice.
+Used to adopt existing ``gh auth login`` / ``qwen login`` state without asking the user to log in twice.
 The import is **one-shot**: at login time we read the external file and
 create a new :class:`Credential` in our own store, typically marked
 ``read_only=True`` so later refresh attempts don't touch the external
@@ -51,7 +50,7 @@ class CliImportConfig:
     do) and ambiguity in string paths leads to silent mis-imports.
     """
 
-    source_id: str                                # "codex_cli", "qwen_cli", …
+    source_id: str                                # "qwen_cli", "gh_cli", …
     store_path: str                               # absolute path to external file
     access_path: list[str] = field(default_factory=list)
     refresh_path: list[str] = field(default_factory=list)
@@ -74,7 +73,7 @@ class CliImportMethod(LoginMethod):
     ``run(ui)`` ignores ``ui`` almost entirely — this isn't really an
     interactive flow. We keep it as a :class:`LoginMethod` so the
     settings UI lists it alongside real login methods ("Import from
-    Codex CLI").
+    Qwen CLI").
     """
 
     method_id = "cli_import"

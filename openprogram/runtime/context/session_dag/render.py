@@ -146,7 +146,7 @@ def render_dag_messages(graph: Graph, read_ids: list[str],
         media = (node.metadata or {}).get("media")
         # A result of media alone had no text block in its turn.
         text_blocks = [] if (media and not result_text) else [TextContent(type="text", text=result_text)]
-        from openprogram.state.store.session.files.media import with_media
+        from openprogram.runtime.context.session_dag.media_content import with_media
         return ToolResultMessage(
             tool_call_id=(node.metadata or {})["tool_call_id"],
             tool_name=node.name or "",
@@ -199,14 +199,14 @@ def render_dag_messages(graph: Graph, read_ids: list[str],
             if node.id == "ROOT" or (not _text(node.output).strip() and not user_media):
                 continue
             _flush_reply()
-            from openprogram.runtime.permissions.authority import render_model_input_from
+            from openprogram.state.authority import render_model_input_from
             # ``model_input`` is what the model read for this turn when it
             # differs from the visible message (a ``/skill`` expansion).
             model_input = (node.metadata or {}).get("model_input")
             raw_text = _text(model_input or node.output)
             text = render_model_input_from(node.metadata or {}, _elide(raw_text, node))
             text = with_turn_block(text, _stored_turn_block(node, audience))
-            from openprogram.state.store.session.files.media import as_references, with_media
+            from openprogram.runtime.context.session_dag.media_content import as_references, with_media
             # A turn with no text sent its pictures alone, with no text block.
             text_blocks = ([] if user_media and not raw_text.strip()
                            else [TextContent(type="text", text=text)])

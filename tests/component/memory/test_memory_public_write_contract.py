@@ -212,12 +212,13 @@ def test_a_tool_call_under_the_reply_cites_the_message_the_reply_answers(owned_m
     from openprogram.runtime.permissions import authority
     from openprogram.runtime.context import session_db
     from openprogram.state import store as chat_store
+    from openprogram.state.authority import runtime_authority
 
     root = owned_memory
     session_db.default_db().append_message("owned", {
         "id": "owned-user_reply", "role": "assistant", "content": "",
         "timestamp": 1, "predecessor": "owned-user",
-        **authority.runtime_authority(authority.local_owner_authority(), "agent/main"),
+        **runtime_authority(authority.local_owner_authority(), "agent/main"),
     })
     token = chat_store._current_turn_id.set("owned-user_reply")
     try:

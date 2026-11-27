@@ -15,6 +15,7 @@ from types import SimpleNamespace
 import pytest
 
 from openprogram.state import attachments as att
+from openprogram.state import attachment_markers as lexicon
 from openprogram.state.store.session.files.session_log import SessionLog
 
 
@@ -78,7 +79,7 @@ def test_turn_end_attaches_a_deck_built_in_the_home_folder(home):
     script = _write(home / "build.py", b"print(1)")
     text, paths = sf.turn_attachments(
         f"Created [build.py]({script}) and [deck]({deck}).", [], _req(), time.time() - 30)
-    assert [p for _m, _n, p in att.find_markers(text)] == [str(deck.resolve())]
+    assert [p for _m, _n, p in lexicon.find_markers(text)] == [str(deck.resolve())]
     assert paths == [str(deck.resolve())]
 
 
@@ -99,7 +100,7 @@ def test_dot_folders_secrets_and_the_state_dir_stay_refused_everywhere(home):
         assert sf._send_file_impl(str(path)).startswith("Error:"), path
     text, paths = sf.turn_attachments(
         " ".join(str(p) for p in _secrets(home)), [], _req(), time.time() - 30)
-    assert att.find_markers(text) == [] and paths == []
+    assert lexicon.find_markers(text) == [] and paths == []
 
 
 def test_a_symlink_from_the_home_folder_into_ssh_is_refused(home):
@@ -119,7 +120,7 @@ def test_a_conversation_that_delivers_to_a_chat_platform_keeps_the_narrow_roots(
     call = {"tool": "send_file", "input": json.dumps({"path": str(deck)}),
             "result": "Attached op-verify-deck.pptx (12 bytes).", "is_error": False}
     text, paths = sf.turn_attachments(f"Deck: {deck}", [call], _req(), time.time() - 30)
-    assert att.find_markers(text) == [] and paths == []
+    assert lexicon.find_markers(text) == [] and paths == []
     # Shown in the owner's own App, never sent out.
     assert att.resolve_within(deck, att.readable_roots(SID)) == deck.resolve()
 

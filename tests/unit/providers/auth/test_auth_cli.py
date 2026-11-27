@@ -1,6 +1,6 @@
 """The ``openprogram providers`` command tree: ``keys <provider> ...``, ``login``
 (= ``keys add``), ``logout``, ``list``, ``status``, ``aliases``, ``doctor``.
-They change the same list the Providers page does (models/auth/manage.py)."""
+They change the same list the Providers page does (models/listing/manage.py)."""
 from __future__ import annotations
 
 import argparse
@@ -99,16 +99,15 @@ def test_an_empty_key_saves_nothing(isolated, monkeypatch):
     assert _keys(store) == []
 
 
-def test_a_sign_in_only_provider_needs_a_terminal(isolated, monkeypatch):
+def test_a_withdrawn_provider_cannot_be_added(isolated, monkeypatch):
     _, cap = isolated
     assert _run(["keys", "openai-codex", "add"], "", monkeypatch) == 1
-    assert "needs a terminal" in cap.readouterr().err
+    assert "cannot be added here" in cap.readouterr().err
 
 
 def test_a_way_the_provider_does_not_offer_is_refused(isolated, monkeypatch):
     _, cap = isolated
-    for bad in ("api_key", "import_from_cli"):
-        assert _run(["keys", "openai-codex", "add", "--method", bad], "", monkeypatch) == 1
+    assert _run(["keys", "openai", "add", "--method", "import_from_cli"], "", monkeypatch) == 1
     assert "no way to connect" in cap.readouterr().err
 
 
@@ -138,7 +137,7 @@ def test_list_marks_the_one_in_use(isolated):
 
 
 def test_list_json_is_the_web_shape(isolated):
-    from openprogram.models.auth.manage import provider_credentials
+    from openprogram.models.listing.manage import provider_credentials
     store, cap = isolated
     _put(store, "Work", "sk-work-00001111")
     assert _run(["keys", "openai", "list", "--json"]) == 0
@@ -189,7 +188,7 @@ def test_replace_keeps_name_and_place(isolated, monkeypatch):
     store, _ = isolated
     cid = _put(store, "Work", "sk-work-00001111")
     _put(store, "Spare", "sk-spare-0002222")
-    monkeypatch.setattr("openprogram.models.auth.manage._probe_or_none", lambda *a, **k: None)
+    monkeypatch.setattr("openprogram.models.listing.manage._probe_or_none", lambda *a, **k: None)
     assert _run(["keys", "openai", "replace", "Work", "--api-key-stdin"], "sk-new-00003333", monkeypatch) == 0
     first = store.get("openai").credentials[0]
     assert (first.id, first.label, first.payload.auth_value) == (cid, "Work", "sk-new-00003333")
@@ -235,7 +234,7 @@ def test_aliases(isolated):
     _, cap = isolated
     assert _run(["aliases", "--json"]) == 0
     body = json.loads(cap.readouterr().out)
-    assert body["codex"] == "openai-codex" and body["claude"] == "anthropic"
+    assert body["bedrock"] == "amazon-bedrock" and body["claude"] == "anthropic"
 
 
 def test_doctor_on_an_empty_store(isolated):
@@ -265,10 +264,10 @@ def test_bare_providers_command_lists(isolated, monkeypatch):
 
 def test_a_sign_in_lists_its_account_and_plan_once(isolated):
     store, cap = isolated
-    store.add_credential(Credential(provider_id="openai-codex", kind="import", source="import",
+    store.add_credential(Credential(provider_id="anthropic", kind="import", source="import",
                                     identity={"email": "a@example.com", "plan": "prolite"},
                                     payload=CredentialData(kind="import", auth_value="", data={})))
-    assert _run(["keys", "openai-codex", "list"]) == 0
+    assert _run(["keys", "anthropic", "list"]) == 0
     out = cap.readouterr().out
     assert "a@example.com (Pro Lite)" in out
     assert "import" in out and out.count("import") == 1, "the source is not repeated after the kind"

@@ -17,17 +17,17 @@ const { ProviderLogin } = await import("../../../components/settings/providers/a
 const method = (id, label, description, path) => ({
   id, label, label_zh: label, description, description_zh: description, ...(path ? { path } : {}),
 });
-const GROK = {
-  id: "xai-subscription", label: "Grok Subscription",
+const QWEN = {
+  id: "qwen", label: "Qwen",
   login_methods: [
-    method("pkce_oauth", "Sign in with Grok", "Opens Grok in your browser to approve."),
-    method("import_from_cli", "Import existing login", "Uses the sign-in the Grok CLI saved on this machine.", "~/.grok/auth.json"),
-    method("paste_token", "Paste an access token", "For a Grok token copied from another machine or tool."),
+    method("import_from_cli", "Import existing login", "Uses the sign-in Qwen Code saved on this machine.", "~/.qwen/oauth_creds.json"),
+    method("api_key", "Paste an API key", "A key from the provider's console."),
+    method("api_key_alt", "Paste a second key", "Another key from the console."),
   ],
 };
-const CODEX = {
-  id: "openai-codex", label: "OpenAI Codex",
-  login_methods: [method("pkce_oauth", "Sign in with ChatGPT", "Opens ChatGPT in your browser to approve.")],
+const SINGLE = {
+  id: "qwen-cli", label: "Qwen CLI",
+  login_methods: [method("import_from_cli", "Import existing login", "Uses the sign-in Qwen Code saved on this machine.")],
 };
 
 const rows = (view) => [...view.container.querySelectorAll("[data-method]")];
@@ -37,15 +37,15 @@ afterEach(() => { document.body.innerHTML = ""; });
 describe("ways to sign in", () => {
   test("the first is recommended; each way has its description and an import its file", async () => {
     fakeFetch({});
-    const view = await render(h(ProviderLogin, { provider: GROK, bare: true }));
+    const view = await render(h(ProviderLogin, { provider: QWEN, bare: true }));
     const [first, second, third] = rows(view);
-    assert.deepEqual(rows(view).map((r) => r.dataset.method), ["pkce_oauth", "import_from_cli", "paste_token"]);
+    assert.deepEqual(rows(view).map((r) => r.dataset.method), ["import_from_cli", "api_key", "api_key_alt"]);
     assert.equal(first.hasAttribute("data-recommended"), true);
-    assert.match(first.textContent, /Sign in with GrokRecommended/);
-    assert.match(first.textContent, /Opens Grok in your browser/);
+    assert.match(first.textContent, /Import existing loginRecommended/);
+    assert.match(first.textContent, /Import existing login.*~\/\.qwen\/oauth_creds\.json/);
     assert.equal(second.hasAttribute("data-recommended"), false);
-    assert.match(second.textContent, /Import existing login.*~\/\.grok\/auth\.json/);
-    assert.match(third.textContent, /Paste an access token/);
+    assert.match(second.textContent, /Paste an API key/);
+    assert.match(third.textContent, /Paste a second key/);
     assert.equal(first.querySelector('[role="radio"]').getAttribute("aria-checked"), "true", "the recommended way is chosen to begin with");
     assert.doesNotMatch(view.container.textContent, /Other ways/);
     // The picked card reads by its border, with no second ring on focus, and
@@ -58,7 +58,7 @@ describe("ways to sign in", () => {
 
   test("a single way shows no recommendation", async () => {
     fakeFetch({});
-    const view = await render(h(ProviderLogin, { provider: CODEX, bare: true }));
+    const view = await render(h(ProviderLogin, { provider: SINGLE, bare: true }));
     assert.equal(rows(view).length, 1);
     assert.equal(rows(view)[0].hasAttribute("data-recommended"), false);
     assert.doesNotMatch(view.container.textContent, /Recommended/);
@@ -67,26 +67,26 @@ describe("ways to sign in", () => {
 
   test("Continue starts the chosen way's login", async () => {
     const calls = fakeFetch({
-      "POST /api/providers/xai-subscription/login/start": { session: "s1" },
-      "POST /api/providers/xai-subscription/login/cancel": {},
+      "POST /api/providers/qwen/login/start": { session: "s1" },
+      "POST /api/providers/qwen/login/cancel": {},
     });
-    const view = await render(h(ProviderLogin, { provider: GROK, bare: true }));
-    await view.act(() => rows(view)[1].querySelector('[role="radio"]').click());
+    const view = await render(h(ProviderLogin, { provider: QWEN, bare: true }));
+    await view.act(() => rows(view)[2].querySelector('[role="radio"]').click());
     await view.act(() => button(view.container, "Continue").click());
     await settle(view);
-    assert.deepEqual(calls.find(([m, url]) => m === "POST" && url.endsWith("/login/start"))[2], { method: "import_from_cli" });
+    assert.deepEqual(calls.find(([m, url]) => m === "POST" && url.endsWith("/login/start"))[2], { method: "api_key_alt" });
     await view.unmount();
   });
 
   test("a way named by the add dialog starts at once, without the list", async () => {
     const calls = fakeFetch({
-      "POST /api/providers/xai-subscription/login/start": { session: "s1" },
-      "POST /api/providers/xai-subscription/login/cancel": {},
+      "POST /api/providers/qwen/login/start": { session: "s1" },
+      "POST /api/providers/qwen/login/cancel": {},
     });
-    const view = await render(h(ProviderLogin, { provider: GROK, bare: true, method: "paste_token" }));
+    const view = await render(h(ProviderLogin, { provider: QWEN, bare: true, method: "import_from_cli" }));
     await settle(view);
     assert.equal(rows(view).length, 0);
-    assert.deepEqual(calls.filter(([m, url]) => m === "POST" && url.endsWith("/login/start")).map(([, , b]) => b), [{ method: "paste_token" }]);
+    assert.deepEqual(calls.filter(([m, url]) => m === "POST" && url.endsWith("/login/start")).map(([, , b]) => b), [{ method: "import_from_cli" }]);
     await view.unmount();
   });
 
@@ -97,10 +97,10 @@ describe("ways to sign in", () => {
       { events: [], cursor: 1, version: 2, waiting: false, done: true, ok: true, name: "c1" },
     ];
     const calls = fakeFetch({
-      "POST /api/providers/openai-codex/login/start": { session: "s1" },
-      "GET /api/providers/openai-codex/login/poll": () => answers.shift(),
+      "POST /api/providers/qwen-cli/login/start": { session: "s1" },
+      "GET /api/providers/qwen-cli/login/poll": () => answers.shift(),
     });
-    const view = await render(h(ProviderLogin, { provider: CODEX, bare: true, method: "pkce_oauth" }));
+    const view = await render(h(ProviderLogin, { provider: SINGLE, bare: true, method: "import_from_cli" }));
     await settle(view, 8);
     const reads = calls.filter(([m, url]) => m === "GET" && url.includes("/login/poll")).map(([, url]) => url);
     assert.equal(reads.length, 3, "each read follows the one before at once");

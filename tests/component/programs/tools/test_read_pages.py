@@ -25,7 +25,7 @@ CAP = 8_000
 def _small_cap(monkeypatch, tmp_path):
     saved = tmp_path / "tool_results"
     saved.mkdir()
-    monkeypatch.setattr("openprogram.programs._host.runtime._tool_results_dir", lambda: saved)
+    monkeypatch.setattr("openprogram.runtime.agent.tool_execution._tool_results_dir", lambda: saved)
     token = spill.set_window(None, CAP // 4)
     try:
         yield saved

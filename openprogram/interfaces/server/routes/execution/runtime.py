@@ -31,7 +31,7 @@ def _runtime_build_error_response(exc: Exception, provider: str | None = None):
     """Turn a runtime-construction failure into a graceful structured 4xx
     instead of a 500 traceback.
 
-    Building a runtime acquires the provider credential (codex/anthropic
+    Building a runtime acquires the provider credential (anthropic
     refresh OAuth in ``__init__``). When that credential is expired with a
     dead refresh token, CredentialProvider raises ``AuthNeedsReauthError`` /
     ``AuthReadOnlyError`` / ``AuthPoolExhaustedError`` / ``AuthConfigError``;
@@ -224,8 +224,7 @@ def register(app):
             head, tail = model.split(":", 1)
             from openprogram.models.providers import get_providers as _get_providers
             known = set(_get_providers())
-            known.update({"openai-codex", "gemini-cli",
-                          "anthropic", "openai", "gemini"})
+            known.update({"anthropic", "openai", "gemini"})
             if head in known:
                 inferred_provider = head
                 bare_model = tail

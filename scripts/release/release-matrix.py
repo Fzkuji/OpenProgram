@@ -4,7 +4,10 @@
     release-matrix.py select
         Read the switches and which credentials exist from the environment and
         print the GitHub Actions outputs: the runtime, seed and desktop
-        matrices, and what this release leaves out and why.
+        matrices, and what this release leaves out and why; and the
+        runtime_layers matrix, one leg per update platform
+        (publish.RUNTIME_PLATFORMS), whatever the installer switches say.
+        With OPENPROGRAM_RELEASE_RUNTIME_LAYERS_ONLY=true it plans only that.
 
     release-matrix.py assemble ARTIFACT_ROOT --version vX.Y.Z --plan JSON \\
         --notes FILE --notes-output FILE
@@ -24,6 +27,7 @@ never blocks the others.
 from __future__ import annotations
 
 import argparse
+import ast
 from dataclasses import dataclass, fields
 import json
 import os
@@ -33,20 +37,21 @@ import shutil
 import sys
 from typing import Mapping
 
-# A repository variable set to "false" switches these off.
+# A repository variable set to "false" switches these off. The macOS App is
+# thin whenever the Apple signing secrets and a trusted update key exist, so it
+# takes daily updates as a sealed version; "false" forces the full App.
 ON_BY_DEFAULT = {
     "windows_runtime": "OPENPROGRAM_RELEASE_WINDOWS_RUNTIME",
     "desktop_mac": "OPENPROGRAM_RELEASE_DESKTOP_MAC",
     "desktop_windows": "OPENPROGRAM_RELEASE_DESKTOP_WINDOWS",
     "desktop_linux": "OPENPROGRAM_RELEASE_DESKTOP_LINUX",
+    "mac_thin": "OPENPROGRAM_RELEASE_MAC_THIN",
 }
 # A repository variable set to "true" switches these on. Windows on Arm waits
-# for Windows x64 to run. The small macOS App waits for the owner's check that
-# privacy grants survive a switch, and command-line seeds wait for a released
-# fetcher, because an install on the version store cannot update without one.
+# for Windows x64 to run, and command-line seeds wait for a released fetcher,
+# because an install on the version store cannot update without one.
 OFF_BY_DEFAULT = {
     "windows_arm64": "OPENPROGRAM_RELEASE_WINDOWS_ARM64",
-    "mac_thin": "OPENPROGRAM_RELEASE_MAC_THIN",
     "cli_seeds": "OPENPROGRAM_RELEASE_CLI_SEEDS",
 }
 # Computed by the workflow from secrets; only "true" or "false" reaches here.
@@ -63,6 +68,15 @@ _NO_UPDATE_KEY = (
 _WINDOWS_RUNTIME = ("windows-2025", "windows", "x86_64")
 _WINDOWS_ARM_RUNTIME = ("windows-11-vs2026-arm", "windows", "arm64")
 _LINUX_BASELINE = {"x86_64": "ubuntu-22.04", "arm64": "ubuntu-22.04-arm"}
+# Where each update platform's runtime layer is built: the runner its seed uses.
+_RUNTIME_LAYER_RUNNERS = {
+    "macos-arm64": "macos-15",
+    "macos-x86_64": "macos-15-intel",
+    "linux-x86_64": _LINUX_BASELINE["x86_64"],
+    "linux-arm64": _LINUX_BASELINE["arm64"],
+    "windows-x86_64": _WINDOWS_RUNTIME[0],
+}
+_PUBLISH = Path(__file__).resolve().parents[2] / "openprogram/operations/self_update/official/publish.py"
 _PLATFORM_KEY = {"mac": "macos", "win": "windows", "linux": "linux"}
 # The file a user installs with, per desktop leg. A leg whose artifact has
 # none of these did not produce an App, whatever else it uploaded.
@@ -85,7 +99,7 @@ class Switches:
     desktop_mac: bool = True
     desktop_windows: bool = True
     desktop_linux: bool = True
-    mac_thin: bool = False
+    mac_thin: bool = True
     cli_seeds: bool = False
     mac_signing: bool = False
     windows_signing: bool = False
@@ -140,15 +154,15 @@ def release_matrices(switches: Switches = Switches()) -> dict[str, list]:
     desktop: list[dict[str, str]] = []
     if switches.desktop_mac:
         signing = "signed" if switches.mac_signing else "unsigned"
-        layout = "full"
-        if switches.mac_thin:
-            if switches.mac_signing and switches.update_key:
-                layout = "thin"
-            else:
-                warnings.append(
-                    "OPENPROGRAM_RELEASE_MAC_THIN is on, but the small macOS App needs the Apple "
-                    "signing secrets and a trusted update key; building the full App instead."
-                )
+        # A thin App must be signed (an embedded App moves to it through its
+        # in-place .zip update, which takes only a copy from the same team) and
+        # needs the update key to ever update; without both it stays full.
+        layout = "thin" if switches.mac_thin and switches.mac_signing and switches.update_key else "full"
+        if switches.mac_thin and layout == "full":
+            warnings.append(
+                "The macOS App is full this time: the thin App needs the Apple signing secrets "
+                "and a trusted update key."
+            )
         desktop += [
             _desktop_row("macos-15", "mac", "arm64", signing, layout),
             _desktop_row("macos-15-intel", "mac", "x86_64", signing, layout),
@@ -197,14 +211,38 @@ def release_matrices(switches: Switches = Switches()) -> dict[str, list]:
     return {
         "runtime": runtime, "seed": list(seeds.values()), "desktop": desktop,
         "omitted": omitted, "warnings": warnings,
-        # With a trusted key every runtime leg also builds its update files.
-        "update_files": switches.update_key,
     }
 
 
+def runtime_platforms(source: Path = _PUBLISH) -> tuple[str, ...]:
+    """publish.RUNTIME_PLATFORMS, read from its source: this runs before any dependency is installed."""
+    for node in ast.parse(source.read_text(encoding="utf-8")).body:
+        if isinstance(node, ast.Assign) and any(getattr(target, "id", None) == "RUNTIME_PLATFORMS"
+                                                for target in node.targets):
+            return tuple(ast.literal_eval(node.value))
+    raise SystemExit(f"{source} defines no RUNTIME_PLATFORMS")
+
+
+def runtime_layer_matrix(switches: Switches = Switches()) -> list[dict[str, str]]:
+    """One leg per update platform; only the macOS base's signing follows a credential."""
+    rows = []
+    for name in runtime_platforms():
+        platform, arch = name.split("-", 1)
+        if name not in _RUNTIME_LAYER_RUNNERS:
+            raise SystemExit(f"no runner is chosen for the runtime layer of {name}")
+        rows.append({"runner": _RUNTIME_LAYER_RUNNERS[name], "platform": platform, "arch": arch,
+                     "signing": "signed" if platform == "macos" and switches.mac_signing else "none"})
+    return rows
+
+
 def _select() -> int:
-    plan = release_matrices(switches_from_environment(os.environ))
-    for name in ("runtime", "seed", "desktop"):
+    switches = switches_from_environment(os.environ)
+    layers_only = os.environ.get("OPENPROGRAM_RELEASE_RUNTIME_LAYERS_ONLY", "").strip().lower() == "true"
+    plan = release_matrices(switches)
+    if layers_only:
+        plan = {"runtime": [], "seed": [], "desktop": [], "omitted": [], "warnings": []}
+    plan["runtime_layers"] = runtime_layer_matrix(switches)
+    for name in ("runtime", "seed", "desktop", "runtime_layers"):
         print(f"{name}={json.dumps({'include': plan[name]}, separators=(',', ':'))}")
         print(f"{name}_count={len(plan[name])}")
     print(f"plan={json.dumps(plan, separators=(',', ':'))}")
@@ -214,13 +252,6 @@ def _select() -> int:
 
 
 # --- what the release carries -------------------------------------------------
-
-
-def _manifest_platforms(root: Path) -> set[str]:
-    manifest = root / "official-update" / "update-manifest.json"
-    if not manifest.is_file():
-        return set()
-    return set(json.loads(manifest.read_text(encoding="utf-8")).get("platforms", {}))
 
 
 def _label(platform: str, arch: str) -> str:
@@ -236,9 +267,6 @@ def keep_publishable(root: Path, plan: Mapping[str, list]) -> list[str]:
     missing: list[str] = []
     verified = {path.name.removeprefix("cli-verified-")
                 for path in root.glob("cli-verified-*") if path.is_dir()}
-    update_platforms = _manifest_platforms(root)
-    # Platforms whose missing update files are already said by another line.
-    told: set[str] = set()
     # Internal artifacts: the App's seed, the install checks' receipts and the
     # logs a failed leg keeps for diagnosis.
     for path in sorted(root.iterdir()):
@@ -249,7 +277,6 @@ def keep_publishable(root: Path, plan: Mapping[str, list]) -> list[str]:
         label = _label(row["platform"], row["arch"])
         directory = root / f"product-runtime-{key}"
         if not directory.is_dir():
-            told.add(key)
             missing.append(f"{label} command-line runtime: its build failed.")
         elif not any(directory.glob(_RUNTIME_ARCHIVE[row["platform"]])):
             _remove(directory)
@@ -258,7 +285,6 @@ def keep_publishable(root: Path, plan: Mapping[str, list]) -> list[str]:
             _remove(directory)
             missing.append(f"{label} command-line runtime: it did not pass the install check.")
     for row in plan.get("desktop", []):
-        key = f"{row['runtime_platform']}-{row['arch']}"
         label = _label(row["runtime_platform"], row["arch"])
         directory = root / f"desktop-{row['layout']}-{row['platform']}-{row['arch']}"
         if not directory.is_dir():
@@ -266,23 +292,8 @@ def keep_publishable(root: Path, plan: Mapping[str, list]) -> list[str]:
         elif not any(directory.glob(_INSTALLER[row["platform"]])):
             _remove(directory)
             missing.append(f"{label} App: its build left no installer.")
-        elif row["layout"] == "thin" and key not in update_platforms:
-            _remove(directory)
-            told.add(key)
-            missing.append(f"{label} App: its update files could not be built, so it could never update.")
-        else:
-            if row["platform"] == "linux" and not any(directory.glob("*.AppImage")):
-                missing.append(f"{label} AppImage: its build failed; the deb package is available.")
-    if plan.get("update_files"):
-        # A full-layout App and the command-line install do not read these yet,
-        # so nothing is removed; the release still says they are not there.
-        for row in plan.get("runtime", []):
-            key = f"{row['platform']}-{row['arch']}"
-            if key not in update_platforms and key not in told:
-                missing.append(f"{_label(row['platform'], row['arch'])} update files: could not be built.")
-    for directory in sorted(root.glob("cli-seed-*")):
-        if directory.name.removeprefix("cli-seed-") not in update_platforms:
-            _remove(directory)
+        elif row["platform"] == "linux" and not any(directory.glob("*.AppImage")):
+            missing.append(f"{label} AppImage: its build failed; the deb package is available.")
     missing.extend(plan.get("omitted", []))
     return missing
 

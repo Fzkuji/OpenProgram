@@ -1,5 +1,5 @@
 import { EventEmitter } from 'events';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
 import { describe, expect, it } from 'vitest';
@@ -62,10 +62,14 @@ describe('paths typed and shown in the prompt', () => {
 
   it('finds a nested file by the path the user types', () => {
     const root = mkdtempSync(path.join(tmpdir(), 'openprogram-cli-'));
-    mkdirSync(path.join(root, 'src', 'screens'), { recursive: true });
-    writeFileSync(path.join(root, 'src', 'screens', 'REPL.tsx'), '');
-    expect(fileCompletions('src/screens/re', root))
-      .toEqual([{ path: 'src/screens/REPL.tsx', isDir: false }]);
+    try {
+      mkdirSync(path.join(root, 'src', 'screens'), { recursive: true });
+      writeFileSync(path.join(root, 'src', 'screens', 'REPL.tsx'), '');
+      expect(fileCompletions('src/screens/re', root))
+        .toEqual([{ path: 'src/screens/REPL.tsx', isDir: false }]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('keeps a full Windows path given to /export', () => {

@@ -16,7 +16,8 @@ from fastapi.testclient import TestClient
 from openprogram.models.auth.store import AuthStore, set_store_for_testing
 from openprogram.models.listing import credentials as cr
 from openprogram.models.listing import detected, key_check
-from openprogram.models.usage import provider_status, provider_views, quota, quota_fetchers
+from openprogram.models.listing import provider_status, provider_views
+from openprogram.models.usage import quota, quota_fetchers
 from openprogram.models.usage.event import UsageEvent
 from openprogram.models.usage.ledger import UsageLedger
 from openprogram.models.usage.quota import QuotaLimit

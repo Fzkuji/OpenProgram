@@ -55,22 +55,20 @@
 <tbody>
 <tr><th scope="row">标准 <code translate="no">/v1/models</code></th><td><code translate="no">listing/fetchers/openai_compat.py</code></td></tr>
 <tr><th scope="row">Anthropic，带每模型能力</th><td><code translate="no">adapters/anthropic/list_models.py</code></td></tr>
-<tr><th scope="row">账号级私有</th><td><code translate="no">adapters/openai_codex/list_models.py</code>、<code translate="no">xai_subscription/list_models.py</code></td></tr>
-<tr><th scope="row">厂商专用</th><td><code translate="no">google</code>（query key）、<code translate="no">amazon_bedrock</code>（SigV4）、<code translate="no">github_copilot</code>（session bearer）、<code translate="no">deepseek</code>（只有 id，后补全）</td></tr>
+<tr><th scope="row">厂商专用</th><td><code translate="no">google</code>（query key）、<code translate="no">amazon_bedrock</code>（SigV4）、<code translate="no">deepseek</code>（只有 id，后补全）</td></tr>
 </tbody>
 </table>
 <p class="note">接口不标准的供应商在目录里放 <code translate="no">list_models.py</code>，暴露 <code translate="no">fetch(provider_id, timeout)</code>；<code translate="no">_load_fetcher</code> 按目录名导入，不用集中修改。成功：带 id 和 name 的 <code translate="no">list[dict]</code>。失败：<code translate="no">{"error": …}</code>。<code translate="no">fetch_and_normalize</code> 是唯一的规范化点。</p>
-<p>普通结果用短内存缓存。订阅目录另存原子的最后完好副本：请求失败时可显示过期行，但只有非空的官方目录才能退役模型。</p>
+<p>结果用短内存缓存。</p>
 <p>models.dev 目录存在内存和磁盘里，一小时内算新。磁盘副本的新旧按文件时间算：每条命令都是新进程，不看时间一律当作过期的话，每条命令都会重新下载整份目录，并在退出时等它约三秒。</p>
 <h2>启用、禁用、刷新</h2>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">操作</th><th scope="col">效果</th></tr></thead>
 <tbody>
 <tr><th scope="row">启用（<code translate="no">toggle_model</code>）</th><td>浏览行、覆盖项、端点的 api 和 base_url、推导的思考档位写入 <code translate="no">providers.&lt;p&gt;.models</code>；注册表重载</td></tr>
-<tr><th scope="row">禁用</th><td>删除该行；手动行保留并置 <code translate="no">enabled: false</code>。订阅供应商把 id 记入 <code translate="no">disabled_models</code>。</td></tr>
+<tr><th scope="row">禁用</th><td>删除该行；手动行保留并置 <code translate="no">enabled: false</code>。</td></tr>
 <tr><th scope="row">刷新</th><td>重新浏览已启用模型并覆盖规格</td></tr>
 <tr><th scope="row">手动添加</th><td>同一列表，<code translate="no">source: "manual"</code></td></tr>
-<tr><th scope="row">订阅目录</th><td>登录后、worker 启动且已过期时、每 6 小时、手动刷新：新 id 启用，变化更新，移除的退役，已禁用的保持。发生变化时广播 <code translate="no">provider_models_changed</code>；网页和桌面端重读，重连的客户端也一样。</td></tr>
 </tbody>
 </table>
 <h2>使用</h2>
@@ -81,14 +79,14 @@
 <tr><th scope="row"><code translate="no">GET /api/providers/list</code></th><td>供应商列表</td></tr>
 <tr><th scope="row"><code translate="no">GET /api/providers/{name}/models</code></th><td>该供应商已缓存的浏览结果和启用标记；<code translate="no">POST …/fetch-models</code> 立即查询</td></tr>
 <tr><th scope="row"><code translate="no">GET /api/models/enabled</code></th><td>聊天选择器：<code translate="no">ENABLED_MODELS</code> 原样</td></tr>
-<tr><th scope="row"><code translate="no">interfaces/server/thinking_effort.py</code></th><td>来自已启用行的档位</td></tr>
+<tr><th scope="row"><code translate="no">runtime/harnesses/thinking_effort.py</code></th><td>来自已启用行的档位</td></tr>
 </tbody>
 </table>
 <p class="note">故障转移或代理引用未启用的模型是配置错误，提示指向设置页。旧会话保留历史，但不能继续用已删除的模型。</p>
-<p>未知 id 会被拒绝并给出最接近的（<code translate="no">catalog/suggestions.py</code>）："Unknown model 'openai-codex':'gpt6 sol'; did you mean openai-codex:gpt-6.1-sol, …?"。名称按词比较：显示名的词 4 分，id 的词 3 分；版本号和供应商 id 只有挨着这些词才计分。沿用 magpie（yetone/magpie，MIT）。</p>
+<p>未知 id 会被拒绝并给出最接近的（<code translate="no">catalog/suggestions.py</code>）："Unknown model 'openai':'gpt6 sol'; did you mean openai:gpt-6.1-sol, …?"。名称按词比较：显示名的词 4 分，id 的词 3 分；版本号和供应商 id 只有挨着这些词才计分。沿用 magpie（yetone/magpie，MIT）。</p>
 <h2 id="invariants">不变量</h2>
 <ol>
-<li>持久化的模型数据只有配置里的已启用规格，以及订阅目录的最后完好副本。</li>
+<li>持久化的模型数据只有配置里的已启用规格。</li>
 <li>普通浏览结果不写文件。</li>
 <li>人写的数据在 git，程序写的数据在用户配置。</li>
 <li><code translate="no">provider.json</code> 只放机器拿不到的内容。</li>
@@ -99,8 +97,7 @@
 <details><summary>改动必须保持的</summary>
 <ul>
 <li>每个供应商的配置行经 <code translate="no">get_model</code> 解析出相同的 <code translate="no">Model</code>。</li>
-<li><code translate="no">google-gemini-cli/*</code> 和 <code translate="no">gemini-subscription/*</code> 是不同的键，行里各带自己的。</li>
-<li><code translate="no">cost</code>、多模态 <code translate="no">input</code>、<code translate="no">headers</code>（copilot 依赖）和 <code translate="no">compat</code> 都随规格保存。</li>
+<li><code translate="no">cost</code>、多模态 <code translate="no">input</code>、<code translate="no">headers</code> 和 <code translate="no">compat</code> 都随规格保存。</li>
 <li>多线路供应商，每种 <code translate="no">(api, base_url, headers, compat)</code> 各验证一次。</li>
 <li><code translate="no">test_provider_wire_invariants.py</code> 和 <code translate="no">test_model_fetch_routing.py</code> 保持通过。</li>
 </ul>

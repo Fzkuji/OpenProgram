@@ -254,7 +254,7 @@ def stream_bedrock(
                 return
             output["stop_reason"] = "error"
             output["error_message"] = str(exc)
-            # ev_stream.fail() — see openai-codex / openai_responses for
+            # ev_stream.fail() — see openai_responses for
             # the rationale (push-error + end pattern lets agent_loop
             # think the stream succeeded and busy-loop on retry).
             ev_stream.fail(exc)

@@ -17,13 +17,13 @@ import pytest
 def scheduler_env(tmp_path, monkeypatch):
     import openprogram.state.paths as paths
     from openprogram.runtime.permissions import authority
-    from openprogram.programs.tools.jobs.cron import cron as cron_tool
+    from openprogram.runtime.scheduler import store as task_store
 
     schedule = tmp_path / "scheduler" / "tasks.json"
     monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path / "state")
     authority._reset_owner_cache_for_tests()
     monkeypatch.setenv("OPENPROGRAM_SCHEDULER_PATH", str(schedule))
-    monkeypatch.delenv(cron_tool.DEFAULT_CRON_ENV, raising=False)
+    monkeypatch.delenv(task_store.DEFAULT_CRON_ENV, raising=False)
     return tmp_path, schedule
 
 
@@ -88,22 +88,22 @@ def test_scheduler_rejects_cron_that_the_worker_cannot_execute(
 
 def test_scheduler_default_path_is_profile_scoped(tmp_path, monkeypatch):
     import openprogram.state.paths as paths
-    from openprogram.programs.tools.jobs.cron import cron as cron_tool
+    from openprogram.runtime.scheduler import store as task_store
 
-    monkeypatch.delenv(cron_tool.DEFAULT_SCHEDULER_ENV, raising=False)
-    monkeypatch.delenv(cron_tool.DEFAULT_CRON_ENV, raising=False)
+    monkeypatch.delenv(task_store.DEFAULT_SCHEDULER_ENV, raising=False)
+    monkeypatch.delenv(task_store.DEFAULT_CRON_ENV, raising=False)
     monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path / "profile")
-    assert cron_tool._resolve_path() == str(
+    assert task_store._resolve_path() == str(
         tmp_path / "profile" / "scheduler" / "tasks.json"
     )
 
 
 def test_scheduler_moves_legacy_cron_store_with_signing_state(tmp_path, monkeypatch):
     import openprogram.state.paths as paths
-    from openprogram.programs.tools.jobs.cron import cron as cron_tool
+    from openprogram.runtime.scheduler import store as task_store
 
-    monkeypatch.delenv(cron_tool.DEFAULT_SCHEDULER_ENV, raising=False)
-    monkeypatch.delenv(cron_tool.DEFAULT_CRON_ENV, raising=False)
+    monkeypatch.delenv(task_store.DEFAULT_SCHEDULER_ENV, raising=False)
+    monkeypatch.delenv(task_store.DEFAULT_CRON_ENV, raising=False)
     state = tmp_path / "profile"
     legacy = state / "cron"
     legacy.mkdir(parents=True)
@@ -112,7 +112,7 @@ def test_scheduler_moves_legacy_cron_store_with_signing_state(tmp_path, monkeypa
     (legacy / "worker-state.json").write_text("{}\n")
     monkeypatch.setattr(paths, "get_state_dir", lambda: state)
 
-    resolved = cron_tool._resolve_path()
+    resolved = task_store._resolve_path()
     target = state / "scheduler"
     assert resolved == str(target / "tasks.json")
     assert (target / ".signing-key").read_bytes() == b"k" * 32
@@ -122,10 +122,10 @@ def test_scheduler_moves_legacy_cron_store_with_signing_state(tmp_path, monkeypa
 
 def test_legacy_cron_store_migration_is_concurrency_safe(tmp_path, monkeypatch):
     import openprogram.state.paths as paths
-    from openprogram.programs.tools.jobs.cron import cron as cron_tool
+    from openprogram.runtime.scheduler import store as task_store
 
-    monkeypatch.delenv(cron_tool.DEFAULT_SCHEDULER_ENV, raising=False)
-    monkeypatch.delenv(cron_tool.DEFAULT_CRON_ENV, raising=False)
+    monkeypatch.delenv(task_store.DEFAULT_SCHEDULER_ENV, raising=False)
+    monkeypatch.delenv(task_store.DEFAULT_CRON_ENV, raising=False)
     state = tmp_path / "profile"
     legacy = state / "cron"
     (legacy / "logs").mkdir(parents=True)
@@ -134,15 +134,15 @@ def test_legacy_cron_store_migration_is_concurrency_safe(tmp_path, monkeypatch):
     (legacy / "worker-state.json").write_text("{}\n")
     (legacy / "logs" / "old.log").write_text("old\n")
     monkeypatch.setattr(paths, "get_state_dir", lambda: state)
-    original_move = cron_tool.shutil.move
+    original_move = task_store.shutil.move
 
     def slow_move(source, target):
         time.sleep(0.02)
         return original_move(source, target)
 
-    monkeypatch.setattr(cron_tool.shutil, "move", slow_move)
+    monkeypatch.setattr(task_store.shutil, "move", slow_move)
     with ThreadPoolExecutor(max_workers=2) as pool:
-        resolved = list(pool.map(lambda _index: cron_tool._resolve_path(), range(2)))
+        resolved = list(pool.map(lambda _index: task_store._resolve_path(), range(2)))
     target = state / "scheduler"
     assert resolved == [str(target / "tasks.json")] * 2
     assert (target / ".signing-key").read_bytes() == b"k" * 32
@@ -219,7 +219,7 @@ def test_once_task_fires_only_once_and_recurring_task_keeps_running(
     scheduler_env, monkeypatch,
 ):
     from openprogram.runtime.permissions.authority import local_owner_authority
-    from openprogram.programs.tools.jobs.cron import worker
+    from openprogram.runtime.scheduler import worker
     from openprogram.runtime.scheduler import service
 
     tmp_path, _schedule = scheduler_env
@@ -261,7 +261,7 @@ def test_worker_persists_each_claim_and_continues_after_spawn_failure(
     scheduler_env, monkeypatch,
 ):
     from openprogram.runtime.permissions.authority import local_owner_authority
-    from openprogram.programs.tools.jobs.cron import worker
+    from openprogram.runtime.scheduler import worker
     from openprogram.runtime.scheduler import service
 
     tmp_path, _schedule = scheduler_env
@@ -302,7 +302,7 @@ def test_worker_persists_each_claim_and_continues_after_spawn_failure(
 def test_worker_loop_recovers_from_one_transient_tick_failure(scheduler_env, monkeypatch, caplog):
     """A failed tick is tried again at the next minute, then the loop sleeps
     until the next due entry."""
-    from openprogram.programs.tools.jobs.cron import worker
+    from openprogram.runtime.scheduler import worker
 
     stop = threading.Event()
     tick_calls = []
@@ -339,7 +339,7 @@ def test_worker_loop_recovers_from_one_transient_tick_failure(scheduler_env, mon
 
 
 def test_the_loop_sleeps_until_the_next_due_entry(scheduler_env):
-    from openprogram.programs.tools.jobs.cron import worker
+    from openprogram.runtime.scheduler import worker
 
     now = datetime(2026, 8, 14, 10, 7, 30).timestamp()
     recurring = {"id": "r", "cron": "*/15 * * * *"}
@@ -356,8 +356,8 @@ def test_the_loop_sleeps_until_the_next_due_entry(scheduler_env):
 
 
 def test_a_saved_task_file_wakes_the_waiting_loop(scheduler_env, monkeypatch):
-    from openprogram.programs.tools.jobs.cron import cron as cron_tool
-    from openprogram.programs.tools.jobs.cron import worker
+    from openprogram.runtime.scheduler import store as task_store
+    from openprogram.runtime.scheduler import worker
 
     monkeypatch.setattr(worker.changes, "file_events_available", lambda: True)
     worker._listener.wait(0)
@@ -366,12 +366,12 @@ def test_a_saved_task_file_wakes_the_waiting_loop(scheduler_env, monkeypatch):
     thread = threading.Thread(target=lambda: (worker._wait(None, stop.is_set), done.set()), daemon=True)
     thread.start()
     assert not done.wait(0.3), "nothing due and nothing changed: it sleeps"
-    cron_tool._save(cron_tool._resolve_path(), [])
+    task_store._save(task_store._resolve_path(), [])
     assert done.wait(2.0), "the save woke it"
 
 
 def test_stopping_the_worker_ends_its_wait(scheduler_env, monkeypatch):
-    from openprogram.programs.tools.jobs.cron import worker
+    from openprogram.runtime.scheduler import worker
 
     monkeypatch.setattr(worker.changes, "file_events_available", lambda: True)
     worker._listener.wait(0)
@@ -385,7 +385,7 @@ def test_stopping_the_worker_ends_its_wait(scheduler_env, monkeypatch):
 def test_worker_loop_does_not_swallow_base_exception(
     scheduler_env, monkeypatch,
 ):
-    from openprogram.programs.tools.jobs.cron import worker
+    from openprogram.runtime.scheduler import worker
 
     monkeypatch.setattr(worker, "_load_state", lambda: {})
 
@@ -399,7 +399,7 @@ def test_worker_loop_does_not_swallow_base_exception(
 
 
 def test_run_once_keeps_tick_fail_fast(scheduler_env, monkeypatch):
-    from openprogram.programs.tools.jobs.cron import worker
+    from openprogram.runtime.scheduler import worker
 
     monkeypatch.setattr(worker, "_load_state", lambda: {})
 
@@ -414,7 +414,7 @@ def test_run_once_keeps_tick_fail_fast(scheduler_env, monkeypatch):
 
 def test_two_workers_claim_a_once_task_only_once(scheduler_env, monkeypatch):
     from openprogram.runtime.permissions.authority import local_owner_authority
-    from openprogram.programs.tools.jobs.cron import worker
+    from openprogram.runtime.scheduler import worker
     from openprogram.runtime.scheduler import service
 
     tmp_path, _schedule = scheduler_env
@@ -447,7 +447,7 @@ def test_claim_write_failure_does_not_spawn_or_block_later_task(
     scheduler_env, monkeypatch,
 ):
     from openprogram.runtime.permissions.authority import local_owner_authority
-    from openprogram.programs.tools.jobs.cron import worker
+    from openprogram.runtime.scheduler import worker
     from openprogram.runtime.scheduler import service
 
     tmp_path, _schedule = scheduler_env
@@ -495,18 +495,18 @@ def test_claim_write_failure_does_not_spawn_or_block_later_task(
 
 def test_scheduler_concurrent_creates_do_not_lose_tasks(scheduler_env, monkeypatch):
     from openprogram.runtime.permissions.authority import local_owner_authority
-    from openprogram.programs.tools.jobs.cron import cron as cron_tool
+    from openprogram.runtime.scheduler import store as task_store
     from openprogram.runtime.scheduler import service
 
     tmp_path, _schedule = scheduler_env
-    original_load = cron_tool._load
+    original_load = task_store._load
 
     def slow_load(path):
         rows = original_load(path)
         time.sleep(0.01)
         return rows
 
-    monkeypatch.setattr(cron_tool, "_load", slow_load)
+    monkeypatch.setattr(task_store, "_load", slow_load)
 
     def create(index):
         return service.create_task(
@@ -793,7 +793,7 @@ def test_scheduler_creates_a_task_without_memory_refs_while_memory_is_off(
 
 def test_deleting_a_task_is_logged_and_the_list_before_it_is_kept(scheduler_env, caplog):
     import logging
-    from openprogram.programs.tools.jobs.cron import cron as cron_tool
+    from openprogram.runtime.scheduler import store as task_store
     from openprogram.runtime.permissions.authority import local_owner_authority
     from openprogram.runtime.scheduler import service
 
@@ -807,5 +807,5 @@ def test_deleting_a_task_is_logged_and_the_list_before_it_is_kept(scheduler_env,
     assert f"scheduler task {task['id']}" in caplog.text
     assert "Hourly stock check" in caplog.text and "the Scheduler API" in caplog.text
     assert service.list_tasks() == []
-    kept = cron_tool._load(str(schedule) + cron_tool.PREVIOUS_SUFFIX)
+    kept = task_store._load(str(schedule) + task_store.PREVIOUS_SUFFIX)
     assert [row["id"] for row in kept] == [task["id"]]

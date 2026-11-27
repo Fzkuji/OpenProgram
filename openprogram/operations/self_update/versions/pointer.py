@@ -19,7 +19,7 @@ from pathlib import Path
 import time
 from typing import Callable
 
-from .layout import Layout, valid_id
+from openprogram.host._platform.runtime_layout import Layout, valid_id
 
 SCHEMA = 1
 LOCK_BREAK_SECONDS = 10.0

@@ -167,21 +167,15 @@ _AUDITED_FIXED_ORIGINS = MappingProxyType(
                 "https://api.anthropic.com",
                 "https://api.cerebras.ai",
                 "https://api.deepseek.com",
-                "https://api.github.com",
-                "https://api.githubcopilot.com",
                 "https://api.groq.com",
-                "https://api.individual.githubcopilot.com",
                 "https://api.kimi.com",
                 "https://api.minimax.io",
                 "https://api.minimaxi.com",
                 "https://api.mistral.ai",
                 "https://api.openai.com",
                 "https://api.x.ai",
-                "https://cli-chat-proxy.grok.com",
                 "https://api.z.ai",
                 "https://bedrock-runtime.us-east-1.amazonaws.com",
-                "https://chatgpt.com",
-                "https://cloudcode-pa.googleapis.com",
                 "https://generativelanguage.googleapis.com",
                 "https://opencode.ai",
                 "https://openrouter.ai",
@@ -193,19 +187,6 @@ _AUDITED_FIXED_ORIGINS = MappingProxyType(
             {
                 "https://bedrock.us-east-1.amazonaws.com",
                 "https://bedrock-runtime.us-east-1.amazonaws.com",
-            }
-        ),
-        "provider.oauth.fixed": frozenset(
-            {
-                "https://accounts.google.com",
-                "https://api.github.com",
-                "https://auth.openai.com",
-                "https://auth.x.ai",
-                "https://accounts.x.ai",
-                "https://claude.ai",
-                "https://console.anthropic.com",
-                "https://github.com",
-                "https://oauth2.googleapis.com",
             }
         ),
         "tts.fixed_api": frozenset(
@@ -404,7 +385,6 @@ _SPECS = (
             max_decoded_body_bytes=512 * 1024 * 1024),
     _api("provider.fixed_api", URLTrustClass.FIXED_PUBLIC_SERVICE),
     _api("provider.configured_api", URLTrustClass.CONFIGURED_SERVICE),
-    _api("provider.oauth.fixed", URLTrustClass.FIXED_PUBLIC_SERVICE),
     _api(
         "provider.google.sdk",
         URLTrustClass.CONFIGURED_SERVICE,
@@ -1153,12 +1133,8 @@ class _ManagedTransportBase:
         spec = CONSUMER_REGISTRY[self._consumer]
         if spec.trust_class not in _AMBIENT_PROXY_TRUST:
             # Provider consumers with configured origins follow ordinary
-            # proxies only for the audited provider API and OAuth services.
-            audited_origins = (
-                _AUDITED_FIXED_ORIGINS["provider.fixed_api"]
-                | _AUDITED_FIXED_ORIGINS["provider.oauth.fixed"]
-            )
-            if target.origin not in audited_origins:
+            # proxies only for the audited provider API services.
+            if target.origin not in _AUDITED_FIXED_ORIGINS["provider.fixed_api"]:
                 return None
         proxy_url = self._ambient_proxy_url(target.normalized_url)
         if proxy_url is None:
@@ -1846,7 +1822,7 @@ def safe_client(
     overall_timeout: float = _OVERALL_TIMEOUT,
 ) -> SafeClient:
     if security is None:
-        from openprogram.state.settings import load_outbound_security_config
+        from openprogram.host.security.outbound_settings import load_outbound_security_config
 
         security = load_outbound_security_config(consumer)
     return SafeClient(
@@ -1871,7 +1847,7 @@ def safe_async_client(
     overall_timeout: float = _OVERALL_TIMEOUT,
 ) -> SafeAsyncClient:
     if security is None:
-        from openprogram.state.settings import load_outbound_security_config
+        from openprogram.host.security.outbound_settings import load_outbound_security_config
 
         security = load_outbound_security_config(consumer)
     return SafeAsyncClient(
@@ -1894,7 +1870,7 @@ def _configured_security(
     local_address: str | None = None,
     socket_options: tuple[tuple[int, int, int], ...] = (),
 ) -> OutboundSecurityConfig:
-    from openprogram.state.settings import load_outbound_security_config
+    from openprogram.host.security.outbound_settings import load_outbound_security_config
 
     security = load_outbound_security_config(consumer)
     exceptions = security.owner_exceptions

@@ -238,6 +238,7 @@ def test_live_installer_lock_is_not_removed(installation):
     assert version(target) == "0.6.1"
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("terminal", ["prepared", "committed", "rolled_back"])
 @pytest.mark.parametrize("mode", ["--verify-terminal:", "--restart-terminal:"])
 def test_terminal_identity_check_is_read_only_and_phase_bound(installation, terminal, mode):

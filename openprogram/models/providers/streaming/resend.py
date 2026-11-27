@@ -156,7 +156,7 @@ def reached_provider(exc: BaseException, *, answered: bool) -> bool:
     current: BaseException | None = exc
     while current is not None and seen < 4:
         name = type(current).__name__
-        if name in ("StreamIdleTimeout", "StreamTotalTimeout") or "StreamIdleTimeout" in str(current):
+        if name == "StreamIdleTimeout" or "StreamIdleTimeout" in str(current):
             return True
         current = current.__cause__ or current.__context__
         seen += 1

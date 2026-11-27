@@ -13,8 +13,7 @@ Post-Task-3 the runtime registry holds ONLY the user's enabled models
 (config spec rows), so there is no ambient 750-model catalogue to iterate.
 A module fixture injects a config covering the full wire matrix
 (openai-completions / anthropic-messages / google-generative-ai /
-openai-responses, plus a headers/compat row and a key_prefix dual-key
-row) and rebuilds ``ENABLED_MODELS`` from it — the invariants then run over
+openai-responses, plus a headers/compat row) and rebuilds ``ENABLED_MODELS`` from it — the invariants then run over
 every one of those rows exactly as they did over the static catalogue.
 """
 from __future__ import annotations
@@ -29,8 +28,7 @@ from openprogram.models.listing.credentials import _kind_for, _provider_api
 
 
 # A config covering every wire in the matrix, one enabled row per provider,
-# plus a headers/compat row (github-copilot) and a key_prefix dual-key row
-# (gemini-subscription mirroring the google-gemini-cli second key).
+# plus a headers/compat row (openrouter).
 _WIRE_MATRIX_CFG = {
     "deepseek": {"models": [                          # openai-completions
         {"id": "deepseek-chat", "name": "DeepSeek Chat"},
@@ -44,15 +42,10 @@ _WIRE_MATRIX_CFG = {
     "google": {"models": [                            # google-generative-ai
         {"id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash"},
     ]},
-    "github-copilot": {"models": [                    # headers + compat
-        {"id": "gpt-5.2-codex", "name": "GPT-5.2-Codex", "api": "openai-responses",
-         "headers": {"Copilot-Integration-Id": "vscode-chat"},
-         "compat": {"supports_store": True}},
-    ]},
-    "gemini-subscription": {"models": [               # key_prefix dual-key
-        {"id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro (Subscription)"},
-        {"id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro (Cloud Code Assist)",
-         "key_prefix": "google-gemini-cli"},
+    "openrouter": {"models": [                        # headers + compat
+        {"id": "openai/gpt-5.2", "name": "GPT-5.2",
+         "headers": {"X-Title": "OpenProgram"},
+         "compat": {"supports_store": False}},
     ]},
     "minimax": {"models": [                           # anthropic-wire third-party
         {"id": "MiniMax-M2", "name": "MiniMax M2"},
@@ -102,8 +95,8 @@ def test_single_api_provider_never_drifts(_wire_matrix_registry):
     bad = []
     for pid, apis in _static_apis(_wire_matrix_registry).items():
         # Only meaningful where the derivation is unambiguous: a provider
-        # whose provider.json declares MULTIPLE wire endpoints (e.g.
-        # github-copilot) has no single derived api by design — skip it,
+        # whose provider.json declares MULTIPLE wire endpoints has no
+        # single derived api by design — skip it,
         # exactly as the full-catalogue version skipped multi-api providers.
         if len(apis) == 1 and len(cat._static_apis_for(pid)) == 1:
             real = next(iter(apis))

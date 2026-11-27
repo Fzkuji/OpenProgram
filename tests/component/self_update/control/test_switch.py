@@ -18,7 +18,7 @@ from openprogram.operations.self_update.control import switch, watchdog
 from openprogram.operations.self_update.control.maintenance import load_maintenance, maintenance_blocks
 from openprogram.operations.self_update.control.switch import CommitIncomplete, Failed, RebaseConflict, SwitchController
 from openprogram.operations.self_update.versions import pointer as pointers
-from openprogram.operations.self_update.versions.layout import Layout
+from openprogram.host._platform.runtime_layout import Layout
 
 OLD, NEW = "old-version", "new-version"
 BASE = "py3.12-" + "a" * 16

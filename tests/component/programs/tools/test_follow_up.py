@@ -20,8 +20,8 @@ from openprogram.programs.tools.interaction.ask_user import (
     FollowUp,
     ask_user,
     run_with_follow_up,
-    set_ask_user,
 )
+from openprogram.runtime.agent.questions import set_ask_user
 from openprogram import Agent
 from openprogram.runtime.agent.follow_up_session import (
     Session,

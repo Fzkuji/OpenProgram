@@ -1,39 +1,19 @@
-"""Provider quota: headers and frames become one model, kept in memory and written throttled.
+"""Provider quota: headers become one model, kept in memory and written throttled.
 
-Header and frame shapes are the recorded ones of codex-rs
-(``codex-api/src/rate_limits.rs``), OpenAI's ``x-ratelimit-*`` and
-Anthropic's API-key ``anthropic-ratelimit-*``. Nothing here reaches a
-provider.
+Header shapes are OpenAI's ``x-ratelimit-*`` and Anthropic's API-key
+``anthropic-ratelimit-*``. Nothing here reaches a provider.
 """
 from __future__ import annotations
 
 import pytest
 
-from openprogram.models.providers.utils.http_transport.rate_limit import (
-    parse_codex_rate_limit_frame,
-    parse_codex_rate_limits,
-    parse_rate_limit,
-)
+from openprogram.models.providers.utils.http_transport.rate_limit import parse_rate_limit
 from openprogram.models.usage import quota
 from openprogram.models.usage.ledger import UsageLedger
 from openprogram.models.usage.quota import QuotaLimit, QuotaStore
 
 NOW = 1_800_000_000.0
 
-CODEX_HEADERS = {
-    "x-codex-primary-used-percent": "12.5",
-    "x-codex-primary-window-minutes": "300",
-    "x-codex-primary-reset-at": str(int(NOW + 3600)),
-    "x-codex-secondary-used-percent": "40",
-    "x-codex-secondary-window-minutes": "10080",
-    "x-codex-secondary-reset-at": str(int(NOW + 86400)),
-    "x-codex-credits-has-credits": "true",
-    "x-codex-credits-unlimited": "false",
-    "x-codex-credits-balance": "12.5",
-    "x-codex-other-primary-used-percent": "80",
-    "x-codex-other-primary-window-minutes": "300",
-    "x-codex-other-limit-name": "gpt-5.2-codex-sonic",
-}
 OPENAI_HEADERS = {
     "x-ratelimit-limit-requests": "500",
     "x-ratelimit-remaining-requests": "499",
@@ -52,48 +32,6 @@ ANTHROPIC_HEADERS = {
     "anthropic-ratelimit-output-tokens-limit": "8000",
     "anthropic-ratelimit-output-tokens-remaining": "7000",
 }
-
-
-def test_codex_headers_are_read_as_codex_sends_them():
-    families = parse_codex_rate_limits(CODEX_HEADERS)
-    assert [f.limit_id for f in families] == ["codex", "codex_other"]
-    main, other = families
-    assert main.primary.used_percent == 12.5 and main.primary.window_minutes == 300
-    assert main.secondary.window_minutes == 10080
-    assert main.credits.has_credits and main.credits.balance == "12.5"
-    assert other.limit_name == "gpt-5.2-codex-sonic"
-    # The OpenAI scheme the old caller checked is absent from a Codex answer.
-    assert not parse_rate_limit(CODEX_HEADERS).present
-
-
-def test_codex_limits_read_as_percent_left_with_window_names():
-    limits = {limit.limit_key: limit for limit in quota.header_limits(CODEX_HEADERS, now=NOW)}
-    assert limits["primary"].label == "5h"
-    assert limits["secondary"].label == "Weekly"
-    assert limits["primary"].used_fraction == pytest.approx(0.125)
-    assert limits["primary"].wire(NOW)["left_fraction"] == pytest.approx(0.875)
-    assert limits["primary"].resets_at == NOW + 3600
-    assert limits["credits"].remaining == 12.5
-    assert limits["codex_other:primary"].label == "gpt-5.2-codex-sonic 5h"
-    assert limits["codex_other:primary"].status == "warning"
-    assert quota.report_kind(limits.values()) == "windowed"
-
-
-def test_an_all_zero_codex_family_is_no_window():
-    assert parse_codex_rate_limits({"x-codex-primary-used-percent": "0"}) == []
-
-
-def test_the_codex_websocket_frame():
-    frame = {"type": "codex.rate_limits", "plan_type": "plus",
-             "rate_limits": {"primary": {"used_percent": 100, "window_minutes": 300, "reset_at": int(NOW + 60)},
-                             "secondary": {"used_percent": 20, "window_minutes": 10080}},
-             "credits": {"has_credits": False, "unlimited": False, "balance": None}}
-    family = parse_codex_rate_limit_frame(frame)
-    assert family.plan_type == "plus" and family.primary.used_percent == 100
-    limits = quota.codex_limits([family], source="frame", now=NOW)
-    assert [limit.limit_key for limit in limits] == ["primary", "secondary"]  # no credits bought: no row
-    assert limits[0].status == "exhausted"
-    assert parse_codex_rate_limit_frame({"type": "response.created"}) is None
 
 
 def test_openai_headers_become_per_minute_headroom():
@@ -198,21 +136,29 @@ def test_an_endpoint_read_is_written_at_once_and_replaces_its_old_rows():
     assert report.kind == "balance"
 
 
+def _plan_windows(now: float) -> list[QuotaLimit]:
+    return [
+        QuotaLimit(limit_key=key, label=key, unit="percent", source="headers", fetched_at=now,
+                   used=used, limit=100.0, remaining=100.0 - used, used_fraction=used / 100.0,
+                   window_minutes=300, resets_at=now + 3600)
+        for key, used in (("primary", 12.5), ("secondary", 40.0), ("other:primary", 80.0))
+    ]
+
+
 def test_snapshots_survive_in_usage_db(tmp_path):
     ledger = UsageLedger(db_path=tmp_path / "usage.db")
     store = QuotaStore(ledger)
-    store.observe("openai-codex", "cred-1", quota.header_limits(CODEX_HEADERS, now=NOW))
+    store.observe("zai", "cred-1", _plan_windows(NOW))
     again = QuotaStore(ledger)
-    (report,) = again.reports("openai-codex")
-    assert {limit.limit_key for limit in report.limits} >= {"primary", "secondary", "credits"}
-    assert report.worst().limit_key == "codex_other:primary"
+    (report,) = again.reports("zai")
+    assert {limit.limit_key for limit in report.limits} >= {"primary", "secondary"}
+    assert report.worst().limit_key == "other:primary"
     # One sample per limit per fifteen minutes.
-    store.observe("openai-codex", "cred-1", quota.header_limits(CODEX_HEADERS, now=NOW + 60), force_write=True)
-    samples = ledger.quota_samples(provider="openai-codex", since=0)
+    store.observe("zai", "cred-1", _plan_windows(NOW + 60), force_write=True)
+    samples = ledger.quota_samples(provider="zai", since=0)
     assert len([s for s in samples if s["limit_key"] == "primary"]) == 1
-    store.observe("openai-codex", "cred-1", quota.header_limits(CODEX_HEADERS, now=NOW + 16 * 60),
-                  force_write=True)
-    samples = ledger.quota_samples(provider="openai-codex", since=0)
+    store.observe("zai", "cred-1", _plan_windows(NOW + 16 * 60), force_write=True)
+    samples = ledger.quota_samples(provider="zai", since=0)
     assert len([s for s in samples if s["limit_key"] == "primary"]) == 2
     ledger.close()
 
@@ -231,13 +177,3 @@ def test_a_token_is_matched_to_its_stored_credential_by_digest(tmp_path, monkeyp
     assert quota.account_for_token("openai", "sk-other") == ""
     assert quota.account_for_token("openai", None) is None
     assert all("sk-test" not in key[1] for key in quota._account_cache)
-
-
-def test_a_codex_frame_is_kept_for_the_account_that_sent_the_request(tmp_path, monkeypatch):
-    store = QuotaStore(UsageLedger(db_path=tmp_path / "usage.db"))
-    monkeypatch.setattr(quota, "default_store", store)
-    monkeypatch.setattr(quota, "account_for_token", lambda provider, token: "")
-    frame = {"type": "codex.rate_limits", "plan_type": "plus",
-             "rate_limits": {"primary": {"used_percent": 30, "window_minutes": 300, "reset_at": int(NOW + 60)}}}
-    quota.observe_codex_frame("openai-codex", "token-from-another-tool", frame, account="cred-work")
-    assert [report.account for report in store.reports("openai-codex")] == ["cred-work"]

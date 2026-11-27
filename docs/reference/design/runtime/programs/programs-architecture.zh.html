@@ -27,7 +27,7 @@
         ├── runtime.py          # @function 与共享工具注册表
         ├── context.py          # ProgramContext，每个所有者一个
         ├── registry.py         # 内置、用户与 harness Program 的加载器
-        └── packages.py  sources.py  execution.py  services.py  ui/ ...
+        └── packages.py  sources.py  services.py  ui/ ...
 
 ~/.openprogram/programs/&lt;name&gt;/   # Python 包、应用、harness 克隆</pre>
 <p class="note">每项能力只有一个实现和一个公开 import 路径。<code translate="no">programs/</code> 下没有 <code translate="no">functions/</code>、<code translate="no">workflows/</code> 或 <code translate="no">packages/</code>，旧路径也没有别名。</p>

@@ -14,15 +14,14 @@ def is_inspection_tool(tool) -> bool:
 
     Permission wrappers pass the original resolved tool here. Copies retaining
     the builtin execute callable are fine; replacing that callable is not.
-    Shell, MCP and custom tools are deliberately not classified as read-only.
+    The builtin readers (read, grep, glob, list) say which tool is theirs in
+    their profile (``tool_profiles``); shell, MCP and custom tools are
+    deliberately not classified as read-only.
     """
-    from openprogram.programs.tools.files.read import read
-    from openprogram.programs.tools.files.grep import grep
-    from openprogram.programs.tools.files.glob import glob_tool
-    from openprogram.programs.tools.files.list import list_dir
+    from openprogram.runtime.permissions import tool_profiles
 
-    return any(tool.name == builtin.name and getattr(tool, "execute", None) is builtin.execute
-               for builtin in (read, grep, glob_tool, list_dir))
+    found = tool_profiles.profile(getattr(tool, "name", ""))
+    return bool(found is not None and found.inspects is not None and found.inspects(tool))
 
 
 # Tools that operate a screen. What an interrupted step of theirs changed can

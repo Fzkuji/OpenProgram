@@ -51,7 +51,7 @@ from openprogram.runtime.conversation.turn_runtime.stream_tap import final_block
 from openprogram.runtime.conversation.turn_runtime.error_path import handle_turn_error
 from openprogram.runtime.conversation.turn_runtime.finalize import finalize_turn
 from openprogram.runtime.conversation.turn_runtime.persistence import persist_assistant_message
-from openprogram.operations.self_update.control.handoff import release_prepared_update
+from openprogram.runtime import maintenance
 
 # The agent-loop run stage. Bound as a package attribute named
 # ``_run_loop_blocking`` — the seam tests patch (patch.object(D,
@@ -155,7 +155,7 @@ def _drain_send_message_inbox(session_id: str) -> None:
 def _release_prepared_update(session_id: str, assistant_msg_id: str) -> None:
     """Hand a self-update this turn prepared to its supervisor; never fail the turn."""
     try:
-        release_prepared_update(session_id, assistant_msg_id)
+        maintenance.turn_committed(session_id, assistant_msg_id)
     except Exception:
         _log.warning(
             "self-update turn release failed for %s turn %s",
@@ -316,8 +316,7 @@ def execute_continuation(
 
     # The pre-pause trace is part of tool_calls, so files attached
     # before the pause go out too (same step as 4b in _process_turn_once).
-    from openprogram.programs.tools.interaction.send_file import turn_attachments
-    final_text, attached_files = turn_attachments(
+    final_text, attached_files = _reply_attachments(
         final_text, tool_calls, req, _turn_started_at(db, req.session_id, user_msg_id))
 
     _close_task_at_turn_end(req, assistant_msg_id, cancel_event)
@@ -390,17 +389,28 @@ def _turn_started_at(db, session_id: str, user_msg_id: str) -> float | None:
 
 
 def _close_task_at_turn_end(req, assistant_msg_id: str, cancel_event) -> None:
-    """Close or carry the open task (``todo.shared.close_at_turn_end``),
-    unless the reply was stopped."""
+    """Tell Programs a reply ended normally (the ``reply_ended`` turn moment:
+    the task board closes or carries the open task), unless it was stopped."""
     if cancel_event is not None and cancel_event.is_set():
         return
-    try:
-        from openprogram.programs.tools.planning.todo import shared as _tasks
-        _tasks.close_at_turn_end(req.session_id, assistant_msg_id, scope=_tasks.scope_of(req, assistant_msg_id),
-                                 branch_id=getattr(req, "branch_id", None))
-    except Exception:
-        # The reply is whole without it; the task stays open for the next turn.
-        _log.debug("task not closed at the end of the turn", exc_info=True)
+    from openprogram.runtime.conversation import turn_hooks
+    for reply_ended in turn_hooks.handlers("reply_ended"):
+        try:
+            reply_ended(req, assistant_msg_id)
+        except Exception:
+            # The reply is whole without it; the task stays open for the next turn.
+            _log.debug("task not closed at the end of the turn", exc_info=True)
+
+
+def _reply_attachments(final_text: str, tool_calls, req, started_at) -> tuple[str, list[str]]:
+    """The reply text with the markers of the files the turn hands back, and
+    the paths a channel may upload (the ``reply_attachments`` turn moment)."""
+    from openprogram.runtime.conversation import turn_hooks
+    paths: list[str] = []
+    for attach in turn_hooks.handlers("reply_attachments"):
+        final_text, attached = attach(final_text, tool_calls, req, started_at)
+        paths.extend(attached)
+    return final_text, paths
 
 
 def _bind_usage_branch(db, session_id: str, branch_id: str | None = None) -> None:
@@ -479,11 +489,10 @@ def _run_turn_once(
     on_event = on_event or _noop
     user_msg_id = req.user_msg_id or uuid.uuid4().hex[:12]
     req.user_msg_id = user_msg_id
-    from openprogram.programs.tools.planning.goal.presentation import event_sink
-    on_event = event_sink(on_event, req)
+    from openprogram.runtime.conversation import turn_hooks
+    for wrap_events in turn_hooks.handlers("turn_events"):
+        on_event = wrap_events(on_event, req)
     on_event = naming_reply_row(on_event, req.session_id, user_msg_id, user_msg_id + "_reply")
-    from openprogram.operations.self_update.control.maintenance import turn_admission
-
     # User slash actions are still durable Agent turns. Keep their existing
     # DAG-specific behavior behind the same dispatcher/driver lifecycle so
     # public transports do not start a separate slash-action thread.
@@ -589,20 +598,19 @@ def _run_turn_once(
 
     # 1-2. Session ensure + history resolution + user-message persist
     #      (prep.py). Head movement stays inside the TurnWriter.
-    with turn_admission(req.source) as admitted:
+    with maintenance.turn_admission(req.source) as admitted:
         if not admitted:
-            from openprogram.operations.self_update.control.held_turns import HELD_MESSAGE, HELD_REASON, hold
-            if hold(req, locked=True):
+            if maintenance.hold_turn(req):
                 _run_slot.finishing(req.session_id, user_msg_id)
                 on_event({"type": "chat_response", "data": {
                     "type": "result", "session_id": req.session_id, "msg_id": user_msg_id,
-                    "assistant_msg_id": assistant_msg_id, "content": HELD_MESSAGE, "blocks": [],
+                    "assistant_msg_id": assistant_msg_id, "content": maintenance.HELD_MESSAGE, "blocks": [],
                 }})
                 return TurnResult(
-                    final_text=HELD_MESSAGE,
+                    final_text=maintenance.HELD_MESSAGE,
                     user_msg_id=user_msg_id,
                     assistant_msg_id=assistant_msg_id,
-                    error_reason=HELD_REASON,
+                    error_reason=maintenance.HELD_REASON,
                 )
             message = "This turn did not run: OpenProgram is switching to an update. Send it again once the update has finished."
             on_event({
@@ -780,8 +788,7 @@ def _run_turn_once(
     #     A resumed turn does the same in execute_continuation.
     #     Deliverables the turn produced (a deck a script built, named in
     #     the reply) are attached the same way without a send_file call.
-    from openprogram.programs.tools.interaction.send_file import turn_attachments
-    final_text, attached_files = turn_attachments(final_text, tool_calls, req, started_at)
+    final_text, attached_files = _reply_attachments(final_text, tool_calls, req, started_at)
 
     # 4c. A reply that ended normally closes the task it worked on. A
     #     stopped, paused or failed one leaves the task as it stood.

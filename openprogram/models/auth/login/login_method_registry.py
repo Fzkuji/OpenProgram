@@ -13,12 +13,14 @@ A provider without an entry is a plain API-key provider: one way in (paste
 a key), its key variable from the catalogue (models.dev), checked with
 ``GET <base>/models`` (or the Anthropic form for an Anthropic-wire host).
 
-Method ids (handlers live in ``auth/methods/`` and ``auth/login/``):
-  pkce_oauth       browser PKCE OAuth, loopback callback
-  device_code      browser device-code OAuth
+Method ids (handlers live in ``auth/login/``):
   import_from_cli  read an existing vendor-CLI login
-  paste_token      paste an access token
   api_key          paste a static API key
+
+A subscription is not a provider here: it is used by running the vendor's
+own program as an outside-agent harness (``runtime/harnesses/``), and the
+providers reachable only by acting as an official client are withdrawn
+(``provider_policy.WITHDRAWN_PROVIDERS``): no way to connect them.
 
 Check styles (``models/listing/credentials.py`` runs them):
   openai_bearer     ``GET <base>/models`` with ``Authorization: Bearer``
@@ -72,7 +74,7 @@ class ProviderAuth:
     check_path: str = "/models"
     keys_url: Optional[str] = None
     billing_url: Optional[str] = None
-    #: What a sign-in of this provider is called ("ChatGPT" in "ChatGPT
+    #: What a sign-in of this provider is called ("Qwen" in "Qwen
     #: sign-in"). ``None``: the provider's name.
     signin: Optional[str] = None
     extra: dict = field(default_factory=dict)
@@ -99,48 +101,6 @@ _ENTRIES: dict[str, ProviderAuth] = {e.provider: e for e in (
     _entry("claude-code", methods=(), env_vars=(), check="login"),
     _entry("google", env_vars=("GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY"),
            check="google_query", keys_url="https://aistudio.google.com/apikey"),
-    _entry("gemini-subscription", methods=(LoginMethod(
-        "import_from_cli", "Import existing login", "导入已有登录",
-        "Uses the sign-in the Gemini CLI saved on this machine.",
-        "使用 Gemini CLI 在本机保存的登录。",
-        path="~/.gemini/oauth_creds.json",
-    ),), env_vars=(), check="login", signin="Gemini CLI"),
-    _entry("openai-codex", methods=(LoginMethod(
-        "pkce_oauth", "Sign in with ChatGPT", "用 ChatGPT 登录",
-        "Opens ChatGPT in your browser to approve.",
-        "在浏览器打开 ChatGPT 完成授权。",
-    ),), env_vars=(), check="login", signin="ChatGPT"),
-    _entry("github-copilot", methods=(
-        LoginMethod(
-            "device_code", "Sign in with GitHub", "用 GitHub 登录",
-            "Opens GitHub in your browser and shows a one-time code to enter there.",
-            "在浏览器打开 GitHub，并给出一个一次性代码在那里输入。",
-        ),
-        LoginMethod(
-            "paste_token", "Paste a GitHub token", "粘贴 GitHub 令牌",
-            "A GitHub token of an account with Copilot.",
-            "有 Copilot 的 GitHub 账号的令牌。",
-        ),
-    ), env_vars=("COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"), check="login",
-       billing_url="https://github.com/settings/copilot", signin="GitHub"),
-    _entry("xai-subscription", methods=(
-        LoginMethod(
-            "pkce_oauth", "Sign in with Grok", "用 Grok 登录",
-            "Opens Grok in your browser to approve.",
-            "在浏览器打开 Grok 完成授权。",
-        ),
-        LoginMethod(
-            "import_from_cli", "Import existing login", "导入已有登录",
-            "Uses the sign-in the Grok CLI saved on this machine.",
-            "使用 Grok CLI 在本机保存的登录。",
-            path="~/.grok/auth.json",
-        ),
-        LoginMethod(
-            "paste_token", "Paste an access token", "粘贴访问令牌",
-            "For a Grok token copied from another machine or tool.",
-            "用于从其他机器或工具复制来的 Grok 令牌。",
-        ),
-    ), env_vars=(), check="login", signin="Grok"),
     # OpenCode Zen and Go: keys from the OpenCode console, checked by listing
     # the models of the provider's own base address (opencode.ai/docs/zen,
     # opencode.ai/docs/go).
@@ -192,7 +152,7 @@ def provider_auth(provider: str) -> ProviderAuth:
     entry = _ENTRIES.get(provider)
     if entry is not None:
         return entry
-    from openprogram.models.providers.catalog.local import is_local_provider
+    from ..provider_port import is_local_provider
     if is_local_provider(provider):
         return _entry(provider, env_vars=(provider.upper().replace("-", "_") + "_API_KEY",),
                       check="openai_bearer")
@@ -206,8 +166,8 @@ def listed_providers() -> list[str]:
 
 def login_method_list(provider: str) -> list[LoginMethod]:
     """Ordered ways to connect ``provider``; the first is the recommended one."""
-    from openprogram.models.auth.provider_policy import UNSUPPORTED_PROVIDERS
-    if provider in UNSUPPORTED_PROVIDERS:
+    from openprogram.models.auth.provider_policy import UNSUPPORTED_PROVIDERS, WITHDRAWN_PROVIDERS
+    if provider in UNSUPPORTED_PROVIDERS or provider in WITHDRAWN_PROVIDERS:
         return []
     return list(provider_auth(provider).methods)
 
@@ -242,7 +202,7 @@ def env_vars(provider: str) -> list[str]:
     if names is not None:
         return list(names)
     try:
-        from openprogram.models.providers.catalog.metadata import catalogue_env_var
+        from ..provider_port import catalogue_env_var
         name = catalogue_env_var(provider)
     except Exception:
         name = None
@@ -255,7 +215,7 @@ def check_style(provider: str) -> str:
     if style:
         return style
     with contextlib.suppress(Exception):
-        from openprogram.models.providers.catalog.metadata import default_api_for
+        from ..provider_port import default_api_for
         if default_api_for(provider) == "anthropic-messages":
             return "anthropic_compat"
     return "openai_bearer"
@@ -267,18 +227,14 @@ def console_url(provider: str, page: str = "keys") -> Optional[str]:
     return entry.keys_url if page == "keys" else entry.billing_url if page == "billing" else None
 
 
-# Sign-in providers the catalogue names awkwardly and that need no entry of their own.
-_SIGNIN_NAMES = {"google-gemini-cli": "Gemini CLI"}
-
-
 def signin_name(provider: str) -> str:
-    """What a sign-in of ``provider`` is called: "ChatGPT" for OpenAI Codex,
+    """What a sign-in of ``provider`` is called: its entry's ``signin``,
     else the provider's own name."""
-    name = provider_auth(provider).signin or _SIGNIN_NAMES.get(provider)
+    name = provider_auth(provider).signin
     if name:
         return name
     try:
-        from openprogram.models.providers.catalog.metadata import label_for
+        from ..provider_port import label_for
         return label_for(provider) or provider
     except Exception:
         return provider
@@ -286,8 +242,8 @@ def signin_name(provider: str) -> str:
 
 # Companies: one company, several ways to connect it.
 #
-# Several catalogue providers are one company reached in different ways (the
-# ChatGPT sign-in and the OpenAI API key; OpenCode Zen and Go; a region or a
+# Several catalogue providers are one company reached in different ways
+# (OpenCode Zen and Go; a region or a
 # coding plan of the same vendor). The table below is the one place that
 # says so: the provider list draws one card per company with a section per
 # way, the CLI prints the company over its ways, the model picker names a
@@ -300,10 +256,10 @@ class Way:
     """One way to connect a company: a catalogue provider id and its names."""
 
     provider: str
-    #: The section's title on a company card ("ChatGPT subscription").
+    #: The section's title on a company card ("Go · monthly subscription").
     title: str
     title_zh: str
-    #: The way in a few words, after the company ("OpenAI · ChatGPT").
+    #: The way in a few words, after the company ("OpenCode · Go").
     short: str
     short_zh: str
     #: Offered as a tab of the company in Add provider.
@@ -330,10 +286,6 @@ def _api(provider: str, name: str, name_zh: str, short: str, short_zh: str, *, o
 
 
 COMPANIES: tuple[Company, ...] = (
-    Company("openai", "OpenAI", (
-        _way("openai-codex", "ChatGPT subscription", "ChatGPT 订阅", "ChatGPT", "ChatGPT", offered=True),
-        _api("openai", "API", "API", "API", "API", offered=True),
-    )),
     Company("opencode", "OpenCode", (
         _api("opencode", "Zen", "Zen", "Zen", "Zen"),
         _way("opencode-go", "Go · monthly subscription", "Go · 月度订阅", "Go", "Go"),
@@ -342,14 +294,8 @@ COMPANIES: tuple[Company, ...] = (
         _api("perplexity", "Sonar API", "Sonar API", "Sonar", "Sonar"),
         _api("perplexity-agent", "Agent API", "Agent API", "Agent", "Agent"),
     )),
-    Company("xai", "xAI", (
-        _api("xai", "API", "API", "API", "API", offered=True),
-        _way("xai-subscription", "Grok subscription", "Grok 订阅", "Grok", "Grok", offered=True),
-    )),
     Company("google", "Google", (
         _api("google", "Gemini API", "Gemini API", "API", "API"),
-        _way("gemini-subscription", "Gemini subscription", "Gemini 订阅", "Subscription", "订阅"),
-        _way("google-gemini-cli", "Gemini CLI sign-in", "Gemini CLI 登录", "Gemini CLI", "Gemini CLI"),
         _api("google-vertex", "Vertex AI", "Vertex AI", "Vertex", "Vertex"),
         _api("google-vertex-anthropic", "Vertex AI (Anthropic models)", "Vertex AI（Anthropic 模型）",
              "Vertex Anthropic", "Vertex Anthropic"),
@@ -443,8 +389,8 @@ _placed: tuple[tuple[Company, ...], dict[str, tuple[Company, Way]]] = (COMPANIES
 
 def _catalogue_entries() -> list[dict]:
     try:
-        from openprogram.models.providers.catalog.sources import models_dev
-        return [p for p in models_dev.list_providers() if p.get("id")]
+        from ..provider_port import catalogue_providers
+        return [p for p in catalogue_providers() if p.get("id")]
     except Exception:
         return []
 

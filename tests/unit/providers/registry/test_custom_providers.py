@@ -81,13 +81,13 @@ def test_create_rejects_empty_base_url(mem_cfg):
 
 
 def test_create_rejects_alias_collision(mem_cfg, monkeypatch):
-    # "codex" resolves to openai-codex — a reserved alias.
+    # "claude" resolves to anthropic — a reserved alias.
     monkeypatch.setattr("openprogram.models.providers.get_providers", lambda: [])
     from openprogram.models.providers.catalog import sources as S
     monkeypatch.setattr(S.models_dev, "list_providers", lambda: [])
-    res = st.create_custom_provider("codex", "Codex", "https://x.test/v1")
+    res = st.create_custom_provider("claude", "Claude", "https://x.test/v1")
     assert res["ok"] is False and "alias" in res["error"].lower()
-    assert "codex" not in mem_cfg
+    assert "claude" not in mem_cfg
 
 
 def test_create_rejects_existing_provider_id(mem_cfg, monkeypatch):

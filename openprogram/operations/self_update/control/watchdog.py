@@ -13,8 +13,8 @@ import threading
 import time
 
 from ..store import SelfUpdateStore
-from ..types import is_terminal
-from ..versions import layout as paths
+from ..types import is_held, is_terminal
+from openprogram.host._platform import runtime_layout as paths
 from . import switch
 from .held_turns import drain
 
@@ -47,7 +47,9 @@ def tick(store: SelfUpdateStore | None = None) -> float | None:
         return None
     switch.clear_finished_admission(target, paths.for_state(target.root.parent))
     record = target.load_active()
-    running = record is not None and switch.owns(record) and not is_terminal(record.state.phase)
+    # A held update waits for its owner's restart with no controller.
+    running = (record is not None and switch.owns(record) and not is_terminal(record.state.phase)
+               and not is_held(record))
     due = None
     if running:
         update_id = record.request.update_id

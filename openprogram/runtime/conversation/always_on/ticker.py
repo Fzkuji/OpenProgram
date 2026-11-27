@@ -8,7 +8,7 @@ that stay quiet unless they are used again. Archiving a conversation
 stops its wakes.
 
 The thread sleeps until the earliest wake it found, and wakes before that
-when the wake state changes (``store.WAKES_TOPIC``: a conversation's
+when the wake state changes (``agent_registry.manager.ALWAYS_ON_WAKES_TOPIC``: a conversation's
 schedule, an Agent's always-on state or settings, a user's turn) or an
 ``agent.json`` is written by another process. While something is
 unfinished that a tick has to come back to (a running check-in, a run
@@ -219,15 +219,15 @@ def tick(now: float | None = None, outlook: Outlook | None = None) -> list[dict]
     """Stop runs past their limit and wake the conversations that are due.
 
     ``outlook`` learns when the next tick is needed."""
+    from openprogram.runtime import scheduler_link
     from openprogram.runtime.conversation.always_on.runtime import wake
-    from openprogram.runtime.scheduler import time_limits
 
     results = []
     outlook = outlook or Outlook()
     now = time.time() if now is None else now
     try:
         # First, so a check-in stopped here is recorded by the look below.
-        time_limits.stop_overdue(now)
+        scheduler_link.stop_overdue(now)
     except Exception as exc:  # noqa: BLE001 - wakes go on without it
         outlook.soon = True
         _log.warning("time limits not checked: %s: %s", type(exc).__name__, exc, exc_info=True)
@@ -239,7 +239,7 @@ def tick(now: float | None = None, outlook: Outlook | None = None) -> list[dict]
     try:
         # A run under a time limit (a check-in just started, a scheduled run)
         # is looked at every tick until it ends.
-        if time_limits.limited_runs_open():
+        if scheduler_link.limited_runs_open():
             outlook.soon = True
     except Exception:  # noqa: BLE001
         outlook.soon = True
@@ -248,9 +248,8 @@ def tick(now: float | None = None, outlook: Outlook | None = None) -> list[dict]
 
 def _watch_agents() -> None:
     """``agent.json`` written by another process (the CLI) wakes the ticker."""
-    from openprogram.runtime.agent_registry.manager import agent_dir
-    from openprogram.runtime.conversation.always_on.store import WAKES_TOPIC
-    changes.watch(agent_dir("_").parent, WAKES_TOPIC, recursive=True, names={"agent.json"})
+    from openprogram.runtime.agent_registry.manager import ALWAYS_ON_WAKES_TOPIC, agent_dir
+    changes.watch(agent_dir("_").parent, ALWAYS_ON_WAKES_TOPIC, recursive=True, names={"agent.json"})
 
 
 class _Stop(threading.Event):
@@ -272,8 +271,8 @@ def start_in_worker(interval: float = TICK_SECONDS) -> tuple[threading.Event, th
         handoff_migration.migrate_in_worker()
     except Exception as exc:  # noqa: BLE001
         _log.warning("stored handoffs not migrated: %s: %s", type(exc).__name__, exc, exc_info=True)
-    from openprogram.runtime.conversation.always_on.store import WAKES_TOPIC
-    listener = changes.listen(WAKES_TOPIC)
+    from openprogram.runtime.agent_registry.manager import ALWAYS_ON_WAKES_TOPIC
+    listener = changes.listen(ALWAYS_ON_WAKES_TOPIC)
     stop = _Stop(listener)
     started_at = time.time()
     try:

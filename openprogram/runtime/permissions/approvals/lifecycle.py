@@ -113,7 +113,7 @@ def _caller_sandbox(values, session_id):
         # reads it for a turn that set none; read from the project store here
         # because permissions sit below the conversation package.
         try:
-            from openprogram.host.sandbox import MODE_WORKSPACE_WRITE
+            from openprogram.state.sandbox_settings import MODE_WORKSPACE_WRITE
             from openprogram.state.store.project import project_store
             project = project_store.project_for_session(session_id) or project_store.get_default_project()
             mode = project_store.load_project_settings(project.id).get("sandbox_mode")
@@ -233,13 +233,14 @@ def wrap_live_permission(tool, request, on_event):
         return await inner.execute(call_id, args, cancel, on_update)
 
     def visible():
-        from openprogram.programs import _unsafe_in_for
+        from openprogram.runtime import program_host
         current = current_permission_request(request)
         if not epoch_visible():
             return False
         if tool.name == "exit_plan_mode":
             return current.permission_mode == "plan"
-        return not (current.permission_mode == "plan" and "plan" in _unsafe_in_for(tool.name))
+        return not (current.permission_mode == "plan"
+                    and "plan" in program_host.host().unsafe_in_for(tool.name))
 
     def epoch_visible():
         """Whether the tool goes in the tools array of a new epoch: every
@@ -274,7 +275,7 @@ async def reconcile_permission_waits(session_id: str, *, service=None, force: bo
     resumes such a wait.
     """
     from types import SimpleNamespace
-    from openprogram.runtime.permissions.authority import LOCAL_OWNER_SPEAKER
+    from openprogram.state.authority import LOCAL_OWNER_SPEAKER
     from openprogram.runtime.permissions.policy import permission_decision
     from openprogram.runtime.permissions.session_facts import facts
     from openprogram.runtime.execution import default_control_service

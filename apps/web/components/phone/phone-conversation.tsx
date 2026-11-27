@@ -1,8 +1,9 @@
 "use client";
 
 /**
- * A conversation on the phone: Back to the list, its title with its state
- * under it, and ⓘ for its details; then the transcript and the composer
+ * A conversation on the phone, laid out as a Messages thread: Framework7's
+ * bar with Back, the title and its state, and ⓘ for its details; then the
+ * transcript and the composer
  * (the split view's self-contained session pane, which the composer lays
  * out for a phone itself: composer/controls/phone-composer-bar.tsx).
  */
@@ -17,9 +18,11 @@ import { useTranslation } from "@/lib/i18n";
 import { useSessionStore } from "@/lib/session-store";
 import { useCenterTabs } from "@/lib/tabs/center-tabs-store";
 
+import { Link, Navbar, Page } from "framework7-react";
+
 import { PhoneMessageMenu } from "./phone-message-menu";
 import { openDetails } from "./phone-nav";
-import { PhoneNavBar } from "./phone-nav-bar";
+import { backTo } from "./phone-router";
 
 /** A step tapped in the transcript opens as a page of its own: the
  *  desktop puts it in the right panel, which a phone does not have. */
@@ -51,25 +54,30 @@ export function PhoneConversation({ sessionId }: { sessionId: string | null }) {
     : null;
 
   return (
-    <div className="phone-app-page phone-conversation" ref={root} data-state={state ?? undefined}>
-      <PhoneNavBar
+    <Page pageContent={false} className="phone-conversation" data-state={state ?? undefined}>
+      <Navbar
         // The page under it: the conversation's project, as an iOS
         // navigation bar names the page Back returns to; a long name
         // would crowd the title, so it is "Back" then, as on iOS.
-        back={conv?.project && [...conv.project].length <= 10 ? conv.project : text("Back", "返回")}
+        {...backTo(conv?.project && [...conv.project].length <= 10 ? conv.project : text("Back", "返回"))}
         title={(conv && displayTitle(conv)) || text("New chat", "新对话")}
-        status={status}
-        trailing={saved && sid ? (
-          <button type="button" className="phone-app-circle" aria-label={text("Details", "详情")} onClick={() => openDetails(sid)}>
-            <Info size={19} strokeWidth={1.8} aria-hidden="true" />
-          </button>
+        subtitle={status ?? undefined}
+      >
+        {saved && sid ? (
+          <Link slot="right" iconOnly aria-label={text("Details", "详情")} onClick={() => openDetails(sid)}>
+            <Info size={22} aria-hidden="true" />
+          </Link>
         ) : null}
-      />
-      <PhoneMessageMenu root={root}>
-        {tab && sid ? (
-          <PeerSessionPane key={sid} tabId={tab.id} sessionId={sid} title={tab.title} showTitle={false} />
-        ) : <div className="phone-app-fill" />}
-      </PhoneMessageMenu>
-    </div>
+      </Navbar>
+      {/* The transcript and the composer are the app's own; the composer's
+          controls are Framework7's again (phone-composer-bar.tsx). */}
+      <div className="phone-conversation-body" ref={root} data-not-f7>
+        <PhoneMessageMenu root={root}>
+          {tab && sid ? (
+            <PeerSessionPane key={sid} tabId={tab.id} sessionId={sid} title={tab.title} showTitle={false} />
+          ) : <div className="phone-app-fill" />}
+        </PhoneMessageMenu>
+      </div>
+    </Page>
   );
 }

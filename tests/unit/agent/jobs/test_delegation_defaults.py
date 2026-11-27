@@ -50,7 +50,7 @@ def _check(jobs, *, now, ledger=None, entries=None, already=None):
 
 
 def test_defaults_are_the_documented_ones(config):
-    from openprogram.programs.tools.agents.send_message.send_message import depth
+    from openprogram.runtime.jobs import chain_budgets as depth
     from openprogram.runtime.jobs.resource_governance.limits import running_agents_default
 
     assert delegation_watch.tree_cap_usd() == 2.0
@@ -405,7 +405,7 @@ def test_a_forked_helper_sends_the_prompt_its_caller_recorded(monkeypatch):
     a fresh helper or the conversation's own turn builds its own."""
     import hashlib
     from types import SimpleNamespace
-    from openprogram.programs.tools.agents.send_message.send_message import depth
+    from openprogram.runtime.jobs import chain_budgets as depth
     from openprogram.runtime.conversation.turn_runtime import loop_runner
 
     caller_prompt = "You are Assistant.\n\n# Environment\ncwd: /repo"

@@ -20,8 +20,8 @@ import time
 from typing import Iterable, Iterator
 import zipfile
 
-from . import layout as paths
-from .layout import Layout, valid_id
+from openprogram.host._platform import runtime_layout as paths
+from openprogram.host._platform.runtime_layout import Layout, valid_id
 from openprogram.host._platform import filesystem
 
 VERSION_FILE = "version.json"

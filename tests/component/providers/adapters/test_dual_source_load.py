@@ -6,8 +6,7 @@ the git-tracked ``providers/adapters/<p>/models.json`` catalogue. These tests pi
 
   * ``_load`` reads the config source and populates the registry from it;
   * the registry is one MUTABLE dict object — dynamic writers
-    (``register_model_from_config``, the codex runtime-registration
-    helper) do ``ENABLED_MODELS[k] = m`` in place and must land in the same
+    (``register_model_from_config``) do ``ENABLED_MODELS[k] = m`` in place and must land in the same
     dict.
 """
 from openprogram.models.providers.catalog.models import get_model
@@ -18,16 +17,16 @@ from .._registry_fixture import install_registry
 def test_registry_populated_from_config(monkeypatch):
     reg = install_registry(monkeypatch, {
         "openai": {"models": [{"id": "gpt-4o", "name": "GPT-4o", "api": "openai-responses"}]},
-        "gemini-subscription": {"models": [
-            {"id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro (Subscription)"},
-            {"id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro (Cloud Code Assist)",
-             "key_prefix": "google-gemini-cli"},
+        "openrouter": {"models": [
+            {"id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro"},
+            {"id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro (second key)",
+             "key_prefix": "openrouter-team"},
         ]},
     })
     assert get_model("openai", "gpt-4o") is not None
-    # gemini double-key both resolve
-    assert get_model("gemini-subscription", "gemini-2.5-pro") is not None
-    assert get_model("google-gemini-cli", "gemini-2.5-pro") is not None
+    # a double-keyed row resolves under both keys
+    assert get_model("openrouter", "gemini-2.5-pro") is not None
+    assert get_model("openrouter-team", "gemini-2.5-pro") is not None
     assert "openai/gpt-4o" in reg
 
 

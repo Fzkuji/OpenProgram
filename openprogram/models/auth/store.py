@@ -3,7 +3,7 @@ The credential store: one ordered credential list per provider.
 
 Each provider's list is one file, ``<state>/auth/<provider>/credentials.json``
 (:class:`~openprogram.models.auth.types.CredentialPool`), written whole and
-atomically through the private-file seam (``credentials/io.py``, which
+atomically through the private-file seam (``state/private_files.py``, which
 publishes with ``filesystem.replace_file``). The store keeps the parsed
 lists in memory, re-reads a file another process changed (byte revision),
 serialises writes per process and per file, and fans an
@@ -337,7 +337,7 @@ class AuthStore:
         rows to drop from the file, which are otherwise kept while unlisted."""
         provider_id = canonical_provider(provider_id)
         path = self.pool_file(provider_id)
-        from openprogram.models.auth.credentials import _private_file_lock
+        from openprogram.state.private_files import _private_file_lock
 
         self._private_folder(path)
         with self._sync_lock, _private_file_lock(path, root=self._root,
@@ -434,7 +434,7 @@ class AuthStore:
         path = self.keys_file(company)
         if not path.exists():
             return []
-        from openprogram.models.auth.credentials import _private_file_lock, _read_private_bytes
+        from openprogram.state.private_files import _private_file_lock, _read_private_bytes
         from .company_keys import parse
 
         with _private_file_lock(path, root=self._root, timeout=FILE_LOCK_TIMEOUT_SECONDS):
@@ -452,7 +452,7 @@ class AuthStore:
         now and save them; ``change`` returns what this returns, or
         :data:`UNCHANGED` to write nothing."""
         path = self.keys_file(company)
-        from openprogram.models.auth.credentials import _private_atomic_update
+        from openprogram.state.private_files import _private_atomic_update
         from .company_keys import dump, parse
 
         box: dict = {}
@@ -601,7 +601,7 @@ class AuthStore:
         for entry in self._keys_of(provider_id):
             self.remove_company_key(company, entry["id"])
         path = self.pool_file(provider_id)
-        from openprogram.models.auth.credentials import _private_file_lock, _private_unlink
+        from openprogram.state.private_files import _private_file_lock, _private_unlink
 
         with self._sync_lock:
             with _private_file_lock(path, root=self._root, timeout=FILE_LOCK_TIMEOUT_SECONDS):
@@ -651,7 +651,7 @@ class AuthStore:
 
     def _drop_old_generations(self, provider_id: str) -> None:
         path = self.pool_file(provider_id)
-        from openprogram.models.auth.credentials import _private_file_lock
+        from openprogram.state.private_files import _private_file_lock
 
         with self._sync_lock, _private_file_lock(path, root=self._root,
                                                  timeout=FILE_LOCK_TIMEOUT_SECONDS):
@@ -696,7 +696,7 @@ class AuthStore:
         self._write_usage(provider_id, path, _set)
 
     def _write_usage(self, provider_id: str, path: Path, updater) -> None:
-        from openprogram.models.auth.credentials import _private_atomic_update
+        from openprogram.state.private_files import _private_atomic_update
 
         self._private_folder(path)
         with self._sync_lock:
@@ -706,8 +706,10 @@ class AuthStore:
 
     def _read_usage(self, provider_id: str) -> tuple[dict, str]:
         path = self.usage_file(provider_id)
-        from openprogram.models.auth.credentials import (
-            _private_file_lock, _read_private_bytes, _revision,
+        from openprogram.state.private_files import (
+            _private_file_lock,
+            _read_private_bytes,
+            _revision,
         )
 
         if not path.parent.is_dir():
@@ -738,7 +740,7 @@ class AuthStore:
 
     def _private_folder(self, path: Path) -> None:
         """``auth/`` and the provider's folder owner-only before a write."""
-        from openprogram.models.auth.credentials import tighten_private_directory
+        from openprogram.state.private_files import tighten_private_directory
 
         tighten_private_directory(self.base_dir())
         tighten_private_directory(path.parent)
@@ -746,7 +748,7 @@ class AuthStore:
     def _persist(self, pool: CredentialPool) -> None:
         path = self.pool_file(pool.provider_id)
         data = json.dumps(pool.to_dict(), indent=2, ensure_ascii=False)
-        from openprogram.models.auth.credentials import _private_atomic_write
+        from openprogram.state.private_files import _private_atomic_write
 
         result = _private_atomic_write(
             path,
@@ -758,7 +760,7 @@ class AuthStore:
 
     def _load(self, provider_id: str) -> Optional[CredentialPool]:
         path = self.pool_file(provider_id)
-        from openprogram.models.auth.credentials import (
+        from openprogram.state.private_files import (
             _private_file_lock,
             _read_private_bytes,
             _revision,
@@ -789,7 +791,7 @@ class AuthStore:
         return CredentialPool.from_dict(d)
 
     def _reload_if_disk_changed(self, provider_id: str) -> None:
-        from openprogram.models.auth.credentials import _revision, private_file_revision
+        from openprogram.state.private_files import _revision, private_file_revision
 
         if not self.pool_file(provider_id).parent.is_dir():
             current = usage = _revision(None)

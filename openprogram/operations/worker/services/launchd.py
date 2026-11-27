@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from openprogram.state.paths import get_active_profile
-from openprogram.operations.worker import paths as worker_paths
+from openprogram.host.worker import paths as worker_paths
 
 LABEL = "ai.openprogram.worker"
 

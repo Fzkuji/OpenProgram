@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 from openprogram.runtime.conversation.always_on import delivery, runtime, store, ticker
+from openprogram.programs.tools.planning.goal import standing
 from openprogram.runtime.agent_registry import manager
 
 
@@ -88,7 +89,7 @@ def world(monkeypatch, tmp_path):
     running: set[str] = set()
     monkeypatch.setattr(runtime, "_db", lambda: db)
     monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: db)
-    monkeypatch.setattr(runtime, "_goal", lambda sid: goals.get(sid))
+    monkeypatch.setattr(standing, "_goal", lambda sid: goals.get(sid))
     monkeypatch.setattr(runtime, "_turn_running", lambda sid: sid in running)
     monkeypatch.setattr(runtime, "_broadcast", lambda frame: calls["frames"].append(frame))
 
@@ -128,7 +129,7 @@ def world(monkeypatch, tmp_path):
         goals[sid]["execution_id"] = f"exec-goal-{len(calls['started'])}"
     monkeypatch.setattr(chat, "start_from_controls", start)
     calls["ended"] = set()
-    monkeypatch.setattr(runtime, "_execution_ended", lambda execution_id: execution_id in calls["ended"])
+    monkeypatch.setattr(standing, "_execution_ended", lambda execution_id: execution_id in calls["ended"])
     return {"db": db, "goals": goals, "running": running, "calls": calls}
 
 
@@ -594,7 +595,7 @@ def test_a_report_carries_a_card_only_for_a_recorded_file(world):
     """A report is posted as the Agent's message, so a marker the model wrote
     in it would draw a file card for any path; only a file the run recorded
     keeps its marker."""
-    from openprogram.state.attachments import find_markers, format_marker
+    from openprogram.state.attachment_markers import find_markers, format_marker
     sid = world["db"].create_session("c1", "scout")
     forged = format_marker("id_rsa", "/home/me/.ssh/id_rsa", 1)
     sent = format_marker("deck.pptx", "/w/deck.pptx", 2048)
@@ -643,7 +644,7 @@ def test_the_ticker_sleeps_until_the_earliest_wake_and_a_change_wakes_it(agent, 
     from openprogram.host._platform import changes
 
     db = world["db"]
-    with changes.listen(store.WAKES_TOPIC) as listener:
+    with changes.listen(manager.ALWAYS_ON_WAKES_TOPIC) as listener:
         enable(agent, research=False, wake_minutes=10)
         assert listener.wait(0), "turning always-on on wakes the ticker"
         db.create_session("c1", agent, updated_at=1e12)
@@ -651,15 +652,15 @@ def test_the_ticker_sleeps_until_the_earliest_wake_and_a_change_wakes_it(agent, 
         ticker.due_sessions(1000.0, outlook)
         assert outlook.next_wake == 1000.0 + 600
         assert outlook.due(1000.0, ticker.TICK_SECONDS) == 1600.0
-        assert f"{store.WAKES_TOPIC}:c1" in listener.wait(0), "joining wrote its schedule"
+        assert f"{manager.ALWAYS_ON_WAKES_TOPIC}:c1" in listener.wait(0), "joining wrote its schedule"
         again = ticker.Outlook()
         ticker.due_sessions(1001.0, again)
         assert listener.wait(0) == set(), "a look that changes nothing does not wake it again"
         assert again.due(1001.0, ticker.TICK_SECONDS) == 1600.0
         enable(agent, research=False, wake_minutes=20)
-        assert listener.wait(0) == {f"{store.WAKES_TOPIC}:agent:{agent}"}, "a settings change wakes it"
+        assert listener.wait(0) == {f"{manager.ALWAYS_ON_WAKES_TOPIC}:agent:{agent}"}, "a settings change wakes it"
         runtime.note_user_turn("c1")
-        assert listener.wait(0) == {f"{store.WAKES_TOPIC}:c1"}, "a user's turn wakes it"
+        assert listener.wait(0) == {f"{manager.ALWAYS_ON_WAKES_TOPIC}:c1"}, "a user's turn wakes it"
 
 
 def test_an_unfinished_stop_asks_for_the_next_tick(agent, world, monkeypatch):
@@ -867,6 +868,7 @@ def test_a_turn_with_no_person_behind_it_is_not_offered_the_question_tool(monkey
     from openprogram.runtime.agent.turn_request import TurnRequest
     from openprogram.models.providers.types import AgentTool, Model
     from openprogram.runtime.permissions import authority
+    from openprogram.state.authority import runtime_authority
 
     model = Model(id="fake", name="fake", api="openai-completions", provider="openai",
                   base_url="https://example.invalid/v1")
@@ -892,8 +894,8 @@ def test_a_turn_with_no_person_behind_it_is_not_offered_the_question_tool(monkey
         **owner, "speaker_kind": "runtime", "speaker_id": "runtime/scheduler", "interaction": "non-interactive"})
     # The conversation's own turn keeps the tool in its array and refuses
     # its calls; nobody is behind an always-on wake.
-    always_on = TurnRequest("home", "task", "scout", "web", **authority.runtime_authority(owner, "always_on"))
-    assert "ask_user_question" in offered("web", **authority.runtime_authority(owner, "always_on"))
+    always_on = TurnRequest("home", "task", "scout", "web", **runtime_authority(owner, "always_on"))
+    assert "ask_user_question" in offered("web", **runtime_authority(owner, "always_on"))
     assert "ask_user_question" in loop_runner.turn_availability(always_on, tools)
     # The owner at the App, and a person in a chat app whatever their tier, are asked.
     assert "ask_user_question" in offered("web", **owner)
@@ -1895,11 +1897,12 @@ def _permission_turn(monkeypatch, *, check_in: bool, mode: str = "ask", **extra)
     from openprogram.models.providers.types import AgentTool
     from openprogram.runtime.agent.turn_request import TurnRequest
     from openprogram.runtime.permissions import authority as authority_module
+    from openprogram.state.authority import runtime_authority
 
     monkeypatch.setattr(authority_module, "owner_principal_id", lambda: OWNER_ID)
     authority = authority_module.owner_authority(OWNER_ID)
     if check_in:
-        authority = authority_module.runtime_authority(authority, "always_on")
+        authority = runtime_authority(authority, "always_on")
     request = TurnRequest(session_id="s", user_text="x", agent_id="main", source="web",
                           permission_mode=mode, permission_rules=None, **authority, **extra)
     tool = lambda name: AgentTool(name=name, label=name, description=name,
@@ -1979,7 +1982,7 @@ def test_a_check_in_is_judged_by_the_file_the_disk_opens(monkeypatch, tmp_path):
 
 
 def test_a_search_with_no_path_keeps_a_default_folder_under_a_dot_directory(monkeypatch, tmp_path):
-    from openprogram.programs.tools.files import file_safety
+    from openprogram.programs.tools.files import _read_denier as read_scope
     from openprogram.runtime.agent.turn_request import current_turn_request
 
     project = tmp_path / ".claude" / "w"
@@ -1990,14 +1993,14 @@ def test_a_search_with_no_path_keeps_a_default_folder_under_a_dot_directory(monk
     request, _tool = _permission_turn(monkeypatch, check_in=True)
     token = _in_turn(request)
     try:
-        denied = file_safety.read_denier()
+        denied = read_scope.read_denier()
         assert not denied(str(project / "a.py")) and denied(str(project / ".git" / "config"))
     finally:
         current_turn_request.reset(token)
 
 
 def test_the_write_gate_of_normal_turns_keeps_its_exact_names(tmp_path):
-    from openprogram.programs.tools.files.file_safety import check_path_safety
+    from openprogram.runtime.permissions.file_safety import check_path_safety
 
     (tmp_path / ".env").write_text("x")
     (tmp_path / "link").symlink_to(tmp_path / ".env")
@@ -2014,7 +2017,7 @@ def _in_turn(request):
 
 def test_a_search_from_a_parent_directory_leaves_dangerous_files_out(monkeypatch, tmp_path):
     import importlib
-    from openprogram.programs.tools.files import file_safety
+    from openprogram.programs.tools.files import _read_denier as read_scope
     from openprogram.runtime.agent.turn_request import current_turn_request
     from openprogram.state.worktree import context as worktree_context
 
@@ -2032,7 +2035,7 @@ def test_a_search_from_a_parent_directory_leaves_dangerous_files_out(monkeypatch
 
     token = _in_turn(request)
     try:
-        denied = file_safety.read_denier()
+        denied = read_scope.read_denier()
         assert denied(str(home / ".ssh" / "id")) and not denied(str(home / "note.txt"))
         out = grep_module._run_python_fallback("SECRET", str(home), None, "files_with_matches", False)
         ripgrep_lines = grep_module._drop_denied_lines(f"{home / '.ssh' / 'id'}:1:SECRET\n{home / 'note.txt'}:1:SECRET")
@@ -2440,8 +2443,8 @@ def test_a_check_in_row_with_no_ending_yet_counts_as_ended(monkeypatch):
         get_execution=lambda execution_id: SimpleNamespace(status=ExecutionStatus.PAUSED),
         get_agent_turn_input=lambda execution_id: {"request": {"speaker_id": speakers[execution_id]}})
     monkeypatch.setattr("openprogram.runtime.execution.default_store", lambda: executions)
-    assert runtime._execution_ended("cut")
-    assert not runtime._execution_ended("goal-turn")
+    assert standing._execution_ended("cut")
+    assert not standing._execution_ended("goal-turn")
 
 
 def test_a_chat_turn_that_just_ended_keeps_its_goal_until_it_settles(monkeypatch):
@@ -2454,10 +2457,10 @@ def test_a_chat_turn_that_just_ended_keeps_its_goal_until_it_settles(monkeypatch
                                                            updated_at=ended["at"]),
         get_agent_turn_input=lambda execution_id: {"request": requests[execution_id]})
     monkeypatch.setattr("openprogram.runtime.execution.default_store", lambda: executions)
-    assert not runtime._execution_ended("chat")
-    assert runtime._execution_ended("scheduled")
-    ended["at"] -= runtime.GOAL_SETTLE_GRACE_S + 1
-    assert runtime._execution_ended("chat")
+    assert not standing._execution_ended("chat")
+    assert standing._execution_ended("scheduled")
+    ended["at"] -= standing.GOAL_SETTLE_GRACE_S + 1
+    assert standing._execution_ended("chat")
 
 
 def test_a_goal_already_out_of_budget_ends_instead_of_retrying_forever(agent, world, monkeypatch):
@@ -3222,7 +3225,7 @@ def test_a_restored_goal_is_not_left_waiting_for_a_restart_that_passed(agent, st
                       continuation_restart={"interrupted_at": 1.0, "resume_before": None})
     _set_archived(stops, monkeypatch, sid, True)
     _set_archived(stops, monkeypatch, sid, False)
-    assert goal["status"] == "active" and runtime._goal_has_no_runner(goal)
+    assert goal["status"] == "active" and standing._goal_has_no_runner(goal)
 
 
 # ── a Goal that stopped ──────────────────────────────────────────────
@@ -3565,7 +3568,8 @@ def test_an_automatic_turn_is_still_a_user_row_but_is_marked(tmp_path, monkeypat
 ])
 def test_a_row_the_runtime_spoke_does_not_answer_a_decision(tmp_path, monkeypatch, source, written_by_a_person):
     from openprogram.runtime.conversation.always_on.pending import _written_by_a_person
-    from openprogram.runtime.permissions.authority import owner_authority, runtime_authority
+    from openprogram.runtime.permissions.authority import owner_authority
+    from openprogram.state.authority import runtime_authority
 
     authority = owner_authority("owner/install/0123456789abcdef")
     row = _user_row_of_a_real_turn(tmp_path, monkeypatch, source=source,
@@ -3999,7 +4003,7 @@ def test_a_cut_report_body_tells_the_model(monkeypatch):
 
 
 def test_a_scheduled_result_keeps_its_file_past_the_body_limit():
-    from openprogram.state.attachments import find_markers, format_marker
+    from openprogram.state.attachment_markers import find_markers, format_marker
 
     marker = format_marker("a.txt", "/tmp/a.txt", 10)
     body = runtime._body_with_files("y" * (store.BODY_MAX + 500) + "\n" + marker)
@@ -4009,7 +4013,7 @@ def test_a_scheduled_result_keeps_its_file_past_the_body_limit():
 
 def test_a_file_in_a_report_reaches_a_channel_as_a_file_not_a_marker(tmp_path, monkeypatch):
     from openprogram.runtime import channel_link
-    from openprogram.state.attachments import format_marker
+    from openprogram.state.attachment_markers import format_marker
 
     marker = format_marker("a.txt", "/tmp/a.txt", 10)
     uploads, sent = [], []

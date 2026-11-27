@@ -25,7 +25,7 @@ def stored_failure_text(text: str | None) -> str | None:
     """The readable failure as an attempt keeps it: scrubbed, then bounded."""
     if not text or not text.strip():
         return None
-    from openprogram.operations.diagnostics.redaction import redact_text
+    from openprogram.models.auth.redaction import redact_text
     from .audit import redact_audit_payload
 
     return redact_audit_payload({"failure_text": redact_text(text[:_SCRUBBED_FAILURE_CHARS])[:FAILURE_TEXT_CHARS]})["failure_text"]

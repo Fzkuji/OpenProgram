@@ -1,6 +1,6 @@
 """DeepSeek model list — ``/v1/models`` (id-only rows, enriched later).
 
-Convention module (see ``openai_codex/list_models.py`` for the pattern): the
+Convention module (see ``anthropic/list_models.py`` for the pattern): the
 dispatcher loads ``fetch(provider_id, timeout)`` by directory name.
 
 DeepSeek's ``/v1/models`` is OpenAI-compatible but returns ``{id, owned_by}``-
@@ -21,8 +21,8 @@ from typing import Any
 
 def fetch(provider_id: str, timeout: float) -> Any:
     import httpx
-    from openprogram.models.providers.settings.env_api_keys import resolve_provider_key
-    from openprogram.models.providers.settings.env_api_keys import resolve_api_key_with_auth_store
+    from openprogram.models.auth.env_api_keys import resolve_provider_key
+    from openprogram.models.auth.env_api_keys import resolve_api_key_with_auth_store
     from openprogram.models.providers.settings.storage import _resolve_base_url
     from openprogram.host.security.safe_http import configured_safe_client
     from openprogram.host.security.url_policy import OwnerURLException, normalize_origin

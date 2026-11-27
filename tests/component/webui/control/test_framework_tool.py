@@ -10,7 +10,7 @@ def test_tool_discovery_calls_backend_and_denies_paired_or_sandbox(monkeypatch):
     from openprogram.host import sandbox
     calls = []
     monkeypatch.setattr(application_client, 'request', lambda path, **kw: calls.append(path) or {'operations': []})
-    monkeypatch.setattr('openprogram.host.backend.get_active_backend', lambda: SimpleNamespace(backend_id='local'))
+    monkeypatch.setattr('openprogram.host.machines.get_active_backend', lambda: SimpleNamespace(backend_id='local'))
     monkeypatch.setattr(sandbox, 'resolve_policy', lambda: None)
     def invoke():
         return asyncio.run(framework.execute('framework-test', {'action': 'describe', 'operation': 'settings'}, None, None))

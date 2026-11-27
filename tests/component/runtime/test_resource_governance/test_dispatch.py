@@ -120,7 +120,7 @@ def test_claim_next_requires_calling_process_to_hold_worker_lock(
     tmp_path, monkeypatch,
 ) -> None:
     monkeypatch.setattr(
-        "openprogram.operations.worker.lock.is_held_by", lambda _pid: False,
+        "openprogram.host.worker.lock.is_held_by", lambda _pid: False,
         raising=False,
     )
     ledger = UsageLedger(tmp_path / "usage.db")

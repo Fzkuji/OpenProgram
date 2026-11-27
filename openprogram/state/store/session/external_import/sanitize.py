@@ -16,8 +16,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from openprogram.models.providers.recording.recording import SECRET_FIELD_NAMES
-from openprogram.models.providers.utils.redaction import remove_secrets as _remove_secret_text
+from openprogram.state.secret_removal import SECRET_FIELD_NAMES, remove_secrets as _remove_secret_text
 
 SECRET_PLACEHOLDER = "[secret removed]"
 
@@ -125,12 +124,14 @@ def remove_secrets(session: Any) -> Any:
     judged on the transcript itself; the reply digest is taken after
     redaction, so a turn written with a secret in it is rewritten clean.
     """
+    from openprogram.state.authority import unwrap_owner_input
     from .model import ToolBlock
+    from .timeparse import fallback_title
 
-    session.title = remove_secret_values(session.title or "")
     for turn in session.turns:
         turn.source_fingerprint = turn.fingerprint()
-        turn.user_text = remove_secret_values(turn.user_text)
+        # A message OpenProgram once sent in its speaker envelope shows as typed.
+        turn.user_text = remove_secret_values(unwrap_owner_input(turn.user_text))
         for block in turn.blocks:
             if isinstance(block, ToolBlock):
                 block.arguments = remove_secret_values(block.arguments)
@@ -138,4 +139,12 @@ def remove_secrets(session: Any) -> Any:
                     block.result = remove_secret_values(block.result)
             elif isinstance(block.get("text"), str):
                 block["text"] = remove_secret_values(block["text"])
+    title = session.title or ""
+    if title.lstrip().startswith(ENVELOPE_TITLE) and session.turns:
+        title = fallback_title(session.turns[0].user_text)  # named after an envelope
+    session.title = remove_secret_values(title)
     return session
+
+
+#: How a title taken from a message sent in OpenProgram's speaker envelope begins.
+ENVELOPE_TITLE = '{"speaker_kind"'

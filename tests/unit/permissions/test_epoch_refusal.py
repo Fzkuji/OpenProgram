@@ -43,7 +43,7 @@ def test_turn_availability_names_what_this_turn_cannot_use(monkeypatch):
     monkeypatch.setattr("openprogram.runtime.permissions.policy.nobody_answers", lambda req: True)
     monkeypatch.setattr("openprogram.state.memory.policy.allowed", lambda **_k: False)
     monkeypatch.setattr("openprogram.runtime.permissions.identity.outside_text", lambda req: False)
-    from openprogram.programs.tools.knowledge.memory import MEMORY_TOOL_NAMES
+    from openprogram.state.memory.tool_names import MEMORY_TOOL_NAMES
     from openprogram.runtime.permissions.attended import ASK_TOOLS
     names = ["chat_send", "read", *sorted(ASK_TOOLS), *sorted(MEMORY_TOOL_NAMES)]
     out = loop_runner.turn_availability(_req(), [_tool(name) for name in names])

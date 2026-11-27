@@ -70,7 +70,6 @@
 <tr><th scope="row">API key 和 CLI 委托凭据（按引用读取其他工具的登录）</th><td>对话、Agent、记忆</td></tr>
 </tbody>
 </table>
-<p>ChatGPT 登录是共享的：开发版读取 Codex CLI 的 <code translate="no">~/.codex/auth.json</code>，稳定版把同一账号的登录同步进这个文件。两边都采用对方写入的更新登录，不去花已经用过的 refresh token（<a href="../providers/auth/unified-auth-storage.zh.html#codex-shared-login">一台机器一个 ChatGPT 登录</a>）。</p>
 
 <h3 id="from-a-conversation">从对话里</h3>
 <p>在开发版里（<code translate="no">dev</code> profile，源码仓库有 <code translate="no">dev</code> 分支），<code translate="no">self_update(action="prepare")</code> 走 <code translate="no">dev_deploy</code> 后端：改动就是 <code translate="no">dev</code> 上的一个提交，部署它就是整个更新。调用保存请求并启动脱离的控制器，其余步骤在发起调用的那一轮保存之后才开始。</p>

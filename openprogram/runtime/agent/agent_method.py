@@ -147,20 +147,18 @@ def register_method(self) -> None:
     if self._fn is None or self._wrapper is None:
         return  # nothing to wrap yet
 
-    # Lazy imports to avoid a hard cycle on package init —
-    # Agent methods may be imported before openprogram.programs
-    # is fully constructed.
-    from openprogram.models.providers.types import AgentToolResult
-    from openprogram.programs._host.execution import (
+    from openprogram.runtime import program_host
+    from openprogram.runtime.agent.call_state import (
+        _current_tool_call_id,
+        _tool_call_identity_consumed,
+    )
+    from openprogram.runtime.agent.tool_execution import (
+        _cache_get,
+        _cache_key,
+        _cache_set,
+        _normalize_result,
         invoke_callable,
         timeout_tool_result,
-        _normalize_result,
-    )
-    from openprogram.programs._host.runtime import (
-        _build_and_register_tool,
-        _cache_key,
-        _cache_get,
-        _cache_set,
     )
 
     name = self.tool_name or self._fn.__name__
@@ -194,20 +192,8 @@ def register_method(self) -> None:
         cancel_token = (
             _current_cancel.set(cancel) if cancel is not None else None
         )
-        tool_call_token = None
-        identity_consumed_token = None
-        try:
-            from openprogram.programs._host.runtime import (
-                _current_tool_call_id,
-                _tool_call_identity_consumed,
-            )
-
-            tool_call_token = _current_tool_call_id.set(call_id)
-            identity_consumed_token = _tool_call_identity_consumed.set(False)
-        except ImportError:
-            # ContextVar.set cannot raise; only the host runtime import can be missing,
-            # and then the tool runs without a bound call identity.
-            _log.debug("tool call identity not bound for %s", call_id, exc_info=True)
+        tool_call_token = _current_tool_call_id.set(call_id)
+        identity_consumed_token = _tool_call_identity_consumed.set(False)
 
         try:
             if use_cache:
@@ -268,7 +254,8 @@ def register_method(self) -> None:
             _cache_set(_cache_key(name, kwargs), result, cache_ttl)
         return result
 
-    self._agent_tool = _build_and_register_tool(
+    # The tool joins the Program host's registry like any ``@function``.
+    self._agent_tool = program_host.host().build_and_register_tool(
         name=name,
         description=description,
         parameters=parameters,

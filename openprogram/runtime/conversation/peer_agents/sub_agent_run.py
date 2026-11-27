@@ -46,8 +46,8 @@ def validate_self_update_turn_request(request: Any) -> None:
     """Validate the frozen unattended verifier contract before dispatch."""
     source = getattr(request, "source", None)
     if source in {"self_update_continue", "self_update_replan"}:
-        from openprogram.operations.self_update.control.continuation import require_execution
-        require_execution(request)
+        from openprogram.runtime import maintenance
+        maintenance.require_execution(source, request=request)
         return
     if source not in {
         "self_update_verify",
@@ -83,13 +83,9 @@ def validate_self_update_turn_request(request: Any) -> None:
 
     normalized_format = normalize_response_format(response_format)
     request.response_format = normalized_format
-    if source == "self_update_verify":
-        from openprogram.operations.self_update.control.recovery import require_verifier_execution as require_execution
-    elif source == "self_update_diagnose":
-        from openprogram.operations.self_update.repair.diagnosis import require_execution
-    else:
-        from openprogram.operations.self_update.repair.source_repair import require_execution
-    require_execution(
+    from openprogram.runtime import maintenance
+    maintenance.require_execution(
+        source,
         session_id=request.session_id,
         spawn_caller=spawn_caller,
         prompt=request.user_text,
@@ -156,15 +152,11 @@ def _execute_agent_turn(
     if source in {"self_update_verify", "self_update_diagnose", "self_update_repair"}:
         from dataclasses import asdict
         from openprogram.state.authority import normalize_authority
+        from openprogram.runtime import maintenance
 
-        if source == "self_update_verify":
-            from openprogram.operations.self_update.control.recovery import require_verifier_execution as require_execution
-        elif source == "self_update_diagnose":
-            from openprogram.operations.self_update.repair.diagnosis import require_execution
-        else:
-            from openprogram.operations.self_update.repair.source_repair import require_execution
         try:
-            require_execution(
+            maintenance.require_execution(
+                source,
                 session_id=session_id,
                 spawn_caller=spawn_caller,
                 prompt=prompt,
@@ -203,7 +195,7 @@ def _execute_agent_turn(
     # (jobs/input.py); this direct path asks nobody, so what would ask is
     # refused instead of waiting.
     from openprogram.runtime.agent.turn_request import get_turn_request
-    from openprogram.runtime.permissions.authority import runtime_authority
+    from openprogram.state.authority import runtime_authority
     from openprogram.runtime.permissions.approvals.lifecycle import current_permission_request
     from openprogram.runtime.permissions.modes import DEFAULT_PERMISSION
     _authority = runtime_authority(authority or {}, source)
@@ -325,7 +317,7 @@ def run_agent_turn(
         )
     from openprogram.runtime.jobs import get_runner
     from openprogram.runtime.jobs.types import JobStatus, is_terminal, mint_job_id
-    from openprogram.operations.worker.lock import WorkerLock
+    from openprogram.host.worker.lock import WorkerLock
 
     runner = get_runner()
     borrow_current_claim = runner.can_borrow_current_claim(session_id)

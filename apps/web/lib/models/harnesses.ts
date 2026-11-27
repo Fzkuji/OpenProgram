@@ -54,11 +54,12 @@ export const GATEWAY_PREFIX = "openprogram:";
 /** The provider id of each harness's models. */
 const PROVIDERS: Record<string, string> = {
   codex: "codex-harness", "claude-code": "claude-code-harness", "deepseek-harness": "deepseek-harness",
+  "gemini-cli": "gemini-cli-harness",
 };
 /** The provider whose logo a harness shows. */
 const MARKS: Record<string, string> = {
   "codex-harness": "openai", codex: "openai", "claude-code-harness": "anthropic", "claude-code": "anthropic",
-  "deepseek-harness": "deepseek",
+  "deepseek-harness": "deepseek", "gemini-cli-harness": "google", "gemini-cli": "google",
 };
 
 export function isHarnessProvider(provider: string | null | undefined): boolean {
@@ -77,14 +78,16 @@ export function harnessOf(provider: string | null | undefined): string | null {
 /** The agent's own logo for a harness or its provider: the Harness chip,
  *  its menu and the sidebar's mark of a conversation running there. */
 const AGENT_LOGOS: Record<string, string> = {
-  codex: "codex", "codex-harness": "codex",
+  // Codex lives in the ChatGPT app now, so it shows ChatGPT's mark.
+  codex: "openai", "codex-harness": "openai",
   "claude-code": "claudecode", "claude-code-harness": "claudecode",
-  "deepseek-harness": "deepseek",
+  "deepseek-harness": "deepseek", "gemini-cli-harness": "google", "gemini-cli": "google",
 };
 /** Agent names as people know them, for marks, hover cards and the
  *  History page's Source filter. */
 const AGENT_NAMES: Record<string, string> = {
   codex: "Codex", "claude-code": "Claude Code", "deepseek-harness": "DeepSeek Harness",
+  "gemini-cli": "Gemini CLI",
 };
 
 /** The agents whose own apps' conversations are synced here, by the

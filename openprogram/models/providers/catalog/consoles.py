@@ -22,7 +22,7 @@ from typing import Optional
 
 #: Provider ids in the order the empty state and Add provider show them.
 POPULAR: tuple[str, ...] = (
-    "openai-codex", "anthropic", "google", "xai", "deepseek", "openrouter", "moonshotai", "zai",
+    "openai", "anthropic", "google", "xai", "deepseek", "openrouter", "moonshotai", "zai",
 )
 
 #: Local servers offered when one is found listening on this machine.

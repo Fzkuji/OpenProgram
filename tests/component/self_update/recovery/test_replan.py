@@ -21,7 +21,7 @@ def test_exact_update_replans(real_agent_chat, tmp_path, monkeypatch, elapsed, e
     from openprogram.runtime.jobs.runner import JobRunner
     from tests.unit.self_update.test_store import _request
 
-    monkeypatch.setattr("openprogram.operations.worker.lock.is_held_by", lambda _pid: True)
+    monkeypatch.setattr("openprogram.host.worker.lock.is_held_by", lambda _pid: True)
     h = real_agent_chat
     # This scripted provider has deterministic usage and no external billing.
     # Job dispatch requires an audited identity even in an in-process test.

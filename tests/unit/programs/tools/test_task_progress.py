@@ -44,7 +44,7 @@ def _task_tools():
 def _dispatch(tools, *calls):
     message = AssistantMessage(
         content=[ToolCall(id=cid, name=name, arguments=args) for cid, name, args in calls],
-        api="openai-codex-responses", provider="openai-codex", model="test",
+        api="openai-responses", provider="openai", model="test",
         stop_reason="toolUse", timestamp=int(time.time() * 1000),
     )
     result = asyncio.run(_execute_tool_calls(tools, message, None, EventStream()))
@@ -70,7 +70,7 @@ def test_every_tool_but_the_task_tools_and_the_loader_takes_it():
 def test_the_argument_survives_strict_schemas():
     from openprogram.models.providers.schema import normalize_for
     tools = [*_task_tools(), _tool("bash")]
-    schema = normalize_for("openai-codex", progress.annotate(tools, tools)[2].parameters, "gpt-6-luna")
+    schema = normalize_for("openai-responses", progress.annotate(tools, tools)[2].parameters, "gpt-6-luna")
     assert KEY in schema["required"] and schema["additionalProperties"] is False
     prop = schema["properties"][KEY]
     assert "null" in (prop.get("type") if isinstance(prop.get("type"), list) else [prop.get("type")]) \

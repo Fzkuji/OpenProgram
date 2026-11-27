@@ -13,14 +13,11 @@ import json
 from dataclasses import replace
 import os
 from pathlib import Path
-import subprocess
 import time
 import tomllib
 from typing import Any, Mapping
 
-from openprogram.state.authority import normalize_authority
-from openprogram.runtime.permissions import refusal
-from openprogram.runtime.permissions.authority import owner_principal_id
+from openprogram.runtime.permissions import tool_profiles
 from openprogram.runtime.agent.turn_request import get_turn_request
 from openprogram.programs._host.runtime import function
 from openprogram.operations.self_update.types import DEFAULT_APP_PATH
@@ -34,20 +31,16 @@ from openprogram.operations.self_update import (
     UpdateRequest,
     mint_update_id,
 )
+from openprogram.operations.self_update.candidate_source import (
+    SelfUpdateToolError,
+    git,
+    recorded_path,
+    require_local_owner,
+    validate_candidate_snapshot,
+    validate_registered_worktree,
+)
 from openprogram.state.worktree.manager import WorktreeError, get_manager
 from openprogram.state.worktree.types import WorktreeStatus
-
-
-_GIT_TIMEOUT_SECONDS = 10
-_GIT_CONFIG_OVERRIDES = (
-    "core.fsmonitor=false",
-    "core.hooksPath=/dev/null",
-    "core.pager=cat",
-)
-
-
-class SelfUpdateToolError(RuntimeError):
-    """A stable validation error safe to return through the tool runtime."""
 
 
 def _require_backend_host(name: str) -> None:
@@ -63,55 +56,6 @@ def _launch_supervisor(name: str, store: SelfUpdateStore, update_id: str, worktr
     from openprogram.operations.self_update.control import backend
 
     backend.launch(name, store, update_id, worktree=worktree)
-
-
-def _require_local_owner(req: Any) -> dict[str, str]:
-    authority = normalize_authority(req)
-    try:
-        installed_owner = owner_principal_id()
-    except Exception as exc:
-        raise SelfUpdateToolError("owner identity is unavailable") from exc
-    if (
-        not authority
-        or authority.get("principal_id") != installed_owner
-        or authority.get("authority_tier") != "owner"
-    ):
-        raise refusal.self_update_owner()
-    return authority
-
-
-def _git(cwd: Path, *args: str) -> str:
-    from openprogram.host._platform.process_ownership import no_window_creation_flags
-    environment = {
-        "PATH": os.environ.get(
-            "PATH", "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin"
-        ),
-        "HOME": os.environ.get("HOME", "/var/empty"),
-        "LC_ALL": "C",
-        "GIT_CONFIG_NOSYSTEM": "1",
-        "GIT_CONFIG_GLOBAL": "/dev/null",
-    }
-    command = ["git", "--no-optional-locks"]
-    for value in _GIT_CONFIG_OVERRIDES:
-        command.extend(("-c", value))
-    command.extend(args)
-    try:
-        result = subprocess.run(
-            command,
-            cwd=str(cwd),
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            creationflags=no_window_creation_flags(),
-            timeout=_GIT_TIMEOUT_SECONDS,
-            env=environment,
-        )
-    except (OSError, UnicodeError, subprocess.TimeoutExpired) as exc:
-        raise SelfUpdateToolError(f"git validation failed: {type(exc).__name__}") from exc
-    if result.returncode != 0:
-        message = (result.stderr or result.stdout).strip()[:500]
-        raise SelfUpdateToolError(f"git validation failed: {message or result.returncode}")
-    return result.stdout.rstrip("\n")
 
 
 def _iteration_policy(value: Mapping[str, Any] | None) -> IterationPolicy:
@@ -159,52 +103,8 @@ def _validate_openprogram_repo(source: Path, worktree: Path) -> None:
 
 
 def _git_directory(cwd: Path) -> Path:
-    value = Path(_git(cwd, "rev-parse", "--absolute-git-dir"))
+    value = Path(git(cwd, "rev-parse", "--absolute-git-dir"))
     return value.resolve()
-
-
-def _recorded_path(value: str, name: str) -> Path:
-    raw = Path(value).expanduser()
-    if not raw.is_absolute():
-        raise SelfUpdateToolError(f"{name} must be an absolute path")
-    lexical = Path(os.path.normpath(str(raw)))
-    try:
-        resolved = lexical.resolve(strict=True)
-    except OSError as exc:
-        raise SelfUpdateToolError(f"{name} is unavailable") from exc
-    if resolved != lexical:
-        raise SelfUpdateToolError(f"{name} must not contain symlinks")
-    return resolved
-
-
-def _validate_registered_worktree(
-    source: Path, candidate: Path, candidate_sha: str, branch_name: str
-) -> None:
-    entries = _git(source, "worktree", "list", "--porcelain", "-z").split("\0\0")
-    expected = {
-        "HEAD": candidate_sha,
-        "branch": f"refs/heads/{branch_name}",
-    }
-    for entry in entries:
-        fields = {}
-        for line in entry.split("\0"):
-            key, separator, value = line.partition(" ")
-            if separator:
-                fields[key] = value
-        # Git emits forward slashes on Windows; compare host paths rather than
-        # their serialized spelling while keeping HEAD and branch exact.
-        if fields.get("worktree") and Path(fields["worktree"]) == candidate:
-            if all(fields.get(key) == value for key, value in expected.items()):
-                return
-            break
-    raise SelfUpdateToolError("candidate does not match its registered Git worktree")
-
-
-def _validate_candidate_snapshot(candidate: Path, candidate_sha: str) -> None:
-    if _git(candidate, "status", "--porcelain=v1", "--untracked-files=all"):
-        raise SelfUpdateToolError("candidate worktree is dirty")
-    if _git(candidate, "rev-parse", "HEAD") != candidate_sha:
-        raise SelfUpdateToolError("candidate_sha is not the worktree HEAD")
 
 
 def _check_candidate_sha(candidate_sha) -> None:
@@ -272,7 +172,7 @@ def _prepare_update(
     store: SelfUpdateStore,
     verification_plan: dict | None = None,
 ) -> dict[str, Any]:
-    _require_local_owner(req)
+    require_local_owner(req)
     if not isinstance(assistant_id, str) or not assistant_id.strip():
         raise SelfUpdateToolError("self-update must run inside a persisted chat turn")
     if not isinstance(worktree_id, str) or not worktree_id.strip():
@@ -285,20 +185,20 @@ def _prepare_update(
     if worktree.status is not WorktreeStatus.ACTIVE:
         raise SelfUpdateToolError("candidate worktree must be active")
 
-    source = _recorded_path(worktree.source_repo, "source repo")
-    candidate = _recorded_path(worktree.worktree_path, "candidate worktree")
+    source = recorded_path(worktree.source_repo, "source repo")
+    candidate = recorded_path(worktree.worktree_path, "candidate worktree")
     _validate_openprogram_repo(source, candidate)
-    candidate_common = Path(_git(candidate, "rev-parse", "--git-common-dir"))
+    candidate_common = Path(git(candidate, "rev-parse", "--git-common-dir"))
     if not candidate_common.is_absolute():
         candidate_common = candidate / candidate_common
     if candidate_common.resolve() != _git_directory(source):
         raise SelfUpdateToolError("candidate worktree is not linked to its source repo")
-    if Path(_git(candidate, "rev-parse", "--show-toplevel")).resolve() != candidate:
+    if Path(git(candidate, "rev-parse", "--show-toplevel")).resolve() != candidate:
         raise SelfUpdateToolError("candidate path is not the worktree root")
-    _validate_registered_worktree(
+    validate_registered_worktree(
         source, candidate, candidate_sha, worktree.branch_name
     )
-    _validate_candidate_snapshot(candidate, candidate_sha)
+    validate_candidate_snapshot(candidate, candidate_sha)
 
     from openprogram.operations.self_update.control import backend
     backend_name = backend.select(source)
@@ -308,15 +208,15 @@ def _prepare_update(
     # On the development line the controller rebases the candidate onto `dev`,
     # so it may fork from any earlier commit of that line.
     rebases = backend_name == backend.DEV_DEPLOY
-    base_sha = _git(source, "rev-parse", "refs/heads/dev" if rebases else "HEAD")
+    base_sha = git(source, "rev-parse", "refs/heads/dev" if rebases else "HEAD")
     if base_sha == candidate_sha:
         raise SelfUpdateToolError("candidate must differ from the source checkout HEAD")
-    fork_point = _git(candidate, "merge-base", base_sha, candidate_sha)
+    fork_point = git(candidate, "merge-base", base_sha, candidate_sha)
     if not rebases and fork_point != base_sha:
         raise SelfUpdateToolError("candidate is not based on the source checkout HEAD")
     changed = tuple(
         path
-        for path in _git(
+        for path in git(
             candidate,
             "diff",
             "--name-only",
@@ -377,10 +277,10 @@ def _prepare_update(
     except (SelfUpdateError, ValueError) as exc:
         raise SelfUpdateToolError(str(exc)) from exc
     try:
-        _validate_registered_worktree(
+        validate_registered_worktree(
             source, candidate, candidate_sha, worktree.branch_name
         )
-        _validate_candidate_snapshot(candidate, candidate_sha)
+        validate_candidate_snapshot(candidate, candidate_sha)
     except SelfUpdateToolError as exc:
         try:
             store.transition(
@@ -447,7 +347,7 @@ _NO_WORKTREE = "none"
 
 
 def _running_layout():
-    from openprogram.operations.self_update.versions.layout import current_runtime
+    from openprogram.host._platform.runtime_layout import current_runtime
 
     runtime = current_runtime()
     if runtime is None:
@@ -456,7 +356,7 @@ def _running_layout():
 
 
 def _task_name(task: Any) -> str:
-    from openprogram.operations.self_update.versions.layout import valid_id
+    from openprogram.host._platform.runtime_layout import valid_id
 
     if not valid_id(task):
         raise SelfUpdateToolError(
@@ -470,7 +370,7 @@ def _begin_update(*, task: Any, req: Any, manager: Any) -> dict[str, Any]:
     from openprogram.state.worktree.context import set_worktree
     from openprogram.state.worktree.manager import WorktreeError
 
-    _require_local_owner(req)
+    require_local_owner(req)
     name = _task_name(task)
     runtime = _running_layout()
     layout = runtime.layout
@@ -573,7 +473,7 @@ def _prepare_version_update(
     """``prepare`` on the versions backend: validate, then start or queue."""
     from openprogram.operations.self_update.control import backend
 
-    _require_local_owner(req)
+    require_local_owner(req)
     if not isinstance(assistant_id, str) or not assistant_id.strip():
         raise SelfUpdateToolError("self-update must run inside a persisted chat turn")
     name = _task_name(task)
@@ -586,16 +486,16 @@ def _prepare_version_update(
         raise SelfUpdateToolError(f'no task {name}; call self_update(action="begin", task="{name}") first')
     if worktree.status is not WorktreeStatus.ACTIVE:
         raise SelfUpdateToolError("the task's worktree must be active")
-    candidate = _recorded_path(worktree.worktree_path, "candidate worktree")
-    if _git(candidate, "status", "--porcelain=v1", "--untracked-files=all"):
+    candidate = recorded_path(worktree.worktree_path, "candidate worktree")
+    if git(candidate, "status", "--porcelain=v1", "--untracked-files=all"):
         raise SelfUpdateToolError("commit your changes first")
-    candidate_sha = _git(candidate, "rev-parse", "HEAD")
+    candidate_sha = git(candidate, "rev-parse", "HEAD")
     _check_prepare_arguments(candidate_sha, goal, assertions, iteration_policy, verification_plan)
-    local = _git(layout.repo, "rev-parse", "refs/heads/local")
-    if candidate_sha == local or _git(candidate, "rev-list", "--count", f"{local}..{candidate_sha}") == "0":
+    local = git(layout.repo, "rev-parse", "refs/heads/local")
+    if candidate_sha == local or git(candidate, "rev-list", "--count", f"{local}..{candidate_sha}") == "0":
         raise SelfUpdateToolError("the task has no commits beyond the running code")
-    fork_point = _git(candidate, "merge-base", local, candidate_sha)
-    changed = tuple(path for path in _git(
+    fork_point = git(candidate, "merge-base", local, candidate_sha)
+    changed = tuple(path for path in git(
         candidate, "diff", "--name-only", "--diff-filter=ACDMRTUXB", "-z", f"{fork_point}..{candidate_sha}",
     ).split("\0") if path)
     if not changed:
@@ -663,7 +563,7 @@ def _undo_on_development_line(
         commit, subject = undo.commit_on_line(source, target, "refs/heads/dev")
     except undo.UndoError as exc:
         raise SelfUpdateToolError(str(exc)) from exc
-    tip = _git(source, "rev-parse", "refs/heads/dev")
+    tip = git(source, "rev-parse", "refs/heads/dev")
     plan = undo.UndoPlan(undo.UNDO_COMMIT, target, commit, tip, subject)
     try:
         worktree = manager.create_worktree(
@@ -704,7 +604,7 @@ def _submit_version_undo(
     candidate_sha = str(fields.pop("candidate_sha"))
     if candidate_sha == plan.local_tip:
         raise SelfUpdateToolError("OpenProgram already runs that code.")
-    changed = tuple(item for item in _git(
+    changed = tuple(item for item in git(
         layout.repo, "diff", "--name-only", "--diff-filter=ACDMRTUXB", "-z", f"{candidate_sha}..{plan.local_tip}",
     ).split("\0") if item)
     if not changed:
@@ -736,7 +636,7 @@ def _submit_version_undo(
 def _undo_update(
     *, target: str, req: Any, assistant_id: str, manager: Any, store: SelfUpdateStore
 ) -> dict[str, Any]:
-    _require_local_owner(req)
+    require_local_owner(req)
     if not isinstance(target, str) or not target.strip():
         raise SelfUpdateToolError("target is required: a version id, or a commit to undo")
     from openprogram.operations.self_update.control import backend, undo
@@ -754,7 +654,7 @@ def _undo_update(
             "Published releases are changed with `openprogram upgrade` or the Desktop updater."
         )
     _require_backend_host(backend_name)
-    from openprogram.operations.self_update.versions.layout import Layout
+    from openprogram.host._platform.runtime_layout import Layout
 
     try:
         plan = undo.plan(Layout(backend.runtime_root()), target.strip())
@@ -775,7 +675,7 @@ def _resolve_record(update_id: str | None, store: SelfUpdateStore):
 def _status_update(
     *, update_id: str | None, req: Any, store: SelfUpdateStore
 ) -> dict[str, Any]:
-    _require_local_owner(req)
+    require_local_owner(req)
     from openprogram.operations.self_update.control.projection import read_status
     from openprogram.operations.self_update.types import UpdateNotFoundError
     queued = store.queued() if update_id is None else []
@@ -811,6 +711,23 @@ def action_of(args: Mapping[str, Any] | None) -> str:
     """The action a ``self_update`` call names; an omitted action reads status."""
     value = (args or {}).get("action") if isinstance(args, Mapping) else None
     return str(value or "status")
+
+
+# Reading the status and the kept versions only reads; cancelling stops the
+# runtime's own work; every other action changes the installed code.
+_READ_ACTIONS = ("status", "versions")
+
+
+def _capability(args: Mapping[str, Any] | None) -> str:
+    action = action_of(args)
+    return "fs.read" if action in _READ_ACTIONS else (
+        "runtime.control" if action == "cancel" else "process.exec")
+
+
+tool_profiles.register("self_update", tool_profiles.ToolProfile(
+    capability=_capability,
+    reads_only=lambda args: action_of(args) in _READ_ACTIONS,
+))
 
 
 def _overview() -> str:
@@ -996,7 +913,7 @@ def self_update(
         if backend.select() == backend.CHECKOUT:
             return backend.checkout_result()
         if action == "versions":
-            _require_local_owner(req)
+            require_local_owner(req)
             return _list_versions()
         return _begin_update(task=task, req=req, manager=get_manager())
     if action == "prepare" and task:
@@ -1042,7 +959,7 @@ def self_update(
 
 def _cancel_iteration(*, update_id: str | None, req: Any, store: SelfUpdateStore) -> dict[str, Any]:
     """Stop an update and everything its iteration started."""
-    _require_local_owner(req)
+    require_local_owner(req)
     from openprogram.operations.self_update.repair import next_candidate
     if update_id and store.remove_queued(update_id):
         return {"update_id": update_id, "status": "stopped", "phase": "aborted"}

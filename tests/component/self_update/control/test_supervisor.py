@@ -270,7 +270,7 @@ def test_quiescence_waits_without_cancelling_sessions_or_jobs(monkeypatch) -> No
 def test_build_runs_fixed_entry_in_private_network_denied_sandbox(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from openprogram.programs.tools.system import self_update as tool_module
+    from openprogram.operations.self_update import candidate_source as tool_module
     from openprogram.operations.self_update.control import supervisor
     from openprogram.state.worktree import manager
 
@@ -294,16 +294,16 @@ def test_build_runs_fixed_entry_in_private_network_denied_sandbox(
         "get_manager",
         lambda: SimpleNamespace(get_worktree=lambda _worktree_id: worktree),
     )
-    monkeypatch.setattr(tool_module, "_recorded_path", lambda value, _name: Path(value))
+    monkeypatch.setattr(tool_module, "recorded_path", lambda value, _name: Path(value))
     validations: list[str] = []
     monkeypatch.setattr(
         tool_module,
-        "_validate_registered_worktree",
+        "validate_registered_worktree",
         lambda *_args: validations.append("registered"),
     )
     monkeypatch.setattr(
         tool_module,
-        "_validate_candidate_snapshot",
+        "validate_candidate_snapshot",
         lambda *_args: validations.append("snapshot"),
     )
     monkeypatch.setattr(
@@ -903,7 +903,7 @@ def test_installer_prepare_carries_the_planned_restart(tmp_path, monkeypatch) ->
 
 
 def test_incremental_build_clones_the_installed_app_and_runs_the_partial_entry(tmp_path, monkeypatch) -> None:
-    from openprogram.programs.tools.system import self_update as tool_module
+    from openprogram.operations.self_update import candidate_source as tool_module
     from openprogram.operations.self_update.control import supervisor
     from openprogram.operations.self_update.delivery import local_signing
     from openprogram.operations.self_update.delivery.activation import ActivationPlan
@@ -919,9 +919,9 @@ def test_incremental_build_clones_the_installed_app_and_runs_the_partial_entry(t
     worktree = SimpleNamespace(source_repo=str(tmp_path), worktree_path=str(candidate),
                                branch_name="codex/candidate", parent_session="session-1")
     monkeypatch.setattr(manager, "get_manager", lambda: SimpleNamespace(get_worktree=lambda _id: worktree))
-    monkeypatch.setattr(tool_module, "_recorded_path", lambda value, _name: Path(value))
-    monkeypatch.setattr(tool_module, "_validate_registered_worktree", lambda *_: None)
-    monkeypatch.setattr(tool_module, "_validate_candidate_snapshot", lambda *_: None)
+    monkeypatch.setattr(tool_module, "recorded_path", lambda value, _name: Path(value))
+    monkeypatch.setattr(tool_module, "validate_registered_worktree", lambda *_: None)
+    monkeypatch.setattr(tool_module, "validate_candidate_snapshot", lambda *_: None)
     monkeypatch.setattr(supervisor, "_sandbox_executable", lambda: Path("/usr/bin/sandbox-exec"))
     monkeypatch.setattr(local_signing, "prepare_app", lambda _app: None)
     monkeypatch.setattr(local_signing, "sign_app", lambda _app: None)

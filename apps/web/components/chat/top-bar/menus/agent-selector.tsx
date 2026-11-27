@@ -139,7 +139,7 @@ export function useModelPicker({
   const limitsOf = (id: string) => status?.providers.find((p) => p.id === id)?.quota?.limits ?? [];
   // Group headings name the provider as Settings does: the enabled list
   // carries the label, so the rows never show an id that a later fetch
-  // renames; one way of a company reached several ways reads "OpenAI · ChatGPT".
+  // renames; one way of a company reached several ways reads "OpenCode · Go".
   const providerName = (id: string) => {
     const named = states[id];
     if (named?.name) return text(named.name, named.name_zh || named.name);
@@ -147,10 +147,10 @@ export function useModelPicker({
       || status?.providers.find((p) => p.id === id)?.label || id;
   };
 
-  // In a harness, an OpenProgram model is that harness's gateway model. Only
-  // Codex reaches OpenProgram's models (its gateway provider); Claude Code and
-  // DeepSeek Harness run only their own.
-  const gateway = !harness || harness.id === "codex";
+  // In a harness, an OpenProgram model is that harness's gateway model. Codex
+  // and Claude Code reach OpenProgram's models through the gateway; DeepSeek
+  // Harness runs only its own.
+  const gateway = !harness || harness.id === "codex" || harness.id === "claude-code";
   const pick = (provider: string, model: string) => harness
     ? pickModel(harness.provider, gatewayRef(provider, model))
     : pickModel(provider, model);

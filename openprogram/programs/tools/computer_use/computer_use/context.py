@@ -1,10 +1,9 @@
 """What every part of the tool reads about the call it serves: the tool's name, the conversation, the agent that operates, the machine its shell runs on, and whether code can run."""
 from __future__ import annotations
 
+from openprogram.runtime.conversation.screen_tool import NAME  # noqa: F401  (the turn owns the tool's name)
+
 from .code_mode import calls as code_mode
-
-
-NAME = "computer_use"
 
 
 def _session_id() -> str:

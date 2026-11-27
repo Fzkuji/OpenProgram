@@ -433,11 +433,10 @@ def test_a_second_turn_while_one_runs_gets_its_own_process():
     assert again is not first and fresh and first.closed
 
 
-def test_two_turns_keeping_their_ids_at_once_keep_both():
+def test_two_turns_keeping_their_ids_at_once_keep_both(tmp_path):
     from openprogram.runtime.harnesses import handoff
     from openprogram.state.store.session.session_store import SessionStore
-    import tempfile
-    store = SessionStore(tempfile.mkdtemp())
+    store = SessionStore(tmp_path)
     store.create_session("s1", "main")
     handoff.write_record(store, "s1", "codex-harness", "main", {"thread_id": "t", "own_turns": ["x"]})
     handoff.write_record(store, "s1", "codex-harness", "main", {"thread_id": "t", "own_turns": ["x", "a"]})

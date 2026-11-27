@@ -176,7 +176,7 @@ def key_for_env_var(name: str) -> str:
     from openprogram.models.auth.login.login_method_registry import provider_for_env_var
     provider = provider_for_env_var(name)
     if provider is not None:
-        from openprogram.models.providers.settings.env_api_keys import resolve_provider_key
+        from openprogram.models.auth.env_api_keys import resolve_provider_key
         try:
             value = resolve_provider_key(provider)
         except Exception:

@@ -8,7 +8,6 @@ import { PageShell } from "./page-shell";
 import { Sidebar } from "./sidebar/sidebar";
 import { RightSidebar } from "./right-sidebar/right-sidebar";
 import { PhoneShell } from "./layout/phone-shell";
-import { PhoneApp } from "./phone/phone-app";
 import { useTouchPhone } from "@/lib/layout/phone";
 import { useHoldsOwnConversation } from "./applications/application-conversation";
 import { ControlTips } from "./control-tips";
@@ -166,7 +165,11 @@ function preloadDeferredPanes(): void {
 }
 
 import { PersistentFilePanes } from "./center-tabs/files/persistent-file-panes";
+
 import { CodeRainArrivals } from "./chat/welcome/code-rain-arrivals";
+
+// The phone app (Framework7, its stylesheet included) loads only on a phone.
+const PhoneApp = dynamic(() => import("./phone/phone-app").then((m) => m.PhoneApp), { ssr: false });
 
 const LONE_PANE = { left: "0px", top: "0px", width: "100%", height: "100%" };
 

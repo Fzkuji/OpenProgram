@@ -68,10 +68,8 @@ def _run_turn_with_history(
     # reaching this process at all means holding the account it runs as.
     # Stamping it here is what keeps the memory writer from seeing an
     # unattributed turn and archiving it as principal "unknown", trusted.
-    from openprogram.runtime.permissions.authority import (
-        local_owner_authority,
-        runtime_authority,
-    )
+    from openprogram.runtime.permissions.authority import local_owner_authority
+    from openprogram.state.authority import runtime_authority
     from openprogram.state.authority import stamp_schema
 
     owner = local_owner_authority()

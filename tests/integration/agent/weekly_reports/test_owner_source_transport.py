@@ -8,6 +8,7 @@ import sys
 import pytest
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize('fault', ['', 'foreign', 'assistant', 'replay', 'other_store', 'other_db', 'other_execution'])
 def test_public_admission_spawn_source_identity(tmp_path, fault):
     root = Path(__file__).resolve().parents[4]

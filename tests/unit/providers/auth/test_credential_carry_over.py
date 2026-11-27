@@ -34,9 +34,9 @@ def _old_layout(root: Path) -> Path:
         "provider_id": "deepseek", "account_id": "default",
         "credentials": [{"credential_id": "d1", "kind": "api_key",
                          "payload": {"__type__": "ApiKeyPayload", "api_key": "sk-ds-00000001"}}]})
-    _write(auth / "openai-codex" / "default.json", {
-        "provider_id": "openai-codex", "account_id": "default",
-        "credentials": [{"credential_id": "c1", "kind": "cli_delegated", "source": "codex_cli",
+    _write(auth / "qwen" / "default.json", {
+        "provider_id": "qwen", "account_id": "default",
+        "credentials": [{"credential_id": "c1", "kind": "cli_delegated", "source": "qwen_cli",
                          "read_only": True, "metadata": {"email": "a@example.com"},
                          "payload": {"kind": "cli_delegated",
                                      "data": {"store_path": "/nowhere/auth.json"}}}]})
@@ -56,16 +56,16 @@ def test_every_credential_arrives_in_one_list_per_provider(tmp_path):
     auth = _old_layout(tmp_path)
     report = co.carry_over(auth, state_root=tmp_path)
     assert report.ran
-    assert report.before == report.after == {"deepseek": 1, "openai": 3, "openai-codex": 1}
+    assert report.before == report.after == {"deepseek": 1, "openai": 3, "qwen": 1}
     openai = json.loads((auth / "openai" / "credentials.json").read_text())
     # account priority (work first), then each account's active credential first
     assert [c["id"] for c in openai["credentials"]] == ["k3", "k2", "k1"]
     assert openai["strategy"] == "evenly"
     assert openai["credentials"][0]["label"] == "work"
     assert openai["credentials"][1]["label"] == ""
-    codex = json.loads((auth / "openai-codex" / "credentials.json").read_text())["credentials"][0]
-    assert (codex["kind"], codex["source"], codex["identity"]) == ("import", "import", {"email": "a@example.com"})
-    assert codex["payload"]["kind"] == "import"
+    qwen = json.loads((auth / "qwen" / "credentials.json").read_text())["credentials"][0]
+    assert (qwen["kind"], qwen["source"], qwen["identity"]) == ("import", "import", {"email": "a@example.com"})
+    assert qwen["payload"]["kind"] == "import"
     assert "sk-ds-00000001" in _secrets(auth)
 
 
@@ -78,7 +78,7 @@ def test_the_old_files_are_removed_and_a_whole_backup_is_kept(tmp_path):
     assert sorted(p.relative_to(report.backup) for p in report.backup.rglob("*.json")) == before
     left = sorted(str(p.relative_to(auth)) for p in auth.rglob("*.json")
                   if co.BACKUP_DIR not in p.parts)
-    assert left == ["deepseek/credentials.json", "openai-codex/credentials.json", "openai/credentials.json"]
+    assert left == ["deepseek/credentials.json", "openai/credentials.json", "qwen/credentials.json"]
 
 
 def test_running_again_changes_nothing(tmp_path):
@@ -105,25 +105,25 @@ def test_a_partial_run_does_not_add_a_credential_twice(tmp_path):
 
 def test_a_provider_that_fails_keeps_its_old_files_and_holds_up_no_other(tmp_path, monkeypatch):
     auth = _old_layout(tmp_path)
-    codex_old = (auth / "openai-codex" / "default.json").read_bytes()
+    qwen_old = (auth / "qwen" / "default.json").read_bytes()
     real = co._flatten
 
     def broken(provider, pools, side, now_ms):
-        if provider == "openai-codex":
+        if provider == "qwen":
             raise RuntimeError("disk full")
         return real(provider, pools, side, now_ms)
 
     monkeypatch.setattr(co, "_flatten", broken)
     report = co.carry_over(auth, state_root=tmp_path)
     assert report.after == {"deepseek": 1, "openai": 3}
-    assert (auth / "openai-codex" / "default.json").read_bytes() == codex_old
-    assert not (auth / "openai-codex" / "credentials.json").exists()
+    assert (auth / "qwen" / "default.json").read_bytes() == qwen_old
+    assert not (auth / "qwen" / "credentials.json").exists()
     assert (auth / "_rotation.json").exists()  # side files wait for every provider
     assert not (auth / "openai" / "default.json").exists()
 
     monkeypatch.setattr(co, "_flatten", real)
     again = co.carry_over(auth, state_root=tmp_path)
-    assert again.after == {"openai-codex": 1}
+    assert again.after == {"qwen": 1}
     assert not (auth / "_rotation.json").exists()
     assert [p.name for p in auth.iterdir() if p.name.startswith(".carry")] == [co.BACKUP_DIR]
 

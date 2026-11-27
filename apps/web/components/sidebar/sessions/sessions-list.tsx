@@ -34,7 +34,7 @@ import { useSessionStore } from "@/lib/session-store";
 import type { ConvSummary } from "@/lib/session-store";
 import { useCenterTabs } from "@/lib/tabs/center-tabs-store";
 import { useTranslation } from "@/lib/i18n";
-import { useRecentsView, setRecentsView } from "@/lib/prefs/recents-view";
+import { pinnedProjectIds, useRecentsView, setRecentsView } from "@/lib/prefs/recents-view";
 import { autoRenameSession } from "@/lib/chat/session-auto-rename";
 import { wsRequest } from "@/lib/net/ws/ws-request";
 import { listSessionProjects } from "@/lib/projects/list-projects";
@@ -454,21 +454,25 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
   // project_for_session falls back to it) — there is no separate
   // "Ungrouped" bucket in this mode. Manual project order does not alter
   // membership or the session order from `visible`.
-  const projectSection = (id: string) => view.pinnedProjects.includes(id) ? "__pinned__" : (view.projectSectionNames.includes(view.projectSections[id]) ? view.projectSections[id] : "");
+  const defaultProjectId = projects.find((p) => p.is_default)?.id;
+  const pinnedIds = pinnedProjectIds(view, defaultProjectId);
+  const projectSection = (id: string) => pinnedIds.includes(id) ? "__pinned__" : (view.projectSectionNames.includes(view.projectSections[id]) ? view.projectSections[id] : "");
   const sectionOrder = ["__pinned__", ...view.projectSectionNames, ""];
-  const groupedProjects = projectMode ? projectGroups(projects, visible, view.projectOrder, { sort: view.projectSort, pinned: view.pinnedProjects, activityItems: convArr })
+  const groupedProjects = projectMode ? projectGroups(projects, visible, view.projectOrder, { sort: view.projectSort, pinned: pinnedIds, activityItems: convArr })
     .sort((a,b) => sectionOrder.indexOf(projectSection(a.key)) - sectionOrder.indexOf(projectSection(b.key))) : [];
   function reorderProject(source: string, target: string, side: "before" | "after") {
     // Include hidden/empty projects so filtering cannot discard their position.
-    const displayed = projectGroups(projects, convArr, view.projectOrder, { sort: view.projectSort, pinned: view.pinnedProjects, includeEmpty: true, includeHidden: true }).map(g => g.key);
+    const displayed = projectGroups(projects, convArr, view.projectOrder, { sort: view.projectSort, pinned: pinnedIds, includeEmpty: true, includeHidden: true }).map(g => g.key);
     const fallback = [...projects].sort((a, b) => Number(b.is_default) - Number(a.is_default) || a.name.localeCompare(b.name));
     const ids = new Set(projects.map((p) => p.id));
     const order = [...new Set([...displayed, ...view.projectOrder.filter((id) => ids.has(id)), ...fallback.map((p) => p.id)])];
     if (source === target || !ids.has(source) || !ids.has(target)) return;
     try {
       setRecentsView({ projectSort: "manual", projectOrder: moveProject(order, source, target, side),
-        pinnedProjects: view.pinnedProjects.includes(target) ? [...new Set([...view.pinnedProjects,source])] : view.pinnedProjects.filter(id=>id!==source),
-        projectSections: view.pinnedProjects.includes(target) ? view.projectSections : {...view.projectSections,[source]:view.projectSections[target]||""},
+        pinnedProjects: pinnedIds.includes(target) ? [...new Set([...view.pinnedProjects,source])] : view.pinnedProjects.filter(id=>id!==source),
+        // Dropped among the pinned or out of them, the default project is pinned or not like any other.
+        defaultUnpinned: source === defaultProjectId ? !pinnedIds.includes(target) : view.defaultUnpinned,
+        projectSections: pinnedIds.includes(target) ? view.projectSections : {...view.projectSections,[source]:view.projectSections[target]||""},
       });
       setOrderNotice(text("Project order saved", "项目顺序已保存"));
     } catch {

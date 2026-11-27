@@ -120,9 +120,11 @@ class FinalizationOperations:
                 self.run_ended(self.executions, execution, result)
             except Exception:
                 shared._log.exception("end of run %s not reported", key[0])
-        # A busy or unavailable Goal is retried until the notice lands.
-        from openprogram.programs.tools.planning.goal import chat
-        chat.settle_terminal(self.executions, execution)
+        # What Programs settle when a turn ends (a busy or unavailable Goal
+        # is retried until the notice lands).
+        from openprogram.runtime.conversation import turn_hooks
+        for settle in turn_hooks.handlers("turn_finished"):
+            settle(self.executions, execution)
 
 
     @staticmethod

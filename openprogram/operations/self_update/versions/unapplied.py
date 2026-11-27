@@ -13,7 +13,7 @@ import os
 from pathlib import Path
 from typing import Callable
 
-from .layout import Layout, valid_id
+from openprogram.host._platform.runtime_layout import Layout, valid_id
 from openprogram.host._platform import filesystem
 
 DIRECTORY = "unapplied"

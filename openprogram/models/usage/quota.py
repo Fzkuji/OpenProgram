@@ -3,8 +3,8 @@
 One model for every provider. A provider reports its limits in one of four
 kinds, chosen by what it sends:
 
-  * ``windowed``   — a subscription's usage windows (Codex 5h and weekly,
-                     coding plans): percent used and when each resets.
+  * ``windowed``   — a plan's usage windows (coding plans): percent used
+                     and when each resets.
   * ``balance``    — a prepaid amount or a key's spending limit (OpenRouter).
   * ``rate_limit`` — only per-minute request/token headroom from response
                      headers (OpenAI and Anthropic API keys).
@@ -16,8 +16,8 @@ Each value is a :class:`QuotaLimit` carrying where it came from (``source``:
 follows Oh My Pi's ``UsageLimit`` (``packages/ai/src/usage.ts``); labels and
 the per-cent-left reading follow Codex (``tui/src/status/rate_limits.rs``).
 
-:func:`observe_headers` and :func:`observe_codex_frame` are called by the
-adapters with what an ordinary reply already carries, at no cost. Values
+:func:`observe_headers` is called by the adapters with what an ordinary
+reply already carries, at no cost. Values
 are kept in memory at once and written to ``usage.db`` (``quota_snapshots``)
 at most every :data:`WRITE_EVERY_S` per key; an endpoint read is written at
 once. Raw headers and bodies are never stored.
@@ -35,12 +35,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from typing import Any, Callable, Iterable, Optional
 
-from openprogram.models.providers.utils.http_transport.rate_limit import (
-    CodexRateLimits,
-    parse_codex_rate_limit_frame,
-    parse_codex_rate_limits,
-    parse_rate_limit,
-)
+from openprogram.models.providers.utils.http_transport.rate_limit import parse_rate_limit
 
 _log = logging.getLogger(__name__)
 
@@ -50,7 +45,6 @@ KIND_RATE_LIMIT = "rate_limit"
 KIND_NONE = "none"
 
 SOURCE_HEADERS = "headers"
-SOURCE_FRAME = "frame"
 SOURCE_ENDPOINT = "endpoint"
 
 STATUS_OK = "ok"
@@ -232,34 +226,6 @@ def window_label(minutes: Optional[int], *, secondary: bool = False) -> str:
     return "Weekly" if secondary else "5h"
 
 
-def codex_limits(families: Iterable[CodexRateLimits], *, source: str, now: float) -> list[QuotaLimit]:
-    """Codex windows and credits as quota limits."""
-    out: list[QuotaLimit] = []
-    for family in families:
-        prefix = "" if family.limit_id == "codex" else f"{family.limit_id}:"
-        name = family.limit_name or ("" if not prefix else family.limit_id.replace("_", "-"))
-        for key, window in (("primary", family.primary), ("secondary", family.secondary)):
-            if window is None:
-                continue
-            used = max(0.0, min(100.0, window.used_percent))
-            label = window_label(window.window_minutes, secondary=key == "secondary")
-            out.append(QuotaLimit(
-                limit_key=prefix + key, label=f"{name} {label}".strip(), unit="percent",
-                source=source, fetched_at=now, used=used, limit=100.0, remaining=100.0 - used,
-                used_fraction=used / 100.0, window_minutes=window.window_minutes,
-                resets_at=float(window.resets_at) if window.resets_at else None,
-            ))
-        credits = family.credits
-        if credits is not None and (credits.unlimited or credits.has_credits):
-            balance = _number(credits.balance)
-            out.append(QuotaLimit(
-                limit_key=prefix + "credits", label="Credits", unit="credits", source=source,
-                fetched_at=now, remaining=None if credits.unlimited else balance,
-                status=STATUS_OK,
-            ))
-    return out
-
-
 _DURATION_PART = re.compile(r"(\d+(?:\.\d+)?)(ms|h|m|s)")
 
 
@@ -293,13 +259,10 @@ def _number(value: Any) -> Optional[float]:
 
 
 def header_limits(headers: Any, *, now: Optional[float] = None) -> list[QuotaLimit]:
-    """Every limit an ordinary reply's headers carry, in any of the three schemes."""
+    """Every limit an ordinary reply's headers carry, in either scheme."""
     if headers is None:
         return []
     now = time.time() if now is None else now
-    codex = parse_codex_rate_limits(headers)
-    if codex:
-        return codex_limits(codex, source=SOURCE_HEADERS, now=now)
     info = parse_rate_limit(headers)
     if not info.present:
         return []
@@ -386,7 +349,7 @@ class QuotaStore:
         self._limits: dict[tuple[str, str], dict[str, QuotaLimit]] = {}
         self._dirty: dict[tuple[str, str], set[str]] = {}
         self._written: dict[tuple[str, str], float] = {}
-        #: The plan each key's replies last named (Codex ``plan_type``); memory only.
+        #: The plan each key's replies last named; memory only.
         self._plans: dict[tuple[str, str], str] = {}
         self._loaded = False
         self._listener: Optional[Listener] = None
@@ -555,30 +518,6 @@ def observe_headers(provider: str, token: Optional[str], headers: Any, *,
         return []
 
 
-def observe_codex_frame(provider: str, token: Optional[str], frame: Any, *,
-                        account: Optional[str] = None) -> list[QuotaLimit]:
-    """Record a Codex ``codex.rate_limits`` WebSocket frame. Never raises.
-
-    ``account`` names the credential the request was sent with (an imported
-    sign-in's token is read from another tool's file, so its token never
-    matches a stored value); otherwise it is found from ``token``."""
-    try:
-        family = parse_codex_rate_limit_frame(frame)
-        if family is None:
-            return []
-        if account is None:
-            account = account_for_token(provider, token) or ""
-        default_store.note_plan(provider, account, family.plan_type)
-        if not family.present:
-            return []
-        limits = codex_limits([family], source=SOURCE_FRAME, now=time.time())
-        default_store.observe(provider, account, limits)
-        return limits
-    except Exception:
-        _log.debug("codex rate-limit frame not read", exc_info=True)
-        return []
-
-
 def exhausted_limit(provider: str, account: Optional[str] = None) -> Optional[QuotaLimit]:
     """The spent limit of a provider's key that resets last, if any is spent."""
     found = exhausted_report(provider, account)
@@ -614,13 +553,11 @@ __all__ = [
     "WARNING_AT",
     "WRITE_EVERY_S",
     "account_for_token",
-    "codex_limits",
     "default_store",
     "exhausted_limit",
     "exhausted_report",
     "header_limits",
     "limit_status",
-    "observe_codex_frame",
     "observe_headers",
     "report_kind",
     "reset_epoch",

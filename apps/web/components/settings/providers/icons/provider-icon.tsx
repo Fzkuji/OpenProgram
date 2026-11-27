@@ -10,8 +10,11 @@ export type ProviderLogo = BrandLogo;
 /** The brand logo shipped for a provider id, or null when there is none
  *  (custom, local and generic OpenAI-compatible providers). */
 export function providerLogo(id: string | undefined): ProviderLogo | null {
-  const icon = id ? (icons as Record<string, { file: string; mono: boolean }>)[id] : undefined;
-  return icon ? { url: `/images/providers/${icon.file}`, mono: icon.mono } : null;
+  const icon = id ? (icons as Record<string, { file: string; dark?: string; mono: boolean }>)[id] : undefined;
+  return icon ? {
+    url: `/images/providers/${icon.file}`, mono: icon.mono,
+    ...(icon.dark ? { darkUrl: `/images/providers/${icon.dark}` } : {}),
+  } : null;
 }
 
 /** The plate's padding around the logo, in px (provider-pane.module.css). */
@@ -39,7 +42,9 @@ export function ProviderIcon({ id, size = 24, plate }: { id: string; size?: numb
     const ink = brand ? (brand === "dark" ? "white" : "black") : "var(--text-primary)";
     return (
       <span className={styles.providerIcon} style={dimensions} data-plate={brand} aria-hidden="true">
-        <BrandMark logo={icon} size={size - 2 * (brand ? BRAND_PLATE_PADDING : PLATE_PADDING)} color={ink} lazy />
+        {/* A brand plate is the same on every theme, so its logo is too. */}
+        <BrandMark logo={brand ? { url: icon.url, mono: icon.mono } : icon}
+          size={size - 2 * (brand ? BRAND_PLATE_PADDING : PLATE_PADDING)} color={ink} lazy />
       </span>
     );
   }

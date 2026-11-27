@@ -15,13 +15,13 @@ import pytest
 def scheduler_env(tmp_path, monkeypatch):
     import openprogram.state.paths as paths
     from openprogram.runtime.permissions import authority
-    from openprogram.programs.tools.jobs.cron import cron as cron_tool
+    from openprogram.runtime.scheduler import store as task_store
 
     schedule = tmp_path / "scheduler" / "tasks.json"
     monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path / "state")
     authority._reset_owner_cache_for_tests()
     monkeypatch.setenv("OPENPROGRAM_SCHEDULER_PATH", str(schedule))
-    monkeypatch.delenv(cron_tool.DEFAULT_CRON_ENV, raising=False)
+    monkeypatch.delenv(task_store.DEFAULT_CRON_ENV, raising=False)
     monkeypatch.chdir(tmp_path)
     return tmp_path
 
@@ -30,10 +30,10 @@ def scheduler_env(tmp_path, monkeypatch):
 def in_conversation(monkeypatch):
     """Make task creation see a current conversation and the local owner."""
     from openprogram.runtime.permissions.authority import local_owner_authority
-    from openprogram.programs.tools.jobs.cron import cron as cron_tool
+    from openprogram.runtime.scheduler import store as task_store
 
-    monkeypatch.setattr(cron_tool, "_origin_session", lambda: ("sess-1", "main"))
-    monkeypatch.setattr(cron_tool, "_authorize", lambda _action: (local_owner_authority(), None))
+    monkeypatch.setattr(task_store, "_origin_session", lambda: ("sess-1", "main"))
+    monkeypatch.setattr(task_store, "_authorize", lambda _action: (local_owner_authority(), None))
 
 
 def _reminder(**kw):
@@ -47,10 +47,10 @@ def _reminder(**kw):
 
 
 def test_reminder_task_signs_its_conversation_and_wake(scheduler_env, in_conversation):
-    from openprogram.programs.tools.jobs.cron import cron as cron_tool
+    from openprogram.runtime.scheduler import store as task_store
 
     task = _reminder(wake=True)
-    spec, error = cron_tool._verify_execution_spec(task["execution"])
+    spec, error = task_store._verify_execution_spec(task["execution"])
     assert error is None
     assert task["reminder"] == "Stand up and stretch" and task["wake"] is True
     assert (spec["kind"], spec["session_id"], spec["wake"]) == ("reminder", "sess-1", True)
@@ -77,12 +77,12 @@ def test_task_bodies_are_exclusive_and_wake_is_only_for_reminders(scheduler_env)
 def test_update_keeps_the_reminder_home_outside_the_conversation(
     scheduler_env, in_conversation, monkeypatch,
 ):
-    from openprogram.programs.tools.jobs.cron import cron as cron_tool
+    from openprogram.runtime.scheduler import store as task_store
     from openprogram.runtime.scheduler import service
 
     task = _reminder(wake=True)
     # The Scheduler page edits with no current conversation.
-    monkeypatch.setattr(cron_tool, "_origin_session", lambda: ("", "main"))
+    monkeypatch.setattr(task_store, "_origin_session", lambda: ("", "main"))
     updated = service.update_task(task["id"], {"reminder": "Drink water"})
     assert updated["reminder"] == "Drink water" and updated["wake"] is True
     assert updated["execution"]["session_id"] == "sess-1"
@@ -92,7 +92,7 @@ def test_update_keeps_the_reminder_home_outside_the_conversation(
 
 def test_worker_fires_a_due_reminder_as_one_event(scheduler_env, in_conversation, monkeypatch):
     from openprogram.runtime.events import get_event_bus
-    from openprogram.programs.tools.jobs.cron import worker
+    from openprogram.runtime.scheduler import worker
     from openprogram.runtime.scheduler import reminders
 
     monkeypatch.setattr(reminders, "_installed", True)  # no real delivery here

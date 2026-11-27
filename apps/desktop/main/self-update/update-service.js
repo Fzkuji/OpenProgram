@@ -4,7 +4,6 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const { Readable } = require("node:stream");
-const { replaceAppImage } = require("./app-replace");
 
 const REPOSITORY = "Fzkuji/OpenProgram";
 const LATEST_URL = `https://api.github.com/repos/${REPOSITORY}/releases/latest`;
@@ -16,7 +15,7 @@ const ALLOWED_HOSTS = new Set([
 ]);
 // Only read when GitHub cannot answer. It can name a new repository and the
 // hosts its files come from, and counts only with a signature from one of the
-// keys below, the same keys as RELEASE_PUBLIC_KEYS in official/assets.py.
+// keys below, the same keys as RELEASE_PUBLIC_KEYS in official/signing.py.
 // The address is UPDATE_SOURCE_URL in openprogram/operations/project_site.py.
 const UPDATE_SOURCE_URL = "https://fzkuji.github.io/OpenProgram/update-source.json";
 const UPDATE_SOURCE_HOSTS = new Set(["fzkuji.github.io"]);
@@ -26,9 +25,8 @@ const GITHUB_WEB_ROOT = "https://github.com";
 const REPOSITORY_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}\/[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
 const HOST_RE = /^[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?$/;
 const SIGNATURE_RE = /^[0-9a-f]{128}$/;
-const VERSION_RE = /^(?:v)?(\d+)\.(\d+)\.(\d+)$/;
-const SUCCESS_INTERVAL_MS = 24 * 3600_000;
-const FAILURE_INTERVAL_MS = 6 * 3600_000;
+// Three or four numeric parts (1.2.1, 1.2.1.1); a missing fourth counts as 0.
+const VERSION_RE = /^(?:v)?(\d+)\.(\d+)\.(\d+)(?:\.(\d+))?$/;
 const MAX_REDIRECTS = 5;
 const REQUEST_TIMEOUT_MS = 30_000;
 const DOWNLOAD_IDLE_TIMEOUT_MS = 60_000;
@@ -37,7 +35,23 @@ const DOWNLOAD_RETRY_DELAY_MS = 1_000;
 const DOWNLOAD_RETRY_LIMIT_MS = 30_000;
 const RESPONSE_ABORT = Symbol("openprogramUpdateAbort");
 const NOT_PUBLISHED = "not-published";
+// The update channel: channel.json on the rolling `updates` release, read by
+// its plain download address (no API call). The file carries its signature,
+// `{"signed": text, "signature": hex}`, and is trusted only with a signature
+// from RELEASE_PUBLIC_KEYS over the UTF-8 bytes of that text. It names announced releases
+// only (daily syncs go to latest.json, which Apps never read). A version-store
+// App checks only this; the Python updater fetches and builds what it names.
+const CHANNEL_TAG = "updates";
+const CHANNEL_FILE = "channel.json";
+// The signed text names its pointer, so latest.json cannot pass as channel.json.
+const CHANNEL_POINTER = "channel";
+const CHANNEL_SCHEMA = 2;
+const MAX_POINTER_BYTES = 1024 * 1024;
+const COMMIT_RE = /^[0-9a-f]{40}$/;
+const PLAIN_VERSION_RE = /^\d+\.\d+\.\d+(?:\.\d+)?$/;
+const BUILD_RE = /^[0-9a-f]{12}$/;
 const WAITING_FOR_SHELL = "waiting_for_shell";
+const WAITING_FOR_RUNTIME = "waiting_for_runtime";
 
 /** A release exists, and has no file for this kind of computer yet. */
 class DesktopAssetNotPublished extends Error {}
@@ -111,13 +125,18 @@ function desktopUpdateFetch(requestUrl, options, net = electronNet()) {
 function versionParts(value) {
   const match = VERSION_RE.exec(String(value || ""));
   if (!match) throw new Error(`invalid version: ${value}`);
-  return match.slice(1).map(Number);
+  return match.slice(1).map((part) => Number(part || 0));
+}
+
+/** The version a matched tag names, without the "v". */
+function matchedVersion(match) {
+  return match.slice(1).filter((part) => part !== undefined).join(".");
 }
 
 function compareVersions(left, right) {
   const a = versionParts(left);
   const b = versionParts(right);
-  for (let index = 0; index < 3; index += 1) {
+  for (let index = 0; index < 4; index += 1) {
     if (a[index] > b[index]) return 1;
     if (a[index] < b[index]) return -1;
   }
@@ -195,24 +214,14 @@ function desktopAssetSpec(version, platform, arch, { linuxFormat = "deb" } = {})
   throw new Error(`unsupported Desktop platform: ${platform}/${arch}`);
 }
 
-/** What a chosen file is: a macOS .zip is the App itself, ready to swap in. */
-function assetKind(name, specKind) {
-  return name && name.endsWith(".zip") ? "app-archive" : specKind;
-}
-
 /**
  * The file names that can serve this computer, the preferred one first. A
  * signed Windows App stays on the signed line, so it never looks at an
  * unsigned installer.
  */
-function desktopAssetNames(version, platform, arch, { linuxFormat, windowsSignedOnly = true, inPlace = false } = {}) {
+function desktopAssetNames(version, platform, arch, { linuxFormat, windowsSignedOnly = true } = {}) {
   const { name } = desktopAssetSpec(version, platform, arch, { linuxFormat });
-  if (platform === "darwin") {
-    const images = [name.replace("-unsigned.dmg", ".dmg"), name];
-    // An App that replaces itself takes the signed .zip, and the disk image
-    // when a release has none.
-    return inPlace ? [`OpenProgram-${version}-mac-${arch}.zip`, ...images] : images;
-  }
+  if (platform === "darwin") return [name.replace("-unsigned.dmg", ".dmg"), name];
   if (platform === "win32" && !windowsSignedOnly) return [name, name.replace(/\.exe$/, "-unsigned.exe")];
   return [name];
 }
@@ -225,14 +234,14 @@ function resolveDesktopRelease(
   platform = "darwin",
   {
     linuxFormat, windowsSignedOnly = true, versionStore = false, repository = REPOSITORY,
-    webRoot = GITHUB_WEB_ROOT, inPlace = false,
+    webRoot = GITHUB_WEB_ROOT,
   } = {},
 ) {
   if (!release || release.draft !== false) throw new Error("draft release is not eligible");
   if (release.prerelease !== false) throw new Error("prerelease is not eligible");
   const tagMatch = VERSION_RE.exec(String(release.tag_name || ""));
   if (!tagMatch || !String(release.tag_name).startsWith("v")) throw new Error("release tag is invalid");
-  const latestVersion = tagMatch.slice(1).join(".");
+  const latestVersion = matchedVersion(tagMatch);
   versionParts(currentVersion);
   if (!manifest || manifest.version !== latestVersion) throw new Error("manifest version mismatch");
   const expectedReleaseUrl = `${webRoot}/${repository}/releases/tag/v${latestVersion}`;
@@ -244,7 +253,7 @@ function resolveDesktopRelease(
   let names = [];
   try {
     spec = desktopAssetSpec(latestVersion, platform, arch, { linuxFormat });
-    names = desktopAssetNames(latestVersion, platform, arch, { linuxFormat, windowsSignedOnly, inPlace });
+    names = desktopAssetNames(latestVersion, platform, arch, { linuxFormat, windowsSignedOnly });
   } catch (error) {
     if (!versionStore) throw new DesktopAssetNotPublished(error.message);
   }
@@ -265,7 +274,7 @@ function resolveDesktopRelease(
     releaseName: typeof release.name === "string" ? release.name : `OpenProgram ${latestVersion} Release`,
     releaseNotes: typeof release.body === "string" ? release.body.slice(0, 20_000) : "",
     releaseUrl: expectedReleaseUrl,
-    artifactKind: spec ? assetKind(name, spec.kind) : null,
+    artifactKind: spec ? spec.kind : null,
     asset: name ? {
       name,
       bytes: entry.bytes,
@@ -283,6 +292,11 @@ function defaultPersistedState() {
     lastAttemptAt: 0,
     lastSuccessAt: 0,
     release: null,
+    // The highest channel sequence seen; a lower one is a replay, ignored.
+    channelSequence: 0,
+    // The updater's answer to whether this App can swap in a new App shell:
+    // { app: shellSwap.id, value }. It decides; the App only asks.
+    shellSwap: null,
   };
 }
 
@@ -295,6 +309,10 @@ function normalizePersistedState(value) {
     lastAttemptAt: Number.isFinite(value.lastAttemptAt) && value.lastAttemptAt >= 0 ? value.lastAttemptAt : 0,
     lastSuccessAt: Number.isFinite(value.lastSuccessAt) && value.lastSuccessAt >= 0 ? value.lastSuccessAt : 0,
     release: value.release && typeof value.release === "object" ? value.release : null,
+    channelSequence: Number.isSafeInteger(value.channelSequence) && value.channelSequence >= 0
+      ? value.channelSequence : 0,
+    shellSwap: value.shellSwap && typeof value.shellSwap.app === "string" && typeof value.shellSwap.value === "boolean"
+      ? { app: value.shellSwap.app, value: value.shellSwap.value } : null,
   };
 }
 
@@ -336,14 +354,6 @@ function publicRelease(release) {
   if (!release) return null;
   const { asset: _asset, ...visible } = release;
   return visible;
-}
-
-function nextAutomaticCheckAt(state) {
-  if (state.lastSuccessAt && state.lastSuccessAt >= state.lastAttemptAt) {
-    return state.lastSuccessAt + SUCCESS_INTERVAL_MS;
-  }
-  if (state.lastAttemptAt) return state.lastAttemptAt + FAILURE_INTERVAL_MS;
-  return 0;
 }
 
 async function requestWithRedirects(fetchImpl, initialUrl, options = {}) {
@@ -509,7 +519,7 @@ async function readTagFromLatestRedirect(fetchImpl, repository, allowedHosts, we
     const location = response.headers.get("location");
     if (!location) throw new Error("update redirect is missing a location");
     current = validateUpdateUrl(new URL(location, current).toString(), allowedHosts);
-    const tag = /\/releases\/tag\/(v\d+\.\d+\.\d+)$/.exec(current.pathname);
+    const tag = /\/releases\/tag\/(v\d+\.\d+\.\d+(?:\.\d+)?)$/.exec(current.pathname);
     if (tag) return tag[1];
   }
   throw new Error("update redirect limit exceeded");
@@ -689,19 +699,6 @@ async function downloadVerified(fetchImpl, asset, targetPath, onProgress = () =>
   }
 }
 
-/** Whether a finished file is already there with the release's size and hash. */
-async function fileMatches(filePath, asset) {
-  try {
-    const info = await fs.promises.stat(filePath);
-    if (!info.isFile() || info.size !== asset.bytes) return false;
-    const hash = crypto.createHash("sha256");
-    for await (const chunk of fs.createReadStream(filePath)) hash.update(chunk);
-    return hash.digest("hex") === asset.sha256;
-  } catch {
-    return false;
-  }
-}
-
 /** What `openprogram upgrade --json` reported: its last line of output. */
 function parseUpgradeOutcome(output, exitCode) {
   const line = String(output || "").trim().split(/\r?\n/).at(-1);
@@ -715,6 +712,141 @@ function parseUpgradeOutcome(output, exitCode) {
     ok: exitCode === 0,
     detail: exitCode === 0 ? "" : `The update stopped with code ${exitCode}. Try again from Settings.`,
   };
+}
+
+function channelAssetUrl(name) {
+  return `${GITHUB_WEB_ROOT}/${REPOSITORY}/releases/download/${CHANNEL_TAG}/${name}`;
+}
+
+function channelReleaseUrl(version) {
+  return `${GITHUB_WEB_ROOT}/${REPOSITORY}/releases/tag/v${version}`;
+}
+
+/**
+ * The signed channel.json: one file, `{"signed": "<pointer JSON text>",
+ * "signature": "<hex Ed25519 of that text>"}`. Throws when the signature or
+ * fields do not check out; null when the file is missing (between the delete
+ * and upload that replace it; the next check finds it). channel.json must
+ * name an announced release, like channel.py's `parse`.
+ */
+async function readChannel(fetchImpl, keys = RELEASE_PUBLIC_KEYS) {
+  let blob;
+  try {
+    blob = await readLimited(await requestWithRedirects(fetchImpl, channelAssetUrl(CHANNEL_FILE)), MAX_POINTER_BYTES);
+  } catch (error) {
+    if (error.httpStatus === 404) return null;
+    throw error;
+  }
+  let envelope;
+  try {
+    envelope = JSON.parse(blob.toString("utf8"));
+  } catch (_error) {
+    throw new Error("the update channel is unreadable");
+  }
+  if (typeof envelope?.signed !== "string" || typeof envelope.signature !== "string") {
+    throw new Error("this App does not read this update channel");
+  }
+  const data = Buffer.from(envelope.signed, "utf8");
+  if (!signedByReleaseKey(data, Buffer.from(envelope.signature, "ascii"), keys)) {
+    throw new Error("the update channel's signature does not verify");
+  }
+  let channel;
+  try {
+    channel = JSON.parse(envelope.signed);
+  } catch (_error) {
+    throw new Error("the update channel is unreadable");
+  }
+  if (
+    channel?.schema !== CHANNEL_SCHEMA
+    || channel.pointer !== CHANNEL_POINTER
+    || channel.announce !== true
+    || !Number.isSafeInteger(channel.sequence) || channel.sequence < 0
+    || typeof channel.published_at !== "string" || Number.isNaN(Date.parse(channel.published_at))
+    || typeof channel.version !== "string" || !PLAIN_VERSION_RE.test(channel.version)
+    || typeof channel.notes !== "string" || channel.notes.length > 20_000
+    || typeof channel.commit !== "string" || !COMMIT_RE.test(channel.commit)
+    || !Number.isSafeInteger(channel.shell_compat)
+    || typeof channel.build !== "string" || !BUILD_RE.test(channel.build)
+  ) throw new Error("the update channel is invalid");
+  return channel;
+}
+
+/** Newer than the running build; an unknown running sequence counts as older. */
+function sequenceStatus(sequence, running) {
+  const have = running?.sequence;
+  return Number.isSafeInteger(have) && sequence <= have ? "up-to-date" : "available";
+}
+
+/** Whether the running shell can host code of `shellCompat`; unknown counts as yes. */
+function shellFits(running, shellCompat) {
+  if (!running) return true;
+  const range = running.shellCompat;
+  return range ? shellCompat >= range.min && shellCompat <= range.max : shellCompat === running.shell_compat;
+}
+
+/** The channel as a release the rest of the service handles. */
+function channelRelease(channel, running, currentVersion) {
+  return {
+    channel: CHANNEL_TAG,
+    sequence: channel.sequence,
+    version: channel.version,
+    commit: channel.commit,
+    shellCompat: channel.shell_compat,
+    status: sequenceStatus(channel.sequence, running),
+    currentVersion,
+    latestVersion: channel.version,
+    publishedAt: channel.published_at,
+    releaseName: `OpenProgram ${channel.version} Release`,
+    releaseNotes: channel.notes,
+    releaseUrl: channelReleaseUrl(channel.version),
+    artifactKind: null,
+    asset: null,
+  };
+}
+
+function validChannelRelease(cached, currentVersion) {
+  return cached.channel === CHANNEL_TAG
+    && Number.isSafeInteger(cached.sequence)
+    && typeof cached.version === "string" && PLAIN_VERSION_RE.test(cached.version)
+    && typeof cached.commit === "string" && COMMIT_RE.test(cached.commit)
+    && Number.isSafeInteger(cached.shellCompat)
+    && typeof cached.latestVersion === "string" && cached.latestVersion.length <= 64
+    && typeof cached.publishedAt === "string" && typeof cached.releaseName === "string"
+    && typeof cached.releaseNotes === "string" && cached.releaseNotes.length <= 20_000
+    && cached.releaseUrl === channelReleaseUrl(cached.version)
+    && cached.asset === null && cached.artifactKind === null
+    && (cached.applied === undefined || typeof cached.applied === "boolean")
+    && cached.currentVersion === currentVersion;
+}
+
+/** What a prepared update is matched by: a channel version can repeat across sequences. */
+function releaseKey(release) {
+  return release?.channel === CHANNEL_TAG ? `${release.latestVersion}#${release.sequence}` : release?.latestVersion;
+}
+
+function waitingFor(outcome, reason) {
+  return outcome?.reason === reason || outcome?.outcome === reason;
+}
+
+/** This computer's name in layer names: shell-macos-arm64, shell-windows-x86_64, shell-linux-x86_64. */
+function layerPlatform(platform, arch) {
+  const system = { darwin: "macos", win32: "windows", linux: "linux" }[platform];
+  const machine = { x64: "x86_64", arm64: "arm64" }[arch];
+  return system && machine ? `${system}-${machine}` : null;
+}
+
+/** Whether the channel carries an App shell layer for this computer. */
+function hasShellLayer(channel, platform, arch) {
+  return shellLayerVersion(channel, platform, arch) !== null;
+}
+
+/** The App version of the channel's shell layer for this computer, or null. */
+function shellLayerVersion(channel, platform, arch) {
+  const name = layerPlatform(platform, arch);
+  const layers = channel?.layers;
+  if (!name || !layers || typeof layers !== "object" || !Object.hasOwn(layers, `shell-${name}`)) return null;
+  const version = layers[`shell-${name}`]?.version;
+  return typeof version === "string" && PLAIN_VERSION_RE.test(version) ? version : null;
 }
 
 function githubSource() {
@@ -738,12 +870,17 @@ class DesktopUpdateService {
     versionStore = false,
     readCurrentVersion = null,
     applyVersionUpdate = null,
+    prepareVersionUpdate = null,
+    relaunchApp = () => {},
     updateSourceKeys = RELEASE_PUBLIC_KEYS,
-    inPlace = null,
+    shellSwap = null,
+    readRunningBuild = null,
   }) {
-    // How this App replaces itself (app-replace.js), or null when an update
-    // is a file the user opens.
-    this.inPlace = inPlace;
+    // A version-store App that can replace itself (macOS, Windows, an
+    // AppImage) takes a new App shell from its layer: the updater stages it,
+    // Restart to update swaps it in (app-replace.js). Elsewhere a new shell is
+    // an installer the user opens.
+    this.shellSwap = versionStore ? shellSwap : null;
     this.currentVersion = currentVersion;
     this.arch = arch;
     this.platform = platform;
@@ -752,7 +889,15 @@ class DesktopUpdateService {
     this.versionStore = versionStore;
     this.readCurrentVersion = readCurrentVersion;
     this.applyVersionUpdate = applyVersionUpdate;
+    // Prepares a version-store update without switching: "ready" then offers
+    // Restart to update, which switches and starts the App again.
+    this.prepareVersionUpdate = prepareVersionUpdate;
+    this.relaunchApp = relaunchApp;
     this.updateSourceKeys = updateSourceKeys;
+    // A version-store App's running build: { sequence, shell_compat,
+    // shellCompat: { min, max } }, or null when it cannot be read. With it the
+    // App checks the update channel instead of the stable release.
+    this.readRunningBuild = versionStore ? readRunningBuild : null;
     this.source = githubSource();
     this.statePath = statePath;
     this.fetchImpl = fetchImpl;
@@ -764,25 +909,19 @@ class DesktopUpdateService {
     const loaded = loadStateFile(statePath);
     this.persisted = loaded.state;
     let repairedState = loaded.repaired;
-    const startupNow = this.now();
-    if (
-      this.persisted.lastAttemptAt > startupNow
-      || this.persisted.lastSuccessAt > startupNow
-      || this.persisted.lastSuccessAt > this.persisted.lastAttemptAt
-    ) {
-      this.persisted.lastAttemptAt = 0;
-      this.persisted.lastSuccessAt = 0;
-      repairedState = true;
-    }
     const cached = this.persisted.release;
-    if (cached === null && this.persisted.lastSuccessAt > 0) {
-      this.persisted.lastAttemptAt = 0;
-      this.persisted.lastSuccessAt = 0;
-      repairedState = true;
-    }
-    if (cached !== null) {
+    if (cached !== null && cached.channel !== undefined) {
+      if (this.readRunningBuild && validChannelRelease(cached, currentVersion)) {
+        this.persisted.release = { ...cached, status: this.channelStatus(cached) };
+      } else {
+        this.persisted.release = null;
+        this.persisted.lastAttemptAt = 0;
+        this.persisted.lastSuccessAt = 0;
+        repairedState = true;
+      }
+    } else if (cached !== null) {
       try {
-        const assetOptions = { linuxFormat, windowsSignedOnly: false, inPlace: Boolean(inPlace) };
+        const assetOptions = { linuxFormat, windowsSignedOnly: false };
         const expectedAsset = desktopAssetSpec(cached.latestVersion, platform, arch, assetOptions);
         const expectedNames = desktopAssetNames(cached.latestVersion, platform, arch, assetOptions);
         const hasNoAsset = versionStore && cached.asset === null;
@@ -797,7 +936,7 @@ class DesktopUpdateService {
           ].every((value) => typeof value === "string")
           || cached.currentVersion !== currentVersion
           || cached.releaseNotes.length > 20_000
-          || cached.artifactKind !== assetKind(cached.asset?.name, expectedAsset.kind)
+          || cached.artifactKind !== expectedAsset.kind
           || cached.releaseUrl !== `https://github.com/${REPOSITORY}/releases/tag/v${cached.latestVersion}`
           || (!hasNoAsset && (
             !expectedNames.includes(cached.asset?.name)
@@ -835,14 +974,15 @@ class DesktopUpdateService {
       // The version prepared to swap in on restart; the sidebar's badge.
       readyVersion: null,
     };
-    // The prepared file of an App that replaces itself: { version, file }.
+    // The prepared version-store update: { version, key, kind: "version" }.
     this.prepared = null;
     this.checkPromise = null;
     this.downloadPromise = null;
   }
 
   getState() {
-    return { ...structuredClone(this.publicState), installsInPlace: this.installsInPlace() };
+    // A version-store update, new App shell included, installs on restart; anything else opens an installer.
+    return { ...structuredClone(this.publicState), installsInPlace: this.takesVersion() };
   }
 
   publish(patch) {
@@ -863,16 +1003,23 @@ class DesktopUpdateService {
     return this.getState();
   }
 
-  automaticCheckDueAt() { return nextAutomaticCheckAt(this.persisted); }
-
-  async check({ force = false } = {}) {
-    if (this.checkPromise) return this.checkPromise;
-    const now = this.now();
-    const dueAt = this.automaticCheckDueAt();
-    if (!force && dueAt && now < dueAt) {
-      return this.getState();
+  runningBuild() {
+    try {
+      return this.readRunningBuild?.() || null;
+    } catch (_error) {
+      return null;
     }
-    this.checkPromise = this.runCheck(now).finally(() => { this.checkPromise = null; });
+  }
+
+  /** `applied` marks a channel update the updater took or found already held. */
+  channelStatus(release) {
+    return release.applied ? "up-to-date" : sequenceStatus(release.sequence, this.runningBuild());
+  }
+
+  /** One check; main.js runs one ~30 s after start and then every hour. */
+  async check() {
+    if (this.checkPromise) return this.checkPromise;
+    this.checkPromise = this.runCheck(this.now()).finally(() => { this.checkPromise = null; });
     return this.checkPromise;
   }
 
@@ -895,7 +1042,7 @@ class DesktopUpdateService {
       const tag = String(release.tag_name || "");
       const match = VERSION_RE.exec(tag);
       if (!match || !tag.startsWith("v")) throw new Error("release tag is invalid");
-      version = match.slice(1).join(".");
+      version = matchedVersion(match);
     } catch (error) {
       if (!githubFailed(error)) throw error;
       release = null;
@@ -930,6 +1077,70 @@ class DesktopUpdateService {
     }
   }
 
+  /** The newest stable release as this App's update; throws DesktopAssetNotPublished when it has no file here. */
+  async resolveStable() {
+    const { source, manifest, release } = await this.readLatestRelease();
+    const line = this.platform === "win32" ? await this.windowsLine() : null;
+    const stable = resolveDesktopRelease(
+      release, manifest, this.currentVersion, this.arch, this.platform, {
+        linuxFormat: this.linuxFormat,
+        windowsSignedOnly: line ? line.signed : true,
+        versionStore: this.versionStore,
+        repository: source.repository,
+        webRoot: source.webRoot,
+      },
+    );
+    return { source, release: stable };
+  }
+
+  /**
+   * A version-store App's check: channel.json only. A missing channel, or one
+   * older than one already seen (a replay), means no update. An update that
+   * needs a newer shell brings it as a shell layer, which the updater stages
+   * beside it on an App that can replace itself. Elsewhere (Linux, a
+   * read-only App) the stable release's installer is offered instead, if that
+   * release carries the channel's code or newer.
+   */
+  async resolveChannel() {
+    const channel = await readChannel(this.fetchImpl, this.updateSourceKeys);
+    if (!channel || channel.sequence < this.persisted.channelSequence) {
+      const kept = this.persisted.release;
+      return { release: kept && { ...kept, status: "up-to-date" }, status: "up-to-date", needsNewShell: null };
+    }
+    this.persisted.channelSequence = channel.sequence;
+    const running = this.runningBuild();
+    let release = channelRelease(channel, running, this.currentVersion);
+    const previous = this.persisted.release;
+    if (previous?.channel === CHANNEL_TAG && previous.applied && previous.sequence === channel.sequence) {
+      release = { ...release, applied: true, status: "up-to-date" };
+    }
+    // The shell is compared by its own layer: a newer one is an update even
+    // when this App already runs the channel's code.
+    const shellVersion = shellLayerVersion(channel, this.platform, this.arch);
+    const swap = this.swapsShell();
+    if (release.status !== "available" && shellVersion && swap?.isNewer(shellVersion)) {
+      release = { ...release, applied: undefined, status: "available" };
+    }
+    if (
+      release.status !== "available" || shellFits(running, channel.shell_compat)
+      || (swap && hasShellLayer(channel, this.platform, this.arch))
+    ) {
+      return { release, status: release.status, needsNewShell: null };
+    }
+    const needsNewShell = "This update needs a newer OpenProgram App.";
+    let stable = null;
+    try {
+      stable = await this.resolveStable();
+    } catch (error) {
+      if (!(error instanceof DesktopAssetNotPublished)) throw error;
+    }
+    if (stable?.release.asset && compareVersions(stable.release.latestVersion, channel.version) >= 0) {
+      this.source = stable.source;
+      return { release: { ...stable.release, status: "available" }, status: "available", needsNewShell };
+    }
+    return { release, status: NOT_PUBLISHED, needsNewShell };
+  }
+
   async runCheck(now) {
     try {
       this.persisted.lastAttemptAt = now;
@@ -938,27 +1149,26 @@ class DesktopUpdateService {
       this.publish({
         status: "checking", currentVersion: this.currentVersion, error: null, errorKind: null, needsNewShell: null,
       });
-      const { source, manifest, release } = await this.readLatestRelease();
-      const line = this.platform === "win32" ? await this.windowsLine() : null;
-      const resolved = resolveDesktopRelease(release, manifest, this.currentVersion, this.arch, this.platform, {
-        linuxFormat: this.linuxFormat,
-        windowsSignedOnly: line ? line.signed : true,
-        versionStore: this.versionStore,
-        repository: source.repository,
-        webRoot: source.webRoot,
-        inPlace: Boolean(this.inPlace),
-      });
-      this.source = source;
+      let resolved;
+      if (this.readRunningBuild) {
+        resolved = await this.resolveChannel();
+      } else {
+        const { source, release } = await this.resolveStable();
+        this.source = source;
+        resolved = { release, status: release.status, needsNewShell: null };
+      }
+      const { release } = resolved;
       this.persisted.lastSuccessAt = now;
-      this.persisted.release = resolved;
+      this.persisted.release = release;
       this.persist();
-      const stillReady = resolved.status === "available" && this.prepared?.version === resolved.latestVersion;
+      const stillReady = resolved.status === "available" && this.prepared?.key === releaseKey(release);
       if (!stillReady) this.prepared = null;
       this.publish({
         status: stillReady ? "ready" : resolved.status,
-        readyVersion: stillReady ? resolved.latestVersion : null,
+        readyVersion: stillReady ? release.latestVersion : null,
         checkedAt: now,
-        release: publicRelease(resolved),
+        release: publicRelease(release),
+        needsNewShell: resolved.needsNewShell,
         error: null,
         errorKind: null,
       });
@@ -977,23 +1187,50 @@ class DesktopUpdateService {
   }
 
   /**
-   * Whether the verified release is one this App installs itself: its file
-   * matches how this App replaces itself.
-   */
-  installsInPlace(release = this.persisted.release) {
-    return Boolean(this.inPlace && release?.asset && release.artifactKind === this.inPlace.kind);
-  }
-
-  /**
-   * With automatic checks on, a release this App installs itself is fetched
-   * and prepared without asking; "ready" then offers the restart. Called after
+   * With automatic checks on, a version-store release is fetched and prepared
+   * without asking; "ready" then offers the restart. Called after
    * each check and once at start, for a release found before the last quit.
    */
   prepareInBackground() {
     const release = this.persisted.release;
-    if (!this.persisted.automaticChecks || release?.status !== "available" || !this.installsInPlace(release)) return;
-    if (this.prepared?.version === release.latestVersion || this.versionStore && !this.publicState.needsNewShell) return;
+    if (!this.persisted.automaticChecks || release?.status !== "available") return;
+    if (this.prepared?.key === releaseKey(release) || this.downloadPromise) return;
+    if (!this.takesVersion()) return;
     void this.download().catch(() => {});
+  }
+
+  /**
+   * The shell swap, unless the updater said this App cannot swap its shell (a
+   * locally signed or read-only App): then a new shell is the installer, as
+   * before, until the App changes.
+   */
+  swapsShell() {
+    const verdict = this.persisted.shellSwap;
+    if (!this.shellSwap) return null;
+    return verdict && verdict.app === this.shellSwap.id && verdict.value === false ? null : this.shellSwap;
+  }
+
+  /** Keep the updater's answer about the shell swap, from any of its reports. */
+  noteShellSwap(outcome) {
+    if (!this.shellSwap || typeof outcome?.shell_swap !== "boolean") return;
+    const verdict = { app: this.shellSwap.id, value: outcome.shell_swap };
+    const known = this.persisted.shellSwap;
+    if (known && known.app === verdict.app && known.value === verdict.value) return;
+    this.persisted.shellSwap = verdict;
+    try { this.persist(); } catch (_error) { /* kept in memory */ }
+  }
+
+  /** The prepared state: Restart to update applies ``release`` (swapping in a staged App shell first). */
+  markPrepared(release) {
+    this.prepared = { version: release.latestVersion, key: releaseKey(release), kind: "version" };
+    this.publish({ status: "ready", readyVersion: release.latestVersion, progress: null, updateKind: null });
+    return this.getState();
+  }
+
+  /** Whether this App's update is a version it prepares and then switches to. */
+  takesVersion() {
+    return Boolean(this.versionStore && this.applyVersionUpdate && this.prepareVersionUpdate
+      && !this.publicState.needsNewShell);
   }
 
   async download() {
@@ -1008,8 +1245,8 @@ class DesktopUpdateService {
       return this.getState();
     }
     const run = takesVersion
-      ? this.runVersionUpdate(release)
-      : this.installsInPlace(release) ? this.runPrepare(release) : this.runDownload(release);
+      ? (this.prepareVersionUpdate ? this.runVersionPrepare(release) : this.runVersionUpdate(release))
+      : this.runDownload(release);
     this.downloadPromise = run
       .finally(() => { this.downloadPromise = null; });
     return this.downloadPromise;
@@ -1023,7 +1260,8 @@ class DesktopUpdateService {
     this.publish({ status: "downloading", progress: null, updateKind: "version", error: null, errorKind: null });
     try {
       const outcome = await this.applyVersionUpdate();
-      if (outcome.reason === WAITING_FOR_SHELL) {
+      this.noteShellSwap(outcome);
+      if (waitingFor(outcome, WAITING_FOR_SHELL)) {
         this.publish({
           status: release.asset ? "available" : NOT_PUBLISHED,
           updateKind: null,
@@ -1032,82 +1270,138 @@ class DesktopUpdateService {
         return this.getState();
       }
       if (!outcome.ok) throw new Error(outcome.detail || "The update could not be applied.");
-      if (this.readCurrentVersion) this.currentVersion = this.readCurrentVersion() || release.latestVersion;
-      else this.currentVersion = release.latestVersion;
-      const updated = {
-        ...release,
-        currentVersion: this.currentVersion,
-        status: compareVersions(release.latestVersion, this.currentVersion) > 0 ? "available" : "up-to-date",
-      };
-      this.persisted.release = updated;
-      this.persist();
-      this.publish({
-        status: updated.status,
-        currentVersion: this.currentVersion,
-        release: publicRelease(updated),
-        updateKind: null,
-        needsNewShell: null,
-      });
+      // The code needs the new App staged beside this one: it runs after Restart to update.
+      if (outcome.prepared === true) return this.markPrepared(release);
+      this.settleVersionOutcome(release, outcome);
     } catch (error) {
       this.publish({ status: "error", updateKind: null, ...updateErrorFields(error, "update") });
     }
     return this.getState();
   }
 
-  /** Fetch the release file to the App's own folder, check it and get it ready to swap in. */
-  async runPrepare(release) {
-    const targetPath = this.inPlace.downloadPath(release.asset.name);
-    this.publish({
-      status: "downloading",
-      progress: { downloaded: 0, total: release.asset.bytes },
-      updateKind: "app",
-      error: null,
-      errorKind: null,
-    });
+  /**
+   * Download, build and try the version-store update without switching to it;
+   * "ready" then offers Restart to update.
+   */
+  async runVersionPrepare(release) {
+    this.publish({ status: "downloading", progress: null, updateKind: "version", error: null, errorKind: null });
     try {
-      if (!await fileMatches(targetPath, release.asset)) {
-        let lastProgressAt = 0;
-        await downloadVerified(this.fetchImpl, release.asset, targetPath, (downloaded, total) => {
-          const now = Date.now();
-          if (downloaded === total || now - lastProgressAt >= 250) {
-            lastProgressAt = now;
-            this.publish({ progress: { downloaded, total } });
-          }
-        }, { allowedHosts: this.source.allowedHosts });
+      const outcome = await this.prepareVersionUpdate();
+      this.noteShellSwap(outcome);
+      if (waitingFor(outcome, WAITING_FOR_SHELL)) {
+        this.publish({
+          status: release.asset ? "available" : NOT_PUBLISHED,
+          updateKind: null,
+          needsNewShell: outcome.detail || "This update needs a newer OpenProgram App.",
+        });
+        return this.getState();
       }
-      try {
-        await this.verifyArtifact(targetPath, release.asset);
-        await this.inPlace.prepare(targetPath, release);
-      } catch (error) {
-        await fs.promises.unlink(targetPath).catch(() => {});
-        throw error;
-      }
-      this.prepared = { version: release.latestVersion, file: targetPath };
-      this.publish({ status: "ready", readyVersion: release.latestVersion, progress: null, updateKind: null });
+      if (!outcome.ok) throw new Error(outcome.detail || "The update could not be prepared.");
+      if (outcome.prepared === true) return this.markPrepared(release);
+      // Nothing to prepare: already running it, or this computer's runtime is not published yet.
+      this.settleVersionOutcome(release, outcome);
     } catch (error) {
       this.publish({ status: "error", progress: null, updateKind: null, ...updateErrorFields(error, "download") });
     }
     return this.getState();
   }
 
-  /** Quit, swap in the prepared copy and start it. */
-  async install() {
-    const release = this.persisted.release;
-    if (!this.prepared || this.prepared.version !== release?.latestVersion) {
-      throw new Error("no prepared update is ready to install");
-    }
+  /**
+   * The state after the updater took, held or passed over ``release``. Waiting
+   * for this computer's runtime is no error: it shows as current, and the next
+   * check looks again.
+   */
+  settleVersionOutcome(release, outcome) {
+    const waiting = waitingFor(outcome, WAITING_FOR_RUNTIME);
+    const channel = release.channel === CHANNEL_TAG;
+    const kept = waiting || channel ? this.currentVersion : release.latestVersion;
+    this.currentVersion = (this.readCurrentVersion && this.readCurrentVersion()) || kept;
+    const held = outcome.applied === true || waitingFor(outcome, "up_to_date");
+    const updated = channel
+      ? { ...release, ...(held && !waiting ? { applied: true } : {}), currentVersion: this.currentVersion, status: "up-to-date" }
+      : {
+        ...release,
+        currentVersion: this.currentVersion,
+        status: !waiting && compareVersions(release.latestVersion, this.currentVersion) > 0 ? "available" : "up-to-date",
+      };
+    this.persisted.release = updated;
+    this.persist();
+    this.publish({
+      status: updated.status, currentVersion: this.currentVersion, release: publicRelease(updated),
+      updateKind: null, needsNewShell: null,
+    });
+  }
+
+  /**
+   * Switch to the prepared version, then start the App again on it. With a
+   * newer App shell staged, the App is swapped first: it quits, the swap
+   * script puts the new App in place and opens it, and the new App switches
+   * to the version as it starts (resumeAfterShellSwap), so the new code first
+   * runs under the shell it was tried with.
+   */
+  async installVersion(release) {
     this.publish({ status: "installing", error: null, errorKind: null });
-    let failure;
+    const staged = this.shellSwap?.staged() || null;
+    if (staged) {
+      let failure;
+      try {
+        failure = await this.shellSwap.install(staged, releaseKey(release));
+      } catch (error) {
+        failure = error instanceof Error ? error.message : String(error);
+      }
+      if (failure) {
+        this.prepared = null;
+        this.publish({ status: "error", readyVersion: null, errorKind: "failed", error: failure });
+      }
+      return this.getState();
+    }
+    let failure = null;
+    let switched = true;
     try {
-      failure = await this.inPlace.install(this.prepared.file, release);
+      const outcome = await this.applyVersionUpdate();
+      this.noteShellSwap(outcome);
+      // A new App was staged only now (the one prepared earlier went missing): Restart to update swaps it in.
+      if (outcome.ok && outcome.prepared === true && outcome.applied === false) return this.markPrepared(release);
+      if (!outcome.ok) failure = outcome.detail || "The update could not be applied.";
+      else if (outcome.applied === false) failure = outcome.detail || "The prepared update was not applied.";
+      else {
+        // Up to date: a swap brought only a new App shell, which is running already.
+        switched = !waitingFor(outcome, "up_to_date");
+        this.settleVersionOutcome(release, { ...outcome, applied: true });
+      }
     } catch (error) {
       failure = error instanceof Error ? error.message : String(error);
     }
+    this.prepared = null;
     if (failure) {
-      this.prepared = null;
       this.publish({ status: "error", readyVersion: null, errorKind: "failed", error: failure });
+      return this.getState();
     }
+    this.publish({ readyVersion: null });
+    if (switched) this.relaunchApp();
     return this.getState();
+  }
+
+  /**
+   * Once at start: after a swap to a new App shell, switch to the version
+   * prepared with it. The marker names the prepared update; one that no
+   * longer matches the verified release is dropped.
+   */
+  async resumeAfterShellSwap() {
+    const key = this.shellSwap?.takeActivation() || null;
+    const release = this.persisted.release;
+    if (!key || !release || key !== releaseKey(release) || release.status !== "available") return this.getState();
+    this.prepared = { version: release.latestVersion, key, kind: "version" };
+    return this.installVersion(release);
+  }
+
+  /** Restart to update: switch to the prepared version, swapping in a staged App shell first. */
+  async install() {
+    const release = this.persisted.release;
+    if (!this.prepared || this.prepared.key !== releaseKey(release)) {
+      throw new Error("no prepared update is ready to install");
+    }
+    return this.installVersion(release);
   }
 
   async runDownload(release) {
@@ -1147,21 +1441,20 @@ class DesktopUpdateService {
 
 module.exports = {
   DesktopUpdateService,
-  FAILURE_INTERVAL_MS,
+  hasShellLayer,
+  shellLayerVersion,
   LATEST_URL,
-  SUCCESS_INTERVAL_MS,
   compareVersions,
   desktopAssetNames,
   desktopAssetSpec,
   desktopUpdateFetch,
   downloadVerified,
-  nextAutomaticCheckAt,
   normalizePersistedState,
   parseUpgradeOutcome,
+  readChannel,
   readStateFile,
   readJsonLimited,
   readUpdateSource,
-  replaceAppImage,
   requestWithRedirects,
   resolveDesktopRelease,
   saveStateFileAtomic,

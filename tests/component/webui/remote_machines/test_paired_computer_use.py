@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import base64
 
-from openprogram.programs._host.execution import ToolReturn
+from openprogram.runtime.agent.tool_execution import ToolReturn
 from openprogram.programs.tools.computer_use.computer_use import tool
 from openprogram.programs.tools.computer_use.computer_use.providers import paired
 

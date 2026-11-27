@@ -123,7 +123,7 @@ def test_commit_stamps_node_and_produces_diff(store, tmp_path):
     shadow_root.mkdir()
     with patch("openprogram.state.store.shadow_git.store._shadow_root",
                return_value=shadow_root), \
-         patch("openprogram.state.store.project.project_commit._project_for",
+         patch("openprogram.state.project_commit._project_for",
                return_value=SimpleNamespace(path=str(project))):
         sha = commit_turn_to_shadow_git(session_id, msg_id, "make an edit")
 
@@ -163,7 +163,7 @@ def test_stamp_survives_reload(store, tmp_path):
     shadow_root.mkdir()
     with patch("openprogram.state.store.shadow_git.store._shadow_root",
                return_value=shadow_root), \
-         patch("openprogram.state.store.project.project_commit._project_for",
+         patch("openprogram.state.project_commit._project_for",
                return_value=SimpleNamespace(path=str(project))):
         assert commit_turn_to_shadow_git(session_id, msg_id, "edit")
 
@@ -194,7 +194,7 @@ def test_no_project_falls_back_to_working_root(store, tmp_path):
     shadow_root.mkdir()
     with patch("openprogram.state.store.shadow_git.store._shadow_root",
                return_value=shadow_root), \
-         patch("openprogram.state.store.project.project_commit._project_for",
+         patch("openprogram.state.project_commit._project_for",
                return_value=None), \
          patch("openprogram.state.worktree.context.current_worktree_path",
                return_value=str(project)):
@@ -227,7 +227,7 @@ def test_no_project_no_workdir_uses_common_ancestor(store, tmp_path):
     shadow_root.mkdir()
     with patch("openprogram.state.store.shadow_git.store._shadow_root",
                return_value=shadow_root), \
-         patch("openprogram.state.store.project.project_commit._project_for",
+         patch("openprogram.state.project_commit._project_for",
                return_value=None), \
          patch("openprogram.state.worktree.context.current_worktree_path",
                return_value=None), \
@@ -241,13 +241,13 @@ def test_turn_touching_no_files_is_noop(store, tmp_path):
     _seed(store, session_id, msg_id)
     project = tmp_path / "proj"
     project.mkdir()
-    with patch("openprogram.state.store.project.project_commit._project_for",
+    with patch("openprogram.state.project_commit._project_for",
                return_value=SimpleNamespace(path=str(project))):
         assert commit_turn_to_shadow_git(session_id, msg_id, "x") is None
 
 
 def test_failure_is_swallowed(store):
     """A shadow-git blowup must never propagate into the turn."""
-    with patch("openprogram.state.store.project.project_commit._project_for",
+    with patch("openprogram.state.project_commit._project_for",
                side_effect=RuntimeError("boom")):
         assert commit_turn_to_shadow_git("s", "m", "x") is None

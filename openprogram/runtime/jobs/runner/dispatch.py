@@ -87,13 +87,11 @@ class DispatchOperations:
                 details={"code": "execution_not_found"},
             )
         try:
-            from openprogram.runtime.conversation.process_runner import kill_active_subprocess
+            from openprogram.runtime.conversation_link import kill_process
 
-            terminated = bool(
-                kill_active_subprocess(
-                    execution.session_id,
-                    execution_id=handle.execution_id,
-                )
+            terminated = kill_process(
+                execution.session_id,
+                execution_id=handle.execution_id,
             )
         except Exception as exc:  # noqa: BLE001
             return TerminationReceipt(
@@ -117,13 +115,13 @@ class DispatchOperations:
 
     def _agent_driver(self):
         """Build the one Agent owner used by canonical Job activations."""
-        from openprogram.runtime.conversation.production_driver import AgentProductionDriver
+        from openprogram.runtime.conversation_link import agent_driver
 
         if self._agent_driver_factory is not None:
             return self._agent_driver_factory(
                 self._execution_store, self._execution_control,
             )
-        return AgentProductionDriver(
+        return agent_driver(
             self._execution_store,
             control_service=self._execution_control,
             event_sink=shared._broadcast,
@@ -196,13 +194,14 @@ class DispatchOperations:
                 if not self._executor_slots.acquire(blocking=False):
                     break
                 try:
-                    from openprogram.operations.self_update.control.maintenance import claim_job
-                    claim = claim_job(self._governor,
-                        owner_instance_id=self._instance_id,
-                        excluded_sessions=blocked_sessions,
-                        only_job_id=self._claim_only_job_id,
-                        store=self._self_update_store,
-                    )
+                    from openprogram.runtime import maintenance
+                    with self._initial_step_claim_lock:
+                        claim = maintenance.claim_job(self._governor,
+                            state=self._maintenance_state,
+                            owner_instance_id=self._instance_id,
+                            excluded_sessions=blocked_sessions,
+                            only_job_id=self._claim_only_job_id,
+                        )
                 except Exception:
                     self._executor_slots.release()
                     shared._log.exception("failed to claim next durable job")
@@ -456,7 +455,7 @@ class DispatchOperations:
                         canonical_binding,
                     )
                 except Exception:
-                    from openprogram.runtime.conversation.run_control import unregister_cancel_event
+                    from openprogram.runtime.conversation_link import unregister_cancel_event
                     unregister_cancel_event(
                         claim.session_id, cancel_ev, execution_id=claim.job_id,
                     )

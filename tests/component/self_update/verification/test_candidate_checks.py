@@ -54,6 +54,7 @@ def live(http_live, tmp_path, monkeypatch, installed_cli, request):
     _git(candidate, "commit", "-m", "add candidate acceptance")
     sha = _git(candidate, "rev-parse", "HEAD")
     monkeypatch.setattr(tool, "get_manager", lambda: _Manager(worktree))
+    monkeypatch.setattr("openprogram.state.worktree.manager.get_manager", lambda: _Manager(worktree))
     monkeypatch.setattr(misc, "_HEAD_SHA", sha)
     installed_cli["identity"]["revision"] = sha
     flags["candidate"] = candidate

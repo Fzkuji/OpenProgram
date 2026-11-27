@@ -12,7 +12,7 @@ class RecoveryOperations:
         except (IndexError, ValueError):
             return False
         try:
-            from openprogram.operations.worker.lock import is_held_by
+            from openprogram.host.worker.lock import is_held_by
             return is_held_by(owner_pid)
         except Exception:
             return False
@@ -326,7 +326,8 @@ class RecoveryOperations:
         except Exception:
             shared._log.exception("failed to list deferred job admissions")
             return
-        from openprogram.runtime.conversation.peer_agents import inbox
+        from openprogram.runtime import conversation_link
+        inbox = conversation_link.inbox()
         for job_id, session_id in deferred:
             job = shared._store_load(session_id, job_id)
             intent = job.deferred_inbox if job is not None else None
@@ -419,30 +420,23 @@ class RecoveryOperations:
 
 
     def _deliver_self_update_results(self) -> None:
+        from openprogram.runtime import maintenance
         try:
-            from openprogram.operations.self_update.delivery.delivery import deliver_pending
-            deliver_pending()
+            maintenance.deliver_results()
         except Exception as exc:
-            from openprogram.operations.self_update.types import ConcurrentUpdateError
-            if isinstance(exc, ConcurrentUpdateError):
+            if isinstance(exc, maintenance.StateBusy):
                 # Held by another process for a moment; delivered on the next pass.
                 shared._log.info("self-update state is busy; results delivered on the next pass")
             else:
                 shared._log.warning("self-update result delivery unavailable: %s", type(exc).__name__)
 
     def _reconcile_self_updates(self) -> None:
+        from openprogram.runtime import maintenance
+        from openprogram.runtime.execution.recovery.restart import reconcile as resume_interrupted
         try:
-            from openprogram.operations.self_update.delivery.restart import reconcile
-            reconcile(self)
-            from openprogram.operations.self_update.control.continuation import reconcile as continue_updates
-            continue_updates(self)
-            from openprogram.runtime.execution.recovery.restart import reconcile as resume_interrupted
-            resume_interrupted(self)
-            from openprogram.operations.self_update.control.recovery import stop_parked_stages
-            stop_parked_stages(self)
+            maintenance.reconcile_jobs(self, resume_interrupted)
         except Exception as exc:
-            from openprogram.operations.self_update.types import ConcurrentUpdateError
-            if isinstance(exc, ConcurrentUpdateError):
+            if isinstance(exc, maintenance.StateBusy):
                 # Another process holds the update state for a moment; the
                 # next pass, five seconds on, does this work.
                 shared._log.info("self-update state is busy; reconciled on the next pass")

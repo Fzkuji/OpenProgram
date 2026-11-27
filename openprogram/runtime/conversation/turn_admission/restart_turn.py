@@ -7,6 +7,30 @@ the new turn needs the Agent engine, so this module is the
 """
 from __future__ import annotations
 
+from contextlib import nullcontext
+from typing import Any
+
+
+class _NothingCarriedOn:
+    """The restart continuation of a process where no Program carries a turn on."""
+
+    def locked(self, session_id: str):
+        return nullcontext()
+
+    def branch(self, session_id: str, request: dict) -> str | None:
+        return request.get("branch_id")
+
+    def check(self, store: Any, execution: Any, new_execution_id: str, request: dict) -> str | None:
+        return None
+
+
+def continuation_guard() -> Any:
+    """What a Program that carries turns on (a chat Goal) says about a restart
+    continuation (the ``restart_continuation`` turn moment)."""
+    from openprogram.runtime.conversation import turn_hooks
+
+    return turn_hooks.provider("restart_continuation") or _NothingCarriedOn()
+
 
 def start_recovery_turn(store, execution, event):
     """Consume one saved restart intent through ordinary immutable admission."""
@@ -14,8 +38,6 @@ def start_recovery_turn(store, execution, event):
     import threading
     from openprogram.runtime.conversation.production_driver import CanonicalAgentAdapter
     from openprogram.runtime.events import emit_ws_frame
-    from openprogram.programs.tools.planning.goal import chat
-    import openprogram.programs.tools.planning.goal as goals
     from openprogram.runtime.execution.recovery import restart
     from openprogram.runtime.execution.recovery.chat_recovery import recovery_state
     from openprogram.runtime.execution.projections.foreground import active_foreground_task
@@ -34,7 +56,8 @@ def start_recovery_turn(store, execution, event):
 
     key = continuation_key(execution.execution_id, event.sequence)
     new_id = store.admission_execution_id(execution.session_id, key)
-    with chat.locked(execution.session_id):
+    continuation = continuation_guard()
+    with continuation.locked(execution.session_id):
         current = store.get_execution(execution.execution_id)
         closed = (current.status is ExecutionStatus.INTERRUPTED
                   and current.reason_code == "restart_new_turn"
@@ -47,53 +70,18 @@ def start_recovery_turn(store, execution, event):
         state = recovery_state(store, current)
         if not state["can_start_new_turn"]:
             return None
-        goal = goals.load_goal(execution.session_id)
         # The turn's own branch: the continuation is superseded only by a
         # foreground turn on the branch it continues, and a turn running on
         # another branch of the conversation does not hold it back.
-        # A Goal's turn admitted without a branch runs on the Goal's.
-        branch_id = request.get("branch_id") or (
-            (goal or {}).get("branch_id") if request.get("goal_context") else None)
+        branch_id = continuation.branch(execution.session_id, request)
         foreground = active_foreground_task(store, execution.session_id, selected_branch=branch_id)
         if foreground and foreground["execution_id"] != new_id:
             return "superseded"
-        expected = request.get("goal_context")
-        if not expected and goal:
-            created = goal.get("creation_execution_context") or {}
-            if (created.get("execution_id") == execution.execution_id
-                    and {key: created.get(key) for key in ("goal_id", "revision", "run_id")} == chat.identity(goal)):
-                expected = chat.identity(goal)
-                request["goal_context"] = expected
-        if expected:
-            if (not goal or goal.get("status") != "active" or goal.get("stop_requested")
-                    or chat.identity(goal) != expected
-                    or goal.get("execution_id") not in {execution.execution_id, new_id}):
-                return "goal_changed"
-            if goal.get("execution_id") == execution.execution_id:
-                if goal.get("usage_pending_until") is not None:
-                    goals.accumulate_goal_usage(execution.session_id, goal, until=goal["usage_pending_until"])
-                if goal.get("accounted_execution_id") != execution.execution_id:
-                    goals.accumulate_goal_usage(execution.session_id, goal)
-                    goals.checkpoint_active_elapsed(goal, stop=True)
-                    goal["turns_used"] = int(goal.get("turns_used") or 0) + 1
-                    goal["run_turns"] = int(goal.get("run_turns") or 0) + 1
-                    goal["accounted_execution_id"] = execution.execution_id
-                exhausted = goals.budget_exhausted(goal)
-                if exhausted:
-                    goal.update(status="budget_exhausted", phase="terminal", last_reason=exhausted)
-                chat.publish(execution.session_id, goal)
-                if goal.get("usage_pending_until") is not None:
-                    raise goals.GoalStateUnavailable("Interrupted Goal usage settlement is pending")
-                if request.get("goal_trigger"):
-                    chat.charge_daily_budget(execution.session_id, goal, execution.execution_id)
-                if exhausted:
-                    return "budget_exhausted"
-            request.update(goal_trigger=True, goal_previous_execution=execution.execution_id)
-        elif (goal and goal.get("execution_mode") == "chat" and goal.get("status") == "active"
-              and chat.on_goal_branch(goal, request.get("branch_id"))):
-            # A new/revised Goal is not authority to continue the abandoned
-            # task. A Goal on another branch does not concern this turn.
-            return "goal_changed"
+        # What the interrupted turn was carrying on (a chat Goal) decides
+        # whether the new turn may continue it, and binds it to the turn.
+        refusal = continuation.check(store, execution, new_id, request)
+        if refusal is not None:
+            return refusal
         from openprogram.runtime.permissions.identity import HANDOFF_TURNS
         if request.get("automation") in HANDOFF_TURNS:
             # A chain knows the first turn's message; a second restart keeps it.

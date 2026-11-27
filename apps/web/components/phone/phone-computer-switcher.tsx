@@ -10,16 +10,15 @@
  * the second kind is a filter on the same list.
  */
 
-import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
-import { Check, ChevronDown, Link2, Monitor, Plus, Settings2 } from "lucide-react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { Check, Laptop, Link2, Monitor, Plus, Settings2 } from "lucide-react";
+import { Link, List, ListItem } from "framework7-react";
 
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { GROUP_LABEL, MENU_ITEM_STATES, MENU_PANEL, itemCls } from "@/components/ui/menu/menu-styles";
 import { useTranslation } from "@/lib/i18n";
 import { LOCAL_ID, ensureMachines, machineOnline, useMachines } from "@/lib/machines/store";
 import { callMobile, haptic, mobileBridge } from "@/lib/mobile/bridge";
-import { nativeMenus, openNativeMenu, type NativeMenuItem } from "@/lib/mobile/native-menu";
-import { cn } from "@/lib/utils";
+
+import { PhonePortal } from "./phone-portal";
 
 const KEY = "openprogram.mobile.machine:";
 const listeners = new Set<() => void>();
@@ -75,7 +74,11 @@ function usePaired() {
   return list;
 }
 
-export function PhoneComputerSwitcher({ status }: { status: string }) {
+/** The computer as a bar button: a laptop with its connection as a dot
+ *  (green when connected). The button itself grows into the list of
+ *  computers (ButtonMorph below), the one shown checked with its state
+ *  under its name. */
+export function PhoneComputerSwitcher({ status, online }: { status: string; online: boolean; slot?: string }) {
   const { text } = useTranslation();
   const bridge = mobileBridge();
   const here = bridge?.computer;
@@ -83,13 +86,26 @@ export function PhoneComputerSwitcher({ status }: { status: string }) {
   const linked = useLinkedComputers();
   const shown = useShownMachine();
   const shownLinked = linked.find((machine) => machine.id === shown);
-  const row = cn(itemCls(false), MENU_ITEM_STATES, "min-h-11 gap-3");
+  const [open, setOpen] = useState(false);
+  // The bar's glass around the button, which the menu grows out of; the
+  // anchor has no box (display: contents), the link inside it sits in it.
+  const [target, setTarget] = useState<HTMLElement | null>(null);
+  const anchor = useCallback((el: HTMLSpanElement | null) => {
+    const link = el?.querySelector<HTMLElement>(".link");
+    if (link) setTarget(link.closest<HTMLElement>(".left") ?? link);
+  }, []);
   const label = shownLinked
     ? text(`${shownLinked.name} · through ${here?.name ?? "this computer"}`, `${shownLinked.name} · 经 ${here?.name ?? "这台电脑"}`)
     : status;
 
+  const mark = (
+    <>
+      <Laptop size={22} strokeWidth={1.9} aria-hidden="true" />
+      <span className="phone-computer-dot" data-online={online ? "" : undefined} aria-hidden="true" />
+    </>
+  );
   if (!here && !linked.length) {
-    return <span className="phone-home-computer-label">{label}</span>;
+    return <span className="phone-computer-button" role="img" aria-label={label}>{mark}</span>;
   }
 
   const pairedList = here ? (paired.length ? paired : [{ id: here.id ?? "", name: here.name }]) : [];
@@ -102,104 +118,169 @@ export function PhoneComputerSwitcher({ status }: { status: string }) {
   };
   const pairedSub = (computer: { id: string; name: string }) =>
     isCurrent(computer) ? status.replace(`${here?.name} · `, "") : text("Paired", "已配对");
+  // A computer reached through the paired one says so under its name.
   const linkedSub = (machine: (typeof linked)[number]) =>
-    machineOnline(machine) ? text("Online", "在线") : text("Offline", "离线");
+    `${text(`Through ${here?.name ?? "this computer"}`, `经 ${here?.name ?? "这台电脑"}`)} · ${machineOnline(machine) ? text("Online", "在线") : text("Offline", "离线")}`;
 
-  // In the phone app iOS draws the menu, as Files does from its title.
-  if (nativeMenus()) {
-    const items: NativeMenuItem[] = [];
-    if (pairedList.length) items.push({
-      title: text("Paired with this phone", "这台手机配对的电脑"),
-      inline: true,
-      children: pairedList.map((computer) => ({
-        title: computer.name, subtitle: pairedSub(computer), icon: "desktopcomputer",
-        checked: isCurrent(computer) && !shownLinked, run: () => pickPaired(computer),
-      })),
-    });
-    if (linked.length) items.push({
-      title: text(`Through ${here?.name ?? "this computer"}`, `经 ${here?.name ?? "这台电脑"} 连接`),
-      inline: true,
-      children: linked.map((machine) => ({
-        title: machine.name, subtitle: linkedSub(machine), icon: "link",
-        checked: machine.id === shown, run: () => { haptic("selection"); setShown(machine.id); },
-      })),
-    });
-    if (here) items.push({
-      title: "",
-      inline: true,
-      children: [
-        { title: text("Pair Another Computer", "配对另一台电脑"), icon: "plus", run: () => callMobile("addComputer") },
-        { title: text("Manage Computers", "管理电脑"), icon: "gearshape", run: () => callMobile("computers") },
-      ],
-    });
-    return (
-      <button type="button" className="phone-home-computer-label" aria-label={text(`Computer: ${label}`, `电脑：${label}`)}
-        onClick={(event) => openNativeMenu(event.currentTarget, items)}>
-        <span className="truncate">{label}</span>
-        <ChevronDown size={14} strokeWidth={2} className="phone-home-computer-more" aria-hidden="true" />
-      </button>
-    );
-  }
-
-  const line = (name: string, sub: string, on: boolean, icon: ReactNode) => (
-    <>
-      <span className="phone-sheet-icon" aria-hidden="true">{icon}</span>
-      <span className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate">{name}</span>
-        <span className="truncate text-fs-xs text-text-muted">{sub}</span>
-      </span>
-      {on ? <Check size={16} className="shrink-0 text-[var(--accent-blue)]" aria-hidden="true" /> : null}
-    </>
-  );
+  const pick = (run: () => void) => () => { setOpen(false); run(); };
+  const check = (on: boolean) => (on ? <Check size={20} strokeWidth={2.4} aria-hidden="true" /> : null);
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button type="button" className="phone-home-computer-label" aria-label={text(`Computer: ${label}`, `电脑：${label}`)}>
-          <span className="truncate">{label}</span>
-          <ChevronDown size={14} strokeWidth={2} className="phone-home-computer-more" aria-hidden="true" />
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent className={cn(MENU_PANEL, "min-w-64")} align="start" onCloseAutoFocus={(event) => event.preventDefault()}>
-        <div className="phone-sheet-head">{text("Computers", "电脑")}</div>
-        {here ? (
-          <>
-            <div className={GROUP_LABEL}>{text("Paired with this phone", "这台手机配对的电脑")}</div>
+    <>
+      {/* It grows as the finger lands, as iOS's bar menus do: no pressed
+          flash of the button first (no-active-state), no wait for the tap
+          to end. */}
+      <span ref={anchor} className="phone-computer-anchor" onPointerDown={() => setOpen(true)}>
+        <Link
+          iconOnly
+          className="phone-computer-button no-active-state"
+          aria-label={text(`Computer: ${label}`, `电脑：${label}`)}
+          aria-expanded={open}
+          onClick={() => setOpen(true)}
+        >
+          {mark}
+        </Link>
+      </span>
+      <PhonePortal>
+        {target ? <ButtonMorph open={open} from={target} mark={mark} onClose={() => setOpen(false)}>
+          <List>
             {pairedList.map((computer) => (
-              <DropdownMenuItem key={computer.id || computer.name} className={row} onSelect={() => pickPaired(computer)}>
-                {line(computer.name, pairedSub(computer), isCurrent(computer) && !shownLinked, <Monitor size={18} />)}
-              </DropdownMenuItem>
-            ))}
-          </>
-        ) : null}
-        {linked.length ? (
-          <>
-            <div className={GROUP_LABEL}>{text(`Through ${here?.name ?? "this computer"}`, `经 ${here?.name ?? "这台电脑"} 连接`)}</div>
-            {linked.map((machine) => (
-              <DropdownMenuItem
-                key={machine.id}
-                className={row}
-                onSelect={() => { haptic("selection"); setShown(machine.id); }}
+              <ListItem
+                key={computer.id || computer.name}
+                link="#"
+                noChevron
+                onClick={pick(() => pickPaired(computer))}
+                title={computer.name}
+                footer={pairedSub(computer)}
               >
-                {line(machine.name, linkedSub(machine), machine.id === shown, <Link2 size={18} />)}
-              </DropdownMenuItem>
+                <span slot="media"><Monitor size={22} aria-hidden="true" /></span>
+                <span slot="after">{check(isCurrent(computer) && !shownLinked)}</span>
+              </ListItem>
             ))}
-          </>
-        ) : null}
-        {here ? (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem className={cn(row, "text-[var(--theme-accent)]")} onSelect={() => callMobile("addComputer")}>
-              <span className="phone-sheet-icon" aria-hidden="true"><Plus size={18} /></span>
-              {text("Pair another computer", "配对另一台电脑")}
-            </DropdownMenuItem>
-            <DropdownMenuItem className={row} onSelect={() => callMobile("computers")}>
-              <span className="phone-sheet-icon" aria-hidden="true"><Settings2 size={18} /></span>
-              {text("Manage computers", "管理电脑")}
-            </DropdownMenuItem>
-          </>
-        ) : null}
-      </DropdownMenuContent>
-    </DropdownMenu>
+            {linked.map((machine) => (
+              <ListItem
+                key={machine.id}
+                link="#"
+                noChevron
+                onClick={pick(() => { haptic("selection"); setShown(machine.id); })}
+                title={machine.name}
+                footer={linkedSub(machine)}
+              >
+                <span slot="media"><Link2 size={22} aria-hidden="true" /></span>
+                <span slot="after">{check(machine.id === shown)}</span>
+              </ListItem>
+            ))}
+            {here ? (
+              <ListItem
+                link="#"
+                noChevron
+                onClick={pick(() => callMobile("addComputer"))}
+                title={text("Pair another computer", "配对另一台电脑")}
+              >
+                <span slot="media"><Plus size={22} aria-hidden="true" /></span>
+              </ListItem>
+            ) : null}
+            {here ? (
+              <ListItem
+                link="#"
+                noChevron
+                onClick={pick(() => callMobile("computers"))}
+                title={text("Manage computers", "管理电脑")}
+              >
+                <span slot="media"><Settings2 size={22} aria-hidden="true" /></span>
+              </ListItem>
+            ) : null}
+          </List>
+        </ButtonMorph> : null}
+      </PhonePortal>
+    </>
+  );
+}
+
+const MENU_WIDTH = 260;
+
+/**
+ * A bar button that grows into its menu, as iOS 26's do: one piece of the
+ * bar's glass, which keeps its top-left corner and its curve (half the
+ * button's height) and widens and lengthens into the menu, the button's
+ * mark fading out as the rows fade in; closing shrinks it back into the
+ * button. Framework7 has no such menu (its popover is a second shape
+ * beside the button), so it is drawn here with Framework7's glass.
+ */
+function ButtonMorph({ open, from, mark, onClose, children }: {
+  open: boolean;
+  from: HTMLElement;
+  mark: ReactNode;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  // shown: on screen at all; grown: at the menu's size.
+  const [shown, setShown] = useState(false);
+  const [grown, setGrown] = useState(false);
+  const [box, setBox] = useState<{ top: number; left: number; width: number; height: number; color: string } | null>(null);
+  const [height, setHeight] = useState(0);
+  const body = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setGrown(false);
+      return;
+    }
+    // The button at rest: a tap scales Framework7's bar button up, and a
+    // menu measured then would shrink back to a bigger circle than the
+    // button and jump at the end. The layout size, centred on where it is.
+    const seen = from.getBoundingClientRect();
+    const width = from.offsetWidth;
+    const height = from.offsetHeight;
+    const link = from.querySelector<HTMLElement>(".link") ?? from;
+    setBox({
+      top: seen.top + (seen.height - height) / 2,
+      left: seen.left + (seen.width - width) / 2,
+      width,
+      height,
+      color: getComputedStyle(link).color,
+    });
+    setShown(true);
+    haptic("light");
+    // One frame at the button's size, then the menu's: the change is what
+    // the transition plays.
+    const frame = requestAnimationFrame(() => requestAnimationFrame(() => setGrown(true)));
+    return () => cancelAnimationFrame(frame);
+  }, [open, from]);
+
+  useLayoutEffect(() => {
+    if (shown && body.current) setHeight(body.current.offsetHeight);
+  }, [shown, children]);
+
+  // The bar's own glass hides while this piece of it is out.
+  useEffect(() => {
+    if (!shown) return;
+    from.style.visibility = "hidden";
+    return () => { from.style.visibility = ""; };
+  }, [shown, from]);
+
+  if (!shown || !box) return null;
+  const radius = box.height / 2;
+  return (
+    <>
+      <div className="phone-morph-backdrop" onClick={onClose} />
+      <div
+        className="phone-morph"
+        data-grown={grown ? "" : undefined}
+        style={{
+          top: box.top,
+          left: box.left,
+          width: grown ? Math.max(MENU_WIDTH, box.width) : box.width,
+          height: grown ? Math.max(height, box.height) : box.height,
+          borderRadius: radius,
+        }}
+        onTransitionEnd={(event) => {
+          if (event.target === event.currentTarget && event.propertyName === "height" && !grown) setShown(false);
+        }}
+      >
+        <div className="phone-morph-mark" style={{ width: box.width, height: box.height, color: box.color }} aria-hidden="true">{mark}</div>
+        <div ref={body} className="phone-morph-body" style={{ width: Math.max(MENU_WIDTH, box.width) }}>{children}</div>
+      </div>
+    </>
   );
 }

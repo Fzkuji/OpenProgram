@@ -12,7 +12,7 @@ import sys
 
 
 def _cmd_versions(args) -> int:
-    from openprogram.operations.self_update.versions import layout
+    from openprogram.host._platform import runtime_layout as layout
     from openprogram.state.paths import get_state_dir
 
     running = layout.current_runtime()

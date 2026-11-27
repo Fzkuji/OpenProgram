@@ -6,7 +6,7 @@ import threading
 
 import pytest
 
-from openprogram.programs._host.execution import (
+from openprogram.runtime.agent.tool_execution import (
     invoke_callable,
     timeout_tool_result,
 )
@@ -55,7 +55,7 @@ def test_timeout_tool_result_text() -> None:
 
 
 def test_full_result_paths_are_exclusive_safe_and_keep_legacy_files(tmp_path):
-    from openprogram.programs._host.execution import _persist_full_result
+    from openprogram.runtime.agent.tool_execution import _persist_full_result
 
     legacy = tmp_path / "old-call.txt"
     legacy.write_text("legacy", encoding="utf-8")

@@ -230,7 +230,25 @@ def record_failed_request(model, partial=None, *, session_id: Optional[str] = No
         return None
 
 
+def record_route_switch(*, from_provider: str, from_model: str, to_provider: str,
+                        to_model: str, reason: str) -> None:
+    """Keep a switch to a fallback model, under the running call's
+    conversation, for the routing overview."""
+    from . import ledger
+    from .context import current_usage_context
+    scope = current_usage_context()
+    ledger.default_ledger.append_route_event(
+        from_provider=from_provider,
+        from_model=from_model,
+        to_provider=to_provider,
+        to_model=to_model,
+        reason=reason,
+        session_id=scope.session_id,
+        parent_session_id=scope.parent_session_id,
+    )
+
+
 __all__ = [
-    "build_message_event", "record_failed_request", "record_message", "register_usage_hook",
-    "run_usage_hooks",
+    "build_message_event", "record_failed_request", "record_message", "record_route_switch",
+    "register_usage_hook", "run_usage_hooks",
 ]

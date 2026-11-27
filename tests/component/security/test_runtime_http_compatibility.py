@@ -549,22 +549,6 @@ COMPATIBILITY_FIXTURES = {
         True,
         None,
     ),
-    "provider.oauth.fixed": (
-        "fixed_public_service",
-        "POST",
-        "https://accounts.google.com",
-        443,
-        ("https",),
-        ("GET", "HEAD", "POST"),
-        (80, 443),
-        "same_origin",
-        5,
-        16_777_216,
-        ("application/", "text/"),
-        "same_origin",
-        False,
-        None,
-    ),
     "provider.google.sdk": (
         "configured_service",
         "POST",
@@ -862,10 +846,7 @@ FIXED_ORIGIN_FIXTURES = {
         "https://api.anthropic.com",
         "https://api.cerebras.ai",
         "https://api.deepseek.com",
-        "https://api.github.com",
-        "https://api.githubcopilot.com",
         "https://api.groq.com",
-        "https://api.individual.githubcopilot.com",
         "https://api.kimi.com",
         "https://api.minimax.io",
         "https://api.minimaxi.com",
@@ -874,25 +855,11 @@ FIXED_ORIGIN_FIXTURES = {
         "https://api.x.ai",
         "https://api.z.ai",
         "https://bedrock-runtime.us-east-1.amazonaws.com",
-        "https://chatgpt.com",
-        "https://cli-chat-proxy.grok.com",
-        "https://cloudcode-pa.googleapis.com",
         "https://generativelanguage.googleapis.com",
         "https://opencode.ai",
         "https://openrouter.ai",
         "https://router.huggingface.co",
         "https://token-plan.cn-beijing.maas.aliyuncs.com",
-    ),
-    "provider.oauth.fixed": (
-        "https://accounts.google.com",
-        "https://accounts.x.ai",
-        "https://api.github.com",
-        "https://auth.openai.com",
-        "https://auth.x.ai",
-        "https://claude.ai",
-        "https://console.anthropic.com",
-        "https://github.com",
-        "https://oauth2.googleapis.com",
     ),
     "provider.amazon_bedrock.sdk": (
         "https://bedrock.us-east-1.amazonaws.com",
@@ -1229,6 +1196,7 @@ def _literal_accepted_mime(prefixes: tuple[str, ...]) -> str:
     raise AssertionError(f"no accepted MIME fixture for {prefixes!r}")
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("consumer, expected", _LIMITED_FIXTURES.items())
 def test_every_literal_row_enforces_its_socket_contract(
     monkeypatch, compatibility_server, consumer, expected

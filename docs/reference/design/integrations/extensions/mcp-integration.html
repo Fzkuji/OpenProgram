@@ -98,10 +98,9 @@
 <tr><th scope="row"><code translate="no">oauth_flow.py</code></th><td>OAuth 2.1 PKCE consent and loopback callback</td></tr>
 <tr><th scope="row"><code translate="no">token_storage.py</code></th><td><code translate="no">PersistentOAuthProvider</code>: tokens, client registration, server metadata</td></tr>
 <tr><th scope="row"><code translate="no">sampling.py</code></th><td>Sampling callback on the configured host model</td></tr>
-<tr><th scope="row"><code translate="no">server/</code></th><td>The separate server direction; does not reuse client modules</td></tr>
 </tbody>
 </table>
-<p class="note">A core package in the extensions group beside <code translate="no">plugins/</code> and <code translate="no">skills/</code>, not under <code translate="no">openprogram/programs/</code>: it adapts an external protocol, as <code translate="no">openprogram/interfaces/channels/</code> does for messages. opencode (<code translate="no">src/mcp/</code>) also keeps MCP separate; this layer is essentially a Python translation of opencode's.</p>
+<p class="note">A core package in the extensions group beside <code translate="no">plugins/</code> and <code translate="no">skills/</code>, not under <code translate="no">openprogram/programs/</code>: it adapts an external protocol, as <code translate="no">openprogram/interfaces/channels/</code> does for messages. opencode (<code translate="no">src/mcp/</code>) also keeps MCP separate; this layer is essentially a Python translation of opencode's. The server direction is its own package, <code translate="no">openprogram/interfaces/mcp_server/</code>, and reuses no client module.</p>
 
 <h2 id="startup">Startup and readiness</h2>
 <table class="stack fixed">

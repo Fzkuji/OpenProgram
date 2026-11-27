@@ -59,7 +59,7 @@ import { useFileMention } from "./attach/mention/use-file-mention";
 import type { MentionSources } from "./attach/mention/mention-sources";
 import type { MentionScope } from "./attach/mention/at-mention";
 import { showToast } from "@/lib/format-utils/toast";
-import { useCenterTabs } from "@/lib/tabs/center-tabs-store";
+import { isDraftSession, useCenterTabs } from "@/lib/tabs/center-tabs-store";
 import { runningApps } from "@/lib/net/computer-use-apps";
 import { loadResourcePages } from "@/lib/chat/resources/session-resources";
 import { onComposerFiles, takeComposerFiles } from "@/lib/chat/composer-inbox";
@@ -232,12 +232,12 @@ export function Composer({ sessionId: boundSessionId, placeholder }: {
   const modKey = platformKeys("⌘");
   // A touch phone has no Enter-with-modifier or Esc to hint at.
   const touchPhone = useTouchPhone();
-  // A touch phone shows where a chat runs (computer, folders) only until
-  // its first message; after that the details page holds it.
-  const hasMessages = useSessionStore((s) => {
-    const key = activeChatKey ?? currentSessionId;
-    return !!key && (s.messageOrder[key]?.length ?? 0) > 0;
-  });
+  // A touch phone shows where a chat runs (computer, folders) only on a
+  // new chat; a saved one's details page holds it. A saved chat still
+  // being read shows no settings yet rather than a new chat's defaults.
+  const chatKey = activeChatKey ?? currentSessionId;
+  const hasMessages = useSessionStore((s) => !!chatKey && (s.messageOrder[chatKey]?.length ?? 0) > 0);
+  const newChat = useCenterTabs(() => !chatKey || isDraftSession(chatKey));
   const fnFormActive = fnFormFunction !== null;
   // Decisions have their own output cards. Chat text always sends or queues
   // a message. While a run goes on the action button is Stop, draft or not:
@@ -693,7 +693,7 @@ export function Composer({ sessionId: boundSessionId, placeholder }: {
           )
         : null}
       <div className={styles.decisionColumn}><PendingDecisionPanels sessionId={activeChatKey ?? currentSessionId} /></div>
-      {touchPhone && hasMessages ? null : (
+      {touchPhone && !newChat ? null : (
         <TuckRow tucked={tuck.tucked} side="above" onSettled={tuck.onSettled}>
           <EnvironmentRow sessionId={currentSessionId} />
         </TuckRow>
@@ -778,7 +778,7 @@ export function Composer({ sessionId: boundSessionId, placeholder }: {
             "未连接。消息会排队，连接恢复后发送。",
           ) : placeholder ?? (touchPhone
             // A phone has no `/` key in reach and no room for the hint.
-            ? hasMessages ? text("Reply…", "回复…") : text("Ask anything…", "想做什么…")
+            ? hasMessages || !newChat ? text("Reply…", "回复…") : text("Ask anything…", "想做什么…")
             : undefined)}
           draftOwner={draftOwner ?? undefined}
           suggestion={nextPrompt.suggestion}
@@ -807,6 +807,7 @@ export function Composer({ sessionId: boundSessionId, placeholder }: {
             thinking={thinking}
             thinkingOptions={thinkingOptions}
             setThinking={setThinking}
+            settled={newChat || hasMessages}
           />
         ) : null}
 

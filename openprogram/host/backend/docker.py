@@ -24,6 +24,7 @@ import json
 import logging
 import subprocess
 import threading
+from typing import Callable
 
 from openprogram.host.backend.base import Backend, RunResult, decode_maybe, running_on, spawned_on
 
@@ -70,13 +71,23 @@ def _switched_off(machine_id: str) -> str | None:
     """
     if not machine_id:
         return None
-    from openprogram.host.machines import get_machine
-    machine = get_machine(machine_id)
-    if machine is None:
-        return f"machine {machine_id!r} was removed"
-    if not machine.enabled:
-        return f"machine {machine_id!r} was switched off"
+    return _container_refusal(machine_id)
+
+
+def _no_refusal(machine_id: str) -> str | None:
     return None
+
+
+#: Why a machine's container may not start now (it was removed or switched
+#: off). The backends know nothing of configured machines: ``host.machines``,
+#: the only place a backend is bound to a machine, installs it when it loads.
+_container_refusal: Callable[[str], str | None] = _no_refusal
+
+
+def refuse_containers_with(refusal: Callable[[str], str | None]) -> None:
+    """Have ``refusal(machine_id)`` say why a machine's container may not start."""
+    global _container_refusal
+    _container_refusal = refusal
 
 
 class DockerBackend(Backend):

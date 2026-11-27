@@ -3,7 +3,7 @@
 The Windows value is built here with ``windows=True``; it has not run on Windows.
 """
 from openprogram.operations.self_update.trial import instance as trials
-from openprogram.operations.self_update.versions import layout as paths
+from openprogram.host._platform import runtime_layout as paths
 from tests.support.sealed_versions import BASE, make_layout
 
 

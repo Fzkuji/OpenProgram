@@ -11,7 +11,10 @@ import pytest
 def _probe(tmp_path, scenario):
     root = Path(__file__).resolve().parents[3]
     receipt = tmp_path / 'receipt.json'
-    env = dict(os.environ, HOME=str(tmp_path), USERPROFILE=str(tmp_path),
+    # TMPDIR too: with no App to attach to, Playwright's failed connection
+    # leaves its artifacts folder behind in the temp directory.
+    (tmp_path / 'tmp').mkdir()
+    env = dict(os.environ, HOME=str(tmp_path), USERPROFILE=str(tmp_path), TMPDIR=str(tmp_path / 'tmp'),
                OPENPROGRAM_CONFIG_DIR=str(tmp_path / '.openprogram'),
                PAGE_PROBE_RECEIPT=str(receipt), PAGE_PROBE_SCENARIO=scenario, PYTHONPATH=str(root),
                CODEX_HOME=str(tmp_path / '.codex'))
@@ -37,6 +40,7 @@ def test_program_inherits_real_registered_page_scope(tmp_path):
     assert data['remaining_bindings'] == 0
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize('scenario', ['disabled', 'no_app', 'capture_fail', 'deny', 'ask', 'empty'])
 def test_program_page_scope_does_not_create_or_override_grants(tmp_path, scenario):
     data = _probe(tmp_path, scenario)
@@ -54,6 +58,7 @@ def test_program_page_scope_does_not_create_or_override_grants(tmp_path, scenari
         assert data['renderer_calls'] == []
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize('scenario', ['existing', 'stale_binding', 'plan'])
 def test_existing_page_scope_and_constraints_survive_spawn(tmp_path, scenario):
     data = _probe(tmp_path, scenario)
@@ -72,6 +77,7 @@ def test_existing_page_scope_and_constraints_survive_spawn(tmp_path, scenario):
         assert data['child_mode'] == data['inner_mode'] == 'plan'
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize('scenario', ['active_plan', 'live_plan', 'live_deny', 'live_ask'])
 def test_effective_parent_policy_survives_existing_page_scope(tmp_path, scenario):
     data = _probe(tmp_path, scenario)

@@ -209,7 +209,7 @@ def execute(action: str, terminal_id: str = "", generation: str = "", binding_id
             cols: int | None = None, rows: int | None = None) -> dict[str, Any]:
     """Dispatch only from a live permitted local execution, never from a model identity."""
     from openprogram.host import runtime_facts, sandbox
-    from openprogram.host.backend import get_active_backend
+    from openprogram.host.machines import get_active_backend
     from openprogram.host.processes import current_owner
     from openprogram.host.resources import desktop_link
 

@@ -7,13 +7,12 @@ HTTP, platform and system-access rows, into JSON-serialisable dicts.
 """
 from __future__ import annotations
 
-import os
 import shutil
 import sys
 from pathlib import Path
 from typing import Callable
 
-from openprogram.operations.self_update.versions.layout import immutable_runtime
+from openprogram.host._platform.runtime_layout import immutable_runtime
 from openprogram.state import paths as state_paths
 
 
@@ -74,13 +73,14 @@ def _check_providers() -> tuple[bool, str, str]:
     provider registry, which inspects env vars + binary presence (not
     the auth store), and then summed a field that doesn't exist on the
     returned dict (``v.get("ok")`` vs the real key ``"available"``).
-    Both bugs combined into a permanent "0/5 authed: anthropic, gemini,
-    gemini-cli, openai, openai-codex" no matter what the user had
+    Both bugs combined into a permanent "0/3 authed: anthropic, gemini,
+    openai" no matter what the user had
     actually logged into. Query the auth store directly instead.
     """
     try:
+        from openprogram.models.auth.provider_policy import is_withdrawn
         from openprogram.models.auth.store import get_store
-        pools = get_store().list_pools()
+        pools = [p for p in get_store().list_pools() if not is_withdrawn(p.provider_id)]
     except Exception as e:  # noqa: BLE001
         return False, "providers", f"{type(e).__name__}: {e}"
 
@@ -142,7 +142,7 @@ def _check_disk_cache() -> tuple[bool, str, str]:
 
 def _check_backend_port() -> tuple[bool, str, str]:
     from openprogram.operations.worker.lifecycle import resolve_worker_port
-    from openprogram.operations.worker.ports import port_in_use
+    from openprogram.host.worker.ports import port_in_use
     port = resolve_worker_port()
     if port_in_use(port):
         return True, f"worker on :{port}", "reachable"
@@ -206,7 +206,7 @@ def runtime_http_checks(
     """Return stable, sanitized Runtime HTTP policy diagnostics."""
 
     from openprogram.state import config as user_config
-    from openprogram.state.settings import parse_outbound_url_settings
+    from openprogram.host.security.outbound_settings import parse_outbound_url_settings
     from openprogram.host.security.runtime_http_audit import (
         recent_runtime_http_denials,
         scan_runtime_http,

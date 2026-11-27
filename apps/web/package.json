@@ -78,6 +78,8 @@
     "entities": "8.1.0",
     "fabric": "7.4.0",
     "framer-motion": "^12.40.0",
+    "framework7": "9.3.0",
+    "framework7-react": "9.3.0",
     "highlight.js": "11.11.1",
     "katex": "^0.18.2",
     "lucide-react": "^1.8.0",

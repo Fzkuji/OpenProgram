@@ -59,11 +59,14 @@ console.log("local runtime assets contract: ok");
 
 const providerIcons = JSON.parse(read("components/settings/providers/icons/provider-icons.json"));
 for (const [provider, icon] of Object.entries(providerIcons)) {
-  assert.match(icon.file, /^[a-z0-9-]+\.svg$/, `${provider}: local SVG filename`);
-  const svg = read(`public/images/providers/${icon.file}`);
-  assert.match(svg, /<svg\b/, `${provider}: valid SVG asset`);
-  assert.doesNotMatch(svg, /<script\b|<foreignObject\b|\bon\w+=|(?:href|src)=["']https?:/i);
+  // The logo and its dark-theme picture, when it has one.
+  for (const file of [icon.file, icon.dark].filter((name) => name !== undefined)) {
+    assert.match(file, /^[a-z0-9-]+\.svg$/, `${provider}: local SVG filename`);
+    const svg = read(`public/images/providers/${file}`);
+    assert.match(svg, /<svg\b/, `${provider}: valid SVG asset`);
+    assert.doesNotMatch(svg, /<script\b|<foreignObject\b|\bon\w+=|(?:href|src)=["']https?:/i);
+  }
 }
-for (const provider of ["openai", "openai-codex", "anthropic", "google", "deepseek", "openrouter"]) {
+for (const provider of ["openai", "anthropic", "google", "deepseek", "openrouter"]) {
   assert.ok(providerIcons[provider], `${provider}: brand logo must be bundled`);
 }

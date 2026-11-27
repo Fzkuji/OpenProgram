@@ -12,7 +12,7 @@ import json
 
 import pytest
 
-from openprogram.models.auth.credentials.io import _atomic_write
+from openprogram.state.private_files import _atomic_write
 from openprogram.state import config as user_config
 from openprogram.state import last_good
 

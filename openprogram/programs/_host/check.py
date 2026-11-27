@@ -99,6 +99,7 @@ def _test_files(directory: Path) -> list[Path]:
 
 def _run_tests(directory: Path) -> dict:
     from openprogram.host import sandbox
+    from openprogram.state import sandbox_settings
 
     with tempfile.TemporaryDirectory(prefix="openprogram-program-check-") as raw:
         instance = Path(raw)
@@ -114,7 +115,7 @@ def _run_tests(directory: Path) -> dict:
         sandboxed = sys.platform in {"darwin", "linux"} and not sandbox.unavailable_reason()
         if sandboxed:
             policy = sandbox.SandboxPolicy(
-                deny_write=(*sandbox.DEFAULT_DENY_WRITE, str(directory), str(directory / "**")),
+                deny_write=(*sandbox_settings.DEFAULT_DENY_WRITE, str(directory), str(directory / "**")),
                 network=False,
             )
             argv, shell = sandbox.wrap_command(

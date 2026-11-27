@@ -12,8 +12,12 @@ const recovery = require("../shell/recovery");
 
 const PID = 4242;
 
+// Each check gets its own directory under one scratch directory, removed on exit.
+const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "recovery-stop-"));
+process.on("exit", () => fs.rmSync(scratch, { recursive: true, force: true }));
+
 function temporaryRoot() {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "recovery-stop-"));
+  const directory = fs.mkdtempSync(path.join(scratch, "check-"));
   const root = path.join(directory, "state", "runtime");
   fs.mkdirSync(root, { recursive: true });
   fs.writeFileSync(path.join(directory, "state", "worker.pid"), `${PID} 1700000000\n`);

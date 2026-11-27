@@ -109,7 +109,7 @@ test("the binding limit is the one with least left; Updated is the newest read",
 
 test("a live quota frame replaces that provider's limits and nothing else", () => {
   const before = payload([STATES.windowed, STATES.balance]);
-  const frame = { provider: "openai-codex", account: "work", kind: "windowed", fetched_at: NOW, stale: false, limits: [limit({ used_fraction: 0.9, left_fraction: 0.1 })] };
+  const frame = { provider: "opencode-go", account: "work", kind: "windowed", fetched_at: NOW, stale: false, limits: [limit({ used_fraction: 0.9, left_fraction: 0.1 })] };
   const after = applyQuotaFrame(before, frame);
   assert.equal(after.providers[0].quota.limits.length, 1);
   assert.equal(after.providers[0].quota.limits[0].left_fraction, 0.1);
@@ -119,14 +119,14 @@ test("a live quota frame replaces that provider's limits and nothing else", () =
 });
 
 test("a company reached several ways is one group where its first way is, with the best of their health", () => {
-  const codex = way(status("openai-codex", { health: { state: "rate_limited", until: NOW + 60 } }), "openai", "OpenAI", "ChatGPT subscription", "ChatGPT");
-  const api = way(status("openai"), "openai", "OpenAI", "API · pay as you go", "API");
+  const codex = way(status("opencode-go", { health: { state: "rate_limited", until: NOW + 60 } }), "opencode", "OpenCode", "Go · monthly subscription", "Go");
+  const api = way(status("opencode"), "opencode", "OpenCode", "Zen · pay as you go", "Zen");
   const groups = m.companyGroups([codex, api, status("deepseek", { label: "DeepSeek" })]);
   assert.deepEqual(groups.map((g) => [g.family, g.label, g.ways.map((p) => p.id)]),
-    [["openai", "OpenAI", ["openai-codex", "openai"]], ["deepseek", "DeepSeek", ["deepseek"]]]);
+    [["opencode", "OpenCode", ["opencode-go", "opencode"]], ["deepseek", "DeepSeek", ["deepseek"]]]);
   assert.equal(m.bestHealth(groups[0].ways.map((p) => p.health)).state, "ready");
   assert.equal(m.bestHealth([{ state: "invalid_key" }, { state: "rate_limited" }]).state, "rate_limited");
-  assert.equal(m.wayTitle(codex, text), "ChatGPT subscription");
+  assert.equal(m.wayTitle(codex, text), "Go · monthly subscription");
   assert.equal(m.wayTitle(status("deepseek", { label: "DeepSeek" }), text), "DeepSeek");
 });
 

@@ -7,6 +7,7 @@ Usage (from the repository root):
     python -m scripts.testing.affected_tests path/a.py ...   # explicit paths
     python -m scripts.testing.affected_tests --explain       # why each test was picked
     python -m scripts.testing.affected_tests --run           # run the selection
+    python -m scripts.testing.affected_tests --run --slow    # include slow tests
 
 Python: a static import graph of ``openprogram/``, ``tests/`` and ``scripts/``
 (``import`` statements, relative imports, ``from package import submodule``,
@@ -29,6 +30,10 @@ are left out, named by count, and the exit status is 2.
 Docs: every change runs ``scripts.docs_site.check`` over the same scope, so a
 code change is told which pages it may have outdated. A change under ``docs/``
 also runs the tests that read ``docs/`` or import ``scripts.docs_site``.
+
+Slow tests (``@pytest.mark.slow``: building a real bundle, cross-compiling,
+starting real processes for many seconds) are left out of a selection unless
+their own file changed or ``--slow`` is given; the full suite and CI run them.
 
 A real change must select tests. Selecting none, or a Web run that reports
 zero tests, is a failure.
@@ -457,7 +462,7 @@ def select(
             pure = PurePosixPath(path)
             if is_python_test(path):
                 if path in existing:
-                    selection.add_python(path, "changed test file")
+                    selection.add_python(path, CHANGED_TEST)
                 continue
             if pure.name == "conftest.py" and pure.parts[0] == "tests":
                 directory = str(pure.parent)
@@ -591,14 +596,29 @@ def python_executable(root: Path) -> str:
     return ".venv/bin/python" if venv.exists() else sys.executable
 
 
-def commands(selection: Selection, root: Path = ROOT) -> list[tuple[str, list[str]]]:
-    """(working directory relative to root, argv) for each command to run."""
+CHANGED_TEST = "changed test file"
+WITHOUT_SLOW = "not live and not browser and not slow"
+
+
+def commands(
+    selection: Selection, root: Path = ROOT, *, slow: bool = False,
+) -> list[tuple[str, list[str]]]:
+    """(working directory relative to root, argv) for each command to run.
+
+    A changed test file runs whole; every other selected file runs without
+    its slow tests unless ``slow`` is set.
+    """
     planned: list[tuple[str, list[str]]] = []
-    if selection.python_tests:
-        planned.append((".", [
-            python_executable(root), "-m", "pytest", "-q", "-p", "no:cacheprovider",
-            "-n", "auto", "--timeout=300", *sorted(selection.python_tests),
-        ]))
+    pytest = [python_executable(root), "-m", "pytest", "-q", "-p", "no:cacheprovider",
+              "-n", "auto", "--timeout=300"]
+    changed = sorted(path for path, reason in selection.python_tests.items() if reason == CHANGED_TEST)
+    reached = sorted(path for path, reason in selection.python_tests.items() if reason != CHANGED_TEST)
+    if slow:
+        changed, reached = sorted(selection.python_tests), []
+    if reached:
+        planned.append((".", [*pytest, "-m", WITHOUT_SLOW, *reached]))
+    if changed:
+        planned.append((".", [*pytest, *changed]))
     if selection.web_tests:
         web_tests = sorted(
             PurePosixPath(path).relative_to(WEB_ROOT).as_posix() for path in selection.web_tests
@@ -768,6 +788,8 @@ def run_planned(planned: list[tuple[str, list[str]]], root: Path = ROOT, *, docs
             print("docs check could not run (exit 2): this is the tool, not a page", file=sys.stderr)
             if docs_tool_blocks:
                 failed.append("docs check could not run")
+        elif status == 5 and WITHOUT_SLOW in command:
+            print("every selected test here is slow; --slow runs them")
         elif status != 0:
             failed.append(label)
         elif command[0] == "node" and not web_test_count(tail):
@@ -803,6 +825,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--base", help="compare against this revision instead of HEAD")
     parser.add_argument("--run", action="store_true", help="run the selected commands")
     parser.add_argument("--explain", action="store_true", help="show why each test was picked")
+    parser.add_argument("--slow", action="store_true",
+                        help="also run the slow tests of files that did not change")
     arguments = parser.parse_args(argv)
 
     files = repository_files(ROOT)
@@ -820,7 +844,7 @@ def main(argv: list[str] | None = None) -> int:
         # Without named paths the docs check works out the scope itself, and
         # only it knows a shared checkout's dirty tree is not this session's.
         selection.docs_scope = ["--base", base] if base else []
-    planned = commands(selection, ROOT)
+    planned = commands(selection, ROOT, slow=arguments.slow)
     python_total, web_total = suite_sizes(ROOT, files)
 
     print(f"changed files: {len(changed)}")

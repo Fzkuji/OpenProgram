@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 
 from openprogram.programs._host.runtime import function
+from openprogram.runtime.permissions import tool_profiles
 
 
 _DESCRIPTION = (
@@ -82,3 +83,10 @@ def list_dir(path: str, show_hidden: bool = False) -> str:
     if not rows:
         return f"(empty{' — pass show_hidden=true to include dotfiles' if not show_hidden else ''})"
     return "\n".join(rows)
+
+
+# Only this implementation reads without effect: a replacement under the same
+# name is not let through as an inspection (``permissions.recovery``).
+tool_profiles.register(list_dir.name, tool_profiles.ToolProfile(
+    inspects=lambda tool: getattr(tool, "execute", None) is list_dir.execute,
+))

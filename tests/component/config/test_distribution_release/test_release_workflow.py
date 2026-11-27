@@ -174,10 +174,23 @@ def test_release_workflow_signs_macos_when_it_can_and_never_requires_it() -> Non
     assert "secrets." not in workflow[sign:workflow.index("- name: Remove macOS signing keychain", sign)]
 
 
+def test_release_workflow_uploads_the_signed_app_as_a_shell_layer() -> None:
+    workflow = _workflow()
+    step = workflow.index("- name: Upload the App's shell layer")
+    body = workflow[step:workflow.index("- uses: actions/upload-artifact@v7", step)]
+    assert "matrix.signing == 'signed'" in body and "matrix.layout == 'thin'" in body
+    assert "ditto -x -k" in body and "codesign --verify --deep --strict" in body
+    assert "win-unpacked" in body
+    assert "matrix.platform == 'linux'" in body and "OpenProgram-*.AppImage" in body
+    assert "--seed apps/desktop/build/seed" in body, "an AppImage's seed says the Python line its launcher is for"
+    assert "publish-updates.py upload-shell-layer" in body
+    assert "inputs.rehearse && '--no-upload'" in body
+
+
 def test_one_platform_failing_does_not_block_the_publish_job() -> None:
     workflow = _workflow()
     publish = workflow[workflow.index("  publish:\n"):]
-    assert "if: ${{ !cancelled() && needs.platforms.result == 'success' }}" in publish
+    assert "if: ${{ !cancelled() && needs.platforms.result == 'success' && !inputs.runtime_layers_only }}" in publish
     assert "needs: [office, platforms, python, product-runtime, seed, desktop, cli-installer]" in publish
     assert "release-matrix.py assemble" in publish
     for job in ("seed", "desktop", "cli-installer"):
@@ -187,14 +200,14 @@ def test_one_platform_failing_does_not_block_the_publish_job() -> None:
     assert "name: cli-verified-${{ matrix.platform }}-${{ matrix.arch }}" in workflow
 
 
-def test_release_keeps_update_assets_honest() -> None:
+def test_release_checks_the_update_key_against_the_code() -> None:
     workflow = _workflow()
-    guard = workflow.index('if [ -z "$UPDATE_SIGNING_KEY" ]; then')
-    thin = workflow.index("-name 'desktop-thin-*' -o -name 'cli-seed-*'")
-    silent = workflow.index("no signing key: this release carries no official update assets")
-    assert guard < thin < silent
-    assert "exit 1" in workflow[thin:silent]
-    assert "grep -qF \"$public_key\" openprogram/operations/self_update/official/assets.py" in workflow
+    assert "python scripts/release/publish-updates.py public-key --signing-key \"$key_file\"" in workflow
+    assert "grep -qF \"$public_key\" openprogram/operations/self_update/official/signing.py" in workflow
+    assert "grep -qF \"$public_key\" apps/desktop/main/self-update/update-service.js" in workflow
+    # The release builds installers only; updates come from the update channel.
+    for gone in ("create-update-assets", "update-assets-", "official-update", "update_key:"):
+        assert gone not in workflow, gone
 
 
 def test_seed_and_thin_builds_have_what_they_need() -> None:
@@ -246,10 +259,10 @@ def test_no_secrets_still_builds_cli_and_unsigned_macos() -> None:
     assert any(item.startswith("Linux App:") and "update signing key" in item for item in plan["omitted"])
 
 
-def test_every_secret_signs_macos_and_windows_and_keeps_macos_full() -> None:
+def test_every_secret_signs_every_app_and_makes_macos_thin() -> None:
     plan = _matrix(mac_signing=True, windows_signing=True, update_key=True)
     assert _desktop(plan) == {
-        ("mac", "arm64"): ("signed", "full"), ("mac", "x86_64"): ("signed", "full"),
+        ("mac", "arm64"): ("signed", "thin"), ("mac", "x86_64"): ("signed", "thin"),
         ("win", "x86_64"): ("signed", "thin"),
         ("linux", "x86_64"): ("none", "thin"), ("linux", "arm64"): ("none", "thin"),
     }
@@ -257,6 +270,7 @@ def test_every_secret_signs_macos_and_windows_and_keeps_macos_full() -> None:
         "ubuntu-22.04", "ubuntu-22.04-arm",
     }
     assert {(row["platform"], row["arch"]) for row in plan["seed"]} == {
+        ("macos", "arm64"), ("macos", "x86_64"),
         ("windows", "x86_64"), ("linux", "x86_64"), ("linux", "arm64"),
     }
     assert all(row["cli_asset"] == "false" for row in plan["seed"])
@@ -292,7 +306,11 @@ def test_windows_arm64_needs_its_own_switch() -> None:
     assert ("win", "arm64") in _desktop(plan)
 
 
-def test_thin_macos_needs_its_switch_signing_and_the_key() -> None:
+def test_thin_macos_is_the_default_with_signing_and_the_key() -> None:
+    assert _desktop(_matrix(mac_signing=True, update_key=True))[("mac", "arm64")] == ("signed", "thin")
+    forced = _matrix(mac_thin=False, mac_signing=True, update_key=True)
+    assert _desktop(forced)[("mac", "arm64")] == ("signed", "full")
+    assert all(row["platform"] != "macos" for row in forced["seed"])
     assert _desktop(_matrix(mac_thin=True))[("mac", "arm64")] == ("unsigned", "full")
     assert _desktop(_matrix(mac_thin=True, update_key=True))[("mac", "arm64")] == ("unsigned", "full")
     assert _desktop(_matrix(mac_thin=True, mac_signing=True))[("mac", "arm64")] == ("signed", "full")
@@ -319,12 +337,80 @@ def test_environment_reads_each_switch_its_own_way() -> None:
     read = module["switches_from_environment"]
     defaults = read({})
     assert defaults.desktop_mac and defaults.desktop_windows and defaults.desktop_linux and defaults.windows_runtime
-    assert not (defaults.windows_arm64 or defaults.mac_thin or defaults.cli_seeds)
+    assert defaults.mac_thin
+    assert not (defaults.windows_arm64 or defaults.cli_seeds)
+    assert read({"OPENPROGRAM_RELEASE_MAC_THIN": "false"}).mac_thin is False
     assert not (defaults.mac_signing or defaults.windows_signing or defaults.update_key)
     assert read({"OPENPROGRAM_RELEASE_DESKTOP_LINUX": "false"}).desktop_linux is False
     assert read({"OPENPROGRAM_RELEASE_DESKTOP_LINUX": ""}).desktop_linux is True
     assert read({"OPENPROGRAM_RELEASE_CLI_SEEDS": "true"}).cli_seeds is True
     assert read({"OPENPROGRAM_MAC_SIGNING_AVAILABLE": "true"}).mac_signing is True
+
+
+@pytest.mark.parametrize("switches", [
+    {},
+    {"mac_signing": True, "update_key": True},
+    {"desktop_mac": False, "desktop_windows": False, "desktop_linux": False, "mac_thin": False,
+     "windows_runtime": False, "windows_arm64": True},
+])
+def test_runtime_layers_cover_every_update_platform_whatever_the_installers(switches) -> None:
+    from openprogram.operations.self_update.official.publish import RUNTIME_PLATFORMS
+
+    module = _select()
+    rows = module["runtime_layer_matrix"](module["Switches"](**switches))
+    assert [f"{row['platform']}-{row['arch']}" for row in rows] == list(RUNTIME_PLATFORMS)
+    assert {row["runner"] for row in rows if row["platform"] == "linux"} == {"ubuntu-22.04", "ubuntu-22.04-arm"}
+    signing = "signed" if switches.get("mac_signing") else "none"
+    assert {row["platform"]: row["signing"] for row in rows} == {
+        "macos": signing, "linux": "none", "windows": "none",
+    }
+
+
+@pytest.mark.parametrize(("layers_only", "seeds"), [("", "0"), ("true", "0")])
+def test_select_always_plans_the_runtime_layers(layers_only: str, seeds: str) -> None:
+    result = subprocess.run(
+        ["python3", str(ROOT / "scripts/release/release-matrix.py"), "select"],
+        capture_output=True, text=True, check=True,
+        env={"PATH": os.environ["PATH"], "OPENPROGRAM_RELEASE_RUNTIME_LAYERS_ONLY": layers_only},
+    )
+    outputs = dict(line.split("=", 1) for line in result.stdout.splitlines())
+    assert outputs["runtime_layers_count"] == "5" and outputs["seed_count"] == seeds
+    if layers_only:
+        assert outputs["runtime_count"] == "0" and outputs["desktop_count"] == "0"
+
+
+def test_the_runtime_layer_job_uploads_every_layer_and_can_run_alone() -> None:
+    yaml = pytest.importorskip("yaml")
+    workflow = _workflow()
+    jobs = yaml.safe_load(workflow)["jobs"]
+    inputs = yaml.safe_load(workflow)[True]["workflow_dispatch"]["inputs"]
+    assert inputs["runtime_layers_only"]["type"] == "boolean" and inputs["runtime_layers_only"]["default"] is False
+    assert inputs["tag"]["required"] is False
+    assert "-f runtime_layers_only=true" in workflow
+    job = jobs["runtime-layer"]
+    assert job["needs"] == "platforms"
+    assert job["if"] == "${{ !cancelled() && needs.platforms.result == 'success' && !inputs.rehearse }}"
+    assert job["strategy"]["matrix"] == "${{ fromJSON(needs.platforms.outputs.runtime_layers) }}"
+    assert jobs["platforms"]["outputs"]["runtime_layers"] == "${{ steps.select.outputs.runtime_layers }}"
+    steps = [step.get("name", "") for step in job["steps"]]
+    named = {step["name"]: step for step in job["steps"] if "name" in step}
+    # The base is built (and its macOS binaries signed) before the layer is made from it.
+    assert steps.index("Build the base") < steps.index("Upload the runtime layer")
+    assert "build-release-seed.sh" in named["Build the base"]["run"]
+    assert "MAC_SIGNING_IDENTITY" in named["Build the base"]["env"]["OPENPROGRAM_RELEASE_SIGN_IDENTITY"]
+    upload = named["Upload the runtime layer"]
+    assert upload["env"]["GH_TOKEN"] == "${{ github.token }}"
+    assert "publish-updates.py upload-runtime-layer" in upload["run"]
+    assert '--platform "${{ matrix.platform }}-${{ matrix.arch }}"' in upload["run"]
+    assert "--tailnet" in upload["run"] and "--with zstandard --with cryptography" in upload["run"]
+    # Only this job uploads layers; the seed no longer depends on it or does it.
+    assert workflow.count("upload-runtime-layer") == 1
+    # Runtime layers alone run only platforms and this job.
+    for name in ("office", "python", "product-runtime", "cli-installer", "publish"):
+        assert "!inputs.runtime_layers_only" in jobs[name]["if"], name
+    assert "inputs.runtime_layers_only" in jobs["platforms"]["if"]
+    assert "OPENPROGRAM_RELEASE_RUNTIME_LAYERS_ONLY: ${{ inputs.runtime_layers_only }}" in workflow
+    assert "(inputs.rehearse || inputs.runtime_layers_only) && github.sha || inputs.tag" in workflow
 
 
 def test_select_prints_actions_outputs() -> None:
@@ -372,25 +458,11 @@ def test_assemble_drops_what_did_not_pass_and_says_so(tmp_path: Path) -> None:
     assert module["refusal"](root) is None
 
 
-def test_assemble_drops_thin_apps_that_could_not_get_update_files(tmp_path: Path) -> None:
-    module = _select()
-    root = tmp_path / "artifacts"
-    _artifacts(root)
-    _file(root / "desktop-thin-linux-x86_64" / "OpenProgram-1.0.1-linux-amd64.deb")
-    _file(root / "desktop-thin-win-x86_64" / "OpenProgram-1.0.1-win-x64-unsigned.exe")
-    _file(root / "official-update" / "update-manifest.json", json.dumps({"platforms": {"windows-x86_64": {}}}))
-    missing = module["keep_publishable"](root, _plan(update_key=True))
-    assert not (root / "desktop-thin-linux-x86_64").exists()
-    assert (root / "desktop-thin-win-x86_64").is_dir()
-    assert "Linux x86_64 App: its update files could not be built, so it could never update." in missing
-
-
 def test_a_linux_leg_without_appimage_ships_the_deb(tmp_path: Path) -> None:
     module = _select()
     root = tmp_path / "artifacts"
     _artifacts(root)
     _file(root / "desktop-thin-linux-x86_64" / "OpenProgram-1.0.1-linux-amd64.deb")
-    _file(root / "official-update" / "update-manifest.json", json.dumps({"platforms": {"linux-x86_64": {}}}))
     missing = module["keep_publishable"](root, _plan(update_key=True))
     assert (root / "desktop-thin-linux-x86_64").is_dir()
     assert "Linux x86_64 AppImage: its build failed; the deb package is available." in missing
@@ -527,7 +599,18 @@ def publishing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, P
         scanner.read_text(encoding="utf-8").replace("RETIRED = frozenset({", f'RETIRED = frozenset({{\n    "{digest}",', 1),
         encoding="utf-8",
     )
-    _version_places(repository, "1.2.3")
+    # The update publisher is tested on its own; here it records each call,
+    # builds nothing, and refuses a release's plan when UPDATES_PLAN_EXIT says
+    # so, and a run when UPDATES_RUN_EXIT does.
+    _file(repository / "scripts/release/publish-updates.py", (
+        "import os, pathlib, sys\n"
+        "pathlib.Path(__file__).with_name('updates-calls.log').open('a').write(' '.join(sys.argv[1:]) + '\\n')\n"
+        "if sys.argv[1] == 'plan' and '--release' in sys.argv:\n"
+        "    sys.exit(int(os.environ.get('UPDATES_PLAN_EXIT', '0')))\n"
+        "if sys.argv[1] == 'run':\n"
+        "    sys.exit(int(os.environ.get('UPDATES_RUN_EXIT', '0')))\n"
+    ))
+    _version_places(repository, "1.2.0")
     _file(repository / "openprogram/programs/applications/office_editor/install.py", (
         'OFFICE_RELEASES = "https://github.com/Owner/Repo/releases"\n'
         f'OFFICE_ARCHIVE_NAME = "{OFFICE_NAME}"\n'
@@ -546,7 +629,7 @@ def publishing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, P
     monkeypatch.setenv("PATH", f"{fake_bin}{os.pathsep}{os.environ['PATH']}")
     monkeypatch.setenv("GH_LOG", str(tmp_path / "gh.log"))
     monkeypatch.setenv("GH_ASSETS", OFFICE_NAME)
-    _file(repository / ".github/release-notes/v1.2.3.md", "# OpenProgram 1.2.3 Release Notes\n\nText.\n")
+    _file(repository / ".github/release-notes/v1.2.0.md", "# OpenProgram 1.2.0 Release Notes\n\nText.\n")
     _git(repository, "add", ".", check=True)
     _git(repository, "commit", "--quiet", "-m", "First", check=True)
     _git(repository, "remote", "add", "origin", str(origin), check=True)
@@ -586,9 +669,9 @@ def _publish(repository: Path, *arguments: str) -> subprocess.CompletedProcess:
 
 def test_tag_dry_run_shows_the_tag_and_changes_nothing(publishing) -> None:
     repository, origin = publishing
-    result = _publish(repository, "-m", "Version", "--tag", "v1.2.3", "--dry-run")
+    result = _publish(repository, "-m", "Version", "--tag", "v1.2.0", "--dry-run")
     assert result.returncode == 0, result.stderr
-    assert "would tag the new main commit v1.2.3" in result.stdout
+    assert "would release the new main commit as v1.2.0" in result.stdout
     assert _git(repository, "rev-parse", "--verify", "--quiet", "refs/heads/main").returncode != 0
     assert _git(repository, "tag").stdout == ""
     assert not (repository / ".git/hooks/pre-push").exists(), "a dry run changes nothing"
@@ -599,8 +682,9 @@ def test_tag_dry_run_shows_the_tag_and_changes_nothing(publishing) -> None:
     ("tag", "message"),
     [
         ("v9.9.9", "does not match this source"),
-        ("1.2.3", "looks like v1.2.3"),
-        ("v1.2", "looks like v1.2.3"),
+        ("1.2.0", "looks like v1.2.3 or v1.2.3.4"),
+        ("v1.2", "looks like v1.2.3 or v1.2.3.4"),
+        ("v1.2.0.1.2", "looks like v1.2.3 or v1.2.3.4"),
     ],
 )
 def test_tag_refuses_wrong_versions(publishing, tag: str, message: str) -> None:
@@ -611,17 +695,17 @@ def test_tag_refuses_wrong_versions(publishing, tag: str, message: str) -> None:
 
 def test_tag_refuses_a_half_bumped_version_naming_each_place(publishing) -> None:
     repository, origin = publishing
-    _version_places(repository, "1.3.0", lock="1.2.3")
+    _version_places(repository, "1.3.0", lock="1.2.0")
     _file(repository / "scripts/release/install-release.ps1",
-          '$Version = if ($env:OPENPROGRAM_VERSION) { $env:OPENPROGRAM_VERSION } else { "1.2.3" }\n')
+          '$Version = if ($env:OPENPROGRAM_VERSION) { $env:OPENPROGRAM_VERSION } else { "1.2.0" }\n')
     _file(repository / ".github/release-notes/v1.3.0.md", "# OpenProgram 1.3.0 Release Notes\n")
     _git(repository, "add", ".", check=True)
     _git(repository, "commit", "--quiet", "-m", "Half bump", check=True)
     for arguments in (("--dry-run",), ()):
         result = _publish(repository, "-m", "V", "--tag", "v1.3.0", *arguments)
         assert result.returncode != 0
-        assert "uv.lock says 1.2.3" in result.stderr
-        assert "scripts/release/install-release.ps1 says 1.2.3" in result.stderr
+        assert "uv.lock says 1.2.0" in result.stderr
+        assert "scripts/release/install-release.ps1 says 1.2.0" in result.stderr
         assert "pyproject.toml" not in result.stderr.split("this source:")[1].split(". Run")[0]
         assert "release-version.py set 1.3.0" in result.stderr
     assert _git(origin, "for-each-ref").stdout == ""
@@ -629,17 +713,17 @@ def test_tag_refuses_a_half_bumped_version_naming_each_place(publishing) -> None
 
 def test_tag_dry_run_says_whether_the_local_office_archive_is_the_pinned_one(publishing, tmp_path: Path) -> None:
     repository, _ = publishing
-    absent = _publish(repository, "-m", "V", "--tag", "v1.2.3", "--dry-run")
+    absent = _publish(repository, "-m", "V", "--tag", "v1.2.0", "--dry-run")
     assert absent.returncode == 0, absent.stderr
     assert f"Office archive: no local copy given (--office-archive /path/to/{OFFICE_NAME})" in absent.stdout
     archive = tmp_path / "copy" / OFFICE_NAME
     _file(archive)
     archive.write_bytes(OFFICE_BYTES)
-    good = _publish(repository, "-m", "V", "--tag", "v1.2.3", "--dry-run", "--office-archive", str(archive))
+    good = _publish(repository, "-m", "V", "--tag", "v1.2.0", "--dry-run", "--office-archive", str(archive))
     assert good.returncode == 0, good.stderr
     assert f"Office archive: {archive} is the pinned {OFFICE_NAME} ({len(OFFICE_BYTES)} bytes" in good.stdout
     archive.write_bytes(b"another build")
-    bad = _publish(repository, "-m", "V", "--tag", "v1.2.3", "--dry-run", "--office-archive", str(archive))
+    bad = _publish(repository, "-m", "V", "--tag", "v1.2.0", "--dry-run", "--office-archive", str(archive))
     assert bad.returncode != 0 and "is not the pinned" in bad.stderr and "13 bytes, not 14" in bad.stderr
     assert not (tmp_path / "gh.log").exists(), "a dry run never asks GitHub"
     assert "needs --tag" in _publish(repository, "-m", "V", "--office-archive", str(archive)).stderr
@@ -650,7 +734,7 @@ def test_tag_without_the_office_archive_on_github_is_refused_or_seeded_first(
 ) -> None:
     repository, origin = publishing
     monkeypatch.setenv("GH_ASSETS", "something-else.zip")
-    refused = _publish(repository, "-m", "V", "--tag", "v1.2.3")
+    refused = _publish(repository, "-m", "V", "--tag", "v1.2.0")
     assert refused.returncode != 0
     assert f"pass --office-archive /path/to/{OFFICE_NAME}" in refused.stderr
     assert _git(repository, "rev-parse", "--verify", "--quiet", "refs/heads/main").returncode != 0
@@ -659,41 +743,127 @@ def test_tag_without_the_office_archive_on_github_is_refused_or_seeded_first(
     archive = tmp_path / "copy" / OFFICE_NAME
     _file(archive)
     archive.write_bytes(OFFICE_BYTES)
-    seeded = _publish(repository, "-m", "V", "--tag", "v1.2.3", "--office-archive", str(archive))
+    seeded = _publish(repository, "-m", "V", "--tag", "v1.2.0", "--office-archive", str(archive))
     assert seeded.returncode == 0, seeded.stderr
     calls = (tmp_path / "gh.log").read_text().splitlines()
-    assert f"release create v1.2.3 {archive} --draft" in "\n".join(calls)
-    assert _git(origin, "rev-parse", "refs/tags/v1.2.3^{commit}").returncode == 0
+    assert f"release create v1.2.0 {archive} --draft" in "\n".join(calls)
+    assert _git(origin, "rev-parse", "refs/tags/v1.2.0^{commit}").returncode == 0
 
 
 def test_tag_refuses_missing_notes_a_bad_heading_and_no_push(publishing) -> None:
     repository, _ = publishing
-    assert "--no-push" in _publish(repository, "-m", "V", "--tag", "v1.2.3", "--no-push").stderr
-    notes = repository / ".github/release-notes/v1.2.3.md"
+    assert "--no-push" in _publish(repository, "-m", "V", "--tag", "v1.2.0", "--no-push").stderr
+    notes = repository / ".github/release-notes/v1.2.0.md"
     notes.write_text("# Wrong\n")
     _git(repository, "commit", "--quiet", "-am", "Bad notes", check=True)
-    assert "must start with" in _publish(repository, "-m", "V", "--tag", "v1.2.3", "--dry-run").stderr
+    assert "must start with" in _publish(repository, "-m", "V", "--tag", "v1.2.0", "--dry-run").stderr
     _git(repository, "rm", "--quiet", str(notes), check=True)
     _git(repository, "commit", "--quiet", "-m", "No notes", check=True)
-    assert "no release notes" in _publish(repository, "-m", "V", "--tag", "v1.2.3", "--dry-run").stderr
+    assert "no release notes" in _publish(repository, "-m", "V", "--tag", "v1.2.0", "--dry-run").stderr
 
 
-def test_tag_pushes_main_then_the_tag_on_that_commit(publishing) -> None:
+def _updates_calls(repository: Path) -> list[str]:
+    log = repository / "scripts/release/updates-calls.log"
+    return log.read_text().splitlines() if log.exists() else []
+
+
+@pytest.mark.parametrize("plan_exit", ["0", "3"])
+def test_a_feature_release_tags_and_dispatches_the_build_and_leaves_the_announcement(
+    publishing, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, plan_exit: str,
+) -> None:
+    """Its new base has no runtime layers until the workflow built them, so a refused plan is only shown."""
     repository, origin = publishing
-    result = _publish(repository, "-m", "Version", "--tag", "v1.2.3")
+    monkeypatch.setenv("UPDATES_PLAN_EXIT", plan_exit)
+    source = _git(repository, "rev-parse", "dev").stdout.strip()
+    result = _publish(repository, "-m", "Version", "--tag", "v1.2.0")
     assert result.returncode == 0, result.stderr
+    assert "python scripts/release/publish-updates.py announce v1.2.0" in result.stdout
     main = _git(repository, "rev-parse", "refs/heads/main").stdout.strip()
     assert _git(origin, "rev-parse", "refs/heads/main").stdout.strip() == main
-    assert _git(origin, "rev-parse", "refs/tags/v1.2.3^{commit}").stdout.strip() == main
+    assert _git(origin, "rev-parse", "refs/tags/v1.2.0^{commit}").stdout.strip() == main
     assert _git(origin, "for-each-ref", "--format=%(refname)").stdout.split() == [
-        "refs/heads/main", "refs/tags/v1.2.3",
+        "refs/heads/main", "refs/tags/v1.2.0",
     ]
-    again = _publish(repository, "--tag", "v1.2.3")
+    # announce follows by hand once the workflow published the installers and layers.
+    assert _updates_calls(repository) == [f"plan --commit {source} --release v1.2.0"]
+    gh = (tmp_path / "gh.log").read_text()
+    assert "workflow run release.yml -R Fzkuji/OpenProgram --ref main -f tag=v1.2.0" in gh
+    again = _publish(repository, "--tag", "v1.2.0")
     assert again.returncode != 0 and "never moves" in again.stderr
 
 
+def _code_only(repository: Path, version: str) -> None:
+    """A code-only version: only pyproject.toml and uv.lock move."""
+    _file(repository / "pyproject.toml", f'[project]\nname = "openprogram"\nversion = "{version}"\n')
+    _file(repository / "uv.lock", (
+        'version = 1\n\n[[package]]\nname = "openprogram"\n'
+        f'version = "{version}"\nsource = {{ editable = "." }}\n'
+    ))
+    _file(repository / f".github/release-notes/v{version}.md", f"# OpenProgram {version} Release Notes\n\nFix.\n")
+    _git(repository, "add", ".", check=True)
+    _git(repository, "commit", "--quiet", "-m", version, check=True)
+
+
+@pytest.mark.parametrize("version", ["1.2.1", "1.2.0.1"])
+def test_a_code_only_release_runs_no_workflow_and_makes_its_own_page(
+    publishing, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, version: str,
+) -> None:
+    repository, origin = publishing
+    _code_only(repository, version)
+    monkeypatch.setenv("GH_ASSETS", "")  # no Office archive is needed without installers
+    result = _publish(repository, "-m", "Fix", "--tag", f"v{version}")
+    assert result.returncode == 0, result.stderr
+    main = _git(repository, "rev-parse", "refs/heads/main").stdout.strip()
+    assert _git(origin, "rev-parse", f"refs/tags/v{version}^{{commit}}").stdout.strip() == main
+    assert _updates_calls(repository)[1:] == [
+        f"run --commit {main} --release v{version}", f"release-page --tag v{version}",
+    ]
+    gh = (tmp_path / "gh.log").read_text() if (tmp_path / "gh.log").exists() else ""
+    assert "workflow run" not in gh and "release create" not in gh
+
+
+def test_a_release_the_publisher_refuses_moves_nothing(publishing, monkeypatch: pytest.MonkeyPatch) -> None:
+    repository, origin = publishing
+    _code_only(repository, "1.2.1")
+    monkeypatch.setenv("UPDATES_PLAN_EXIT", "3")
+    result = _publish(repository, "-m", "Fix", "--tag", "v1.2.1")
+    assert result.returncode != 0 and "the update publisher said no (exit 3)" in result.stderr
+    assert _git(repository, "rev-parse", "--verify", "--quiet", "refs/heads/main").returncode != 0
+    assert _git(origin, "for-each-ref").stdout == ""
+    assert [call.split()[0] for call in _updates_calls(repository)] == ["plan"]
+
+
+def test_a_feature_release_the_publisher_fails_on_moves_nothing(publishing, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Only a refusal (exit 3) is expected of a feature release's plan; any other failure stops it."""
+    repository, origin = publishing
+    monkeypatch.setenv("UPDATES_PLAN_EXIT", "1")
+    result = _publish(repository, "-m", "Version", "--tag", "v1.2.0")
+    assert result.returncode != 0 and "the update publisher said no (exit 1)" in result.stderr
+    assert _git(origin, "for-each-ref").stdout == ""
+
+
+def test_a_refused_daily_update_names_the_runtime_layers_workflow(publishing, monkeypatch: pytest.MonkeyPatch) -> None:
+    repository, origin = publishing
+    _file(repository / "notes.txt", "A day's work.\n")
+    _git(repository, "add", ".", check=True)
+    _git(repository, "commit", "--quiet", "-m", "Day", check=True)
+    monkeypatch.setenv("UPDATES_RUN_EXIT", "3")
+    result = _publish(repository, "-m", "Today's work")
+    assert result.returncode == 3
+    assert "gh workflow run release.yml -R Fzkuji/OpenProgram --ref main -f runtime_layers_only=true" in result.stderr
+    # main is on GitHub, so the workflow can build its layers from it.
+    assert _git(origin, "rev-parse", "refs/heads/main").returncode == 0
+
+
+def test_office_archive_is_only_for_a_feature_release(publishing, tmp_path: Path) -> None:
+    repository, _ = publishing
+    _code_only(repository, "1.2.1")
+    result = _publish(repository, "-m", "Fix", "--tag", "v1.2.1", "--dry-run", "--office-archive", str(tmp_path / "x.zip"))
+    assert result.returncode == 2 and "for a feature release (vX.Y.0)" in result.stderr
+
+
 def test_a_daily_sync_pushes_dev_to_main_without_a_tag(publishing) -> None:
-    """Pushing main starts no workflow; only a v* tag starts the Release."""
+    """A plain sync publishes latest.json only: no workflow, no channel, no tag."""
     repository, origin = publishing
     _file(repository / "notes.txt", "A day's work.\n")
     _git(repository, "add", ".", check=True)
@@ -704,11 +874,14 @@ def test_a_daily_sync_pushes_dev_to_main_without_a_tag(publishing) -> None:
     assert _git(repository, "rev-parse", "main^{tree}").stdout == _git(repository, "rev-parse", "dev^{tree}").stdout
     assert _git(origin, "for-each-ref", "--format=%(refname) %(objectname)").stdout.split() == ["refs/heads/main", main]
     assert "nothing to sync" in _publish(repository, "-m", "Again").stdout
+    # Each sync without a tag publishes main's latest.json; a run with nothing to
+    # sync tries again (one call when it is already up), so a failed upload heals.
+    assert _updates_calls(repository) == [f"run --commit {main}"] * 2
 
 
 def test_hook_lets_only_the_scripts_tag_through(publishing) -> None:
     repository, _ = publishing
-    assert _publish(repository, "-m", "Version", "--tag", "v1.2.3").returncode == 0
+    assert _publish(repository, "-m", "Version", "--tag", "v1.2.0").returncode == 0
     _git(repository, "tag", "manual", check=True)
     refused = _git(repository, "push", "origin", "refs/tags/manual:refs/tags/manual")
     assert refused.returncode != 0 and "publish-github.sh --tag" in refused.stderr
@@ -719,7 +892,7 @@ def test_hook_lets_only_the_scripts_tag_through(publishing) -> None:
         capture_output=True, text=True, env=environment,
     )
     assert other.returncode != 0, "the script only tags main"
-    assert _git(repository, "push", "origin", ":refs/tags/v1.2.3").returncode == 0
+    assert _git(repository, "push", "origin", ":refs/tags/v1.2.0").returncode == 0
 
 
 # --- publish-github.sh: retired accounts ----------------------------------------
@@ -733,7 +906,7 @@ def test_a_source_naming_a_retired_account_is_refused_before_anything_moves(publ
     # Only the commit counts: the checkout no longer holds the line, and the refusal stands.
     (repository / "docs/credits.md").write_text("Thanks.\n", encoding="utf-8")
     for arguments in (("--dry-run",), ()):
-        result = _publish(repository, "-m", "Version", "--tag", "v1.2.3", *arguments)
+        result = _publish(repository, "-m", "Version", "--tag", "v1.2.0", *arguments)
         assert result.returncode != 0
         assert "names a retired account" in result.stderr and "docs/credits.md:1" in result.stderr
     assert _git(repository, "rev-parse", "--verify", "--quiet", "refs/heads/main").returncode != 0

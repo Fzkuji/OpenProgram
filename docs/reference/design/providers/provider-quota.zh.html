@@ -3,15 +3,15 @@
 <h1>供应商额度</h1>
 
 <p>每个已连接供应商一份状态：健康、额度、30 天花费、默认模型和密钥健康。额度先从 OpenProgram 已经收到的回复里取；端点只在少数事件上读取，从不定时。</p>
-<p>供应商已启用或持有凭据时算已连接：凭据在 OpenProgram 的存储里、它的 CLI 在 <code translate="no">PATH</code> 上、有 Codex CLI 的登录文件，或云凭据链已满足。</p>
-<p>只能通过 OpenProgram 登录的供应商（例如 Grok Subscription）要在登录保存后才算，所以新安装一个都不列出：Providers 页显示<strong>连接一个模型 Provider</strong>，<code translate="no">openprogram providers status</code> 打印 "No connected providers"。</p>
+<p>供应商已启用或持有凭据时算已连接：凭据在 OpenProgram 的存储里、它的 CLI 在 <code translate="no">PATH</code> 上，或云凭据链已满足。</p>
+<p>只能通过 OpenProgram 登录的供应商要在登录保存后才算，所以新安装一个都不列出：Providers 页显示<strong>连接一个模型 Provider</strong>，<code translate="no">openprogram providers status</code> 打印 "No connected providers"。</p>
 
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">部分</th><th scope="col">位置</th></tr></thead>
 <tbody>
 <tr><th scope="row">模型和存储</th><td><code translate="no">openprogram/models/usage/quota.py</code></td></tr>
 <tr><th scope="row">端点读取</th><td><code translate="no">openprogram/models/usage/quota_fetchers/</code>，每个来源一个模块</td></tr>
-<tr><th scope="row">状态</th><td><code translate="no">openprogram/models/usage/provider_status.py</code>，线上类型生成到 <code translate="no">apps/web/lib/settings/provider-status.generated.ts</code></td></tr>
+<tr><th scope="row">状态</th><td><code translate="no">openprogram/models/listing/provider_status.py</code>，线上类型生成到 <code translate="no">apps/web/lib/settings/provider-status.generated.ts</code></td></tr>
 <tr><th scope="row">路由</th><td><code translate="no">GET /api/providers/status</code>、<code translate="no">POST /api/providers/status/refresh</code>，WebSocket 帧 <code translate="no">provider_quota</code></td></tr>
 <tr><th scope="row">CLI</th><td><code translate="no">openprogram providers status [--refresh] [--json]</code>：向正在运行的 Worker 要路由的结果（每把 key 的使用次数和上次使用只在它的内存里），没有 Worker 回应时自己构建</td></tr>
 </tbody>
@@ -22,7 +22,7 @@
 <table class="stack fixed">
 <thead><tr><th scope="col">类型</th><th scope="col">条件</th><th scope="col">例子</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">windowed</code></th><td>单位是百分比，或窗口长于一分钟</td><td>Codex 5 小时和每周窗口</td></tr>
+<tr><th scope="row"><code translate="no">windowed</code></th><td>单位是百分比，或窗口长于一分钟</td><td>OpenCode Go 和 MiniMax Token Plan 的窗口</td></tr>
 <tr><th scope="row"><code translate="no">balance</code></th><td>金额限制</td><td>OpenRouter 密钥上限</td></tr>
 <tr><th scope="row"><code translate="no">rate_limit</code></th><td>每分钟请求数或 token 数</td><td>OpenAI 和 Anthropic API 响应头</td></tr>
 <tr><th scope="row"><code translate="no">none</code></th><td>什么都没观察到</td><td>Mistral</td></tr>
@@ -38,12 +38,12 @@
 <table class="stack fixed">
 <thead><tr><th scope="col">供应商</th><th scope="col">来源</th></tr></thead>
 <tbody>
-<tr><th scope="row">OpenAI Codex</th><td>每个回答的 <code translate="no">x-codex-*</code> 响应头（含 429），所有限制族；WebSocket 帧 <code translate="no">codex.rate_limits</code></td></tr>
 <tr><th scope="row">OpenAI 兼容 API</th><td><code translate="no">x-ratelimit-*</code> 响应头（Chat Completions 和 Responses 适配器）</td></tr>
 <tr><th scope="row">Anthropic</th><td><code translate="no">anthropic-ratelimit-*</code> 响应头，仅限 <code translate="no">api.anthropic.com</code> 上的 API 密钥</td></tr>
 </tbody>
 </table>
-<p>值保存在内存里，每个账户最多每 30 秒写一次盘。旧的 Codex 解析器唯一的调用方查的是 Codex 不发的响应头；换成按 codex-rs 规则解析的新解析器。</p>
+<p>值保存在内存里，每个账户最多每 30 秒写一次盘。</p>
+<p>ChatGPT 套餐只通过 Codex Harness 使用，所以这里不读它的额度：第三方 Harness 的用量页显示 Codex 自己报告的值：app-server 的 <code translate="no">account/rateLimits/read</code> 和 <code translate="no">account/rateLimits/updated</code>，以及它的 rollout 文件记下的 <code translate="no">rate_limits</code>（保留较新的一次；<a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/runtime/harnesses/codex/rate_limits.py"><code translate="no">rate_limits.py</code></a>）。不调用任何内部套餐端点（<a href="auth/subscription-policy.zh.html">订阅政策</a>）。</p>
 
 <h2 id="fetch">读取端点</h2>
 <table class="stack fixed">
@@ -67,11 +67,9 @@
 <thead><tr><th scope="col">来源</th><th scope="col">状态</th><th scope="col">响应结构依据</th></tr></thead>
 <tbody>
 <tr><th scope="row">OpenRouter <code translate="no">/key</code></th><td>开启；保留剩余金额，而不只是有或没有</td><td>OpenRouter 文档、Hermes</td></tr>
-<tr><th scope="row">Codex 用量</th><td>开启；每周和 5 小时窗口以及 credits</td><td>Oh My Pi、codex-rs；真实响应</td></tr>
 <tr><th scope="row">DeepSeek <code translate="no">/user/balance</code></th><td>开启；按账户自己的币种显示余额，账户付不起一次调用时算用尽</td><td>真实响应</td></tr>
 <tr><th scope="row">MiniMax Token Plan、OpenCode Go</th><td>开启；套餐的各个窗口。套餐接口返回 401 不给密钥打任何标记</td><td>Oh My Pi；真实响应</td></tr>
 <tr><th scope="row">Z.ai</th><td>验证前关闭</td><td>Oh My Pi、ZCode</td></tr>
-<tr><th scope="row">GitHub Copilot</th><td>验证前关闭</td><td>Oh My Pi</td></tr>
 </tbody>
 </table>
 
@@ -95,7 +93,7 @@
 <tr><th scope="row">比状态新的 401 读取</th><td><code translate="no">invalid_key</code>（"quota endpoint answered 401"），直到读取成功或用这个密钥的调用成功。密钥（不是登录）的这个状态也写到它那一行，服务商的列表和卡片说法一致</td></tr>
 <tr><th scope="row">写到那一行</th><td>只有已验证的端点，<code translate="no">CreditsError</code> 响应体不算</td></tr>
 <tr><th scope="row">在 <code translate="no">quota</code> 停用之后成功的读取</th><td>推翻这个停用，由这次读取的余额决定</td></tr>
-<tr><th scope="row">refresh token 被 token 端点拒绝（<code translate="no">invalid_grant</code>、已被使用）</th><td><code translate="no">needs_login</code>，读作 <code translate="no">signed_out</code>，带“重新登录”修复按钮；已存的登录和委托给 Codex CLI 文件的登录都一样。委托的那个在文件换成另一个登录之前不再请求</td></tr>
+<tr><th scope="row">refresh token 被 token 端点拒绝（<code translate="no">invalid_grant</code>、已被使用）</th><td><code translate="no">needs_login</code>，读作 <code translate="no">signed_out</code>，带“重新登录”修复按钮</td></tr>
 </tbody>
 </table>
 <table class="stack fixed">
@@ -139,6 +137,6 @@
 <ul>
 <li>还没有网页界面读取状态路由；会读取它的页面见<a href="provider-management.zh.html">供应商管理</a>。</li>
 <li>没有 Kimi Coding（响应结构不稳定）、Moonshot 余额、OpenRouter <code translate="no">/credits</code>（没有同类框架记录其响应）的读取器。Anthropic、OpenAI、Google、Perplexity 和 Xiaomi 的 API 密钥没有余额接口，卡片显示它们 30 天的花费。</li>
-<li>Z.ai 和 GitHub Copilot 的读取器关闭：还没见过真实响应。</li>
+<li>Z.ai 的读取器关闭：还没见过真实响应。</li>
 <li>未做：REPL <code translate="no">/status</code>。顶层 <code translate="no">openprogram status</code> 别名做不了：这个名字属于后台服务。</li>
 </ul>

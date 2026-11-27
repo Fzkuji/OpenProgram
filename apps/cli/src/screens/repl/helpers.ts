@@ -71,7 +71,7 @@ export const renderModel = (m: AgentInfo['model']): string | undefined => {
 
 /**
  * Some runtimes embed the provider as a prefix in ``runtime.model``
- * (e.g. Codex emits ``openai-codex:gpt-5.5``). Strip it for display
+ * (e.g. ``anthropic:claude-sonnet-4-6``). Strip it for display
  * so the BottomBar only shows the bare model id.
  */
 export const stripProviderPrefix = (m: string | undefined): string | undefined => {

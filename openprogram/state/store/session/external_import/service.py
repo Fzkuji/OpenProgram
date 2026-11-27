@@ -198,6 +198,8 @@ def _create(store, session: ExternalSession, agent_id: str) -> str:
             "path": str(session.path),
             "cwd": session.cwd,
             "imported_at": time.time(),
+            # Written as typed, with its pictures: a sync has nothing to repair in it.
+            "unwrapped": True, "pictured": True,
         },
     }
     project_id = _project_for(session.cwd)

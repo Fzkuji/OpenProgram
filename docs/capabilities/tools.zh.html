@@ -142,7 +142,7 @@
 <details>
 <summary>网络搜索开关和后端选择</summary>
 <ul>
-<li>按消息生效。自带搜索的服务商（ChatGPT 订阅、OpenAI Responses API、Anthropic）通过服务商搜索：每次搜索一个“Searched the web”步骤和来源，回答带来源行，不提供本地 <code translate="no">web_search</code>。</li>
+<li>按消息生效。自带搜索的服务商（OpenAI Responses API、Anthropic）通过服务商搜索：每次搜索一个“Searched the web”步骤和来源，回答带来源行，不提供本地 <code translate="no">web_search</code>。</li>
 <li>其他服务商，包括 Gemini（其 grounding 不能与函数工具同用），使用本地工具。</li>
 <li>关闭时两者都排除，自动工具模式也一样。打开后 schema 立即可用，包括 Tools 关闭时，并仍遵守禁用工具和权限。工具配置属于每个对话，切标签和刷新后保留。</li>
 <li>密钥在下次调用生效，无需重启。保存的默认不可用时回退；点名的不可用服务商给出原因并列出可用的。</li>

@@ -4,7 +4,7 @@ import sys
 
 from openprogram.interfaces.cli.application import build_parser
 from openprogram.interfaces.cli.commands.updates import versions as command
-from openprogram.operations.self_update.versions import layout as paths
+from openprogram.host._platform import runtime_layout as paths
 from openprogram.operations.worker import lifecycle
 
 

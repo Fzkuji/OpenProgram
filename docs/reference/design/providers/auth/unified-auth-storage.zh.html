@@ -6,11 +6,7 @@
 <table class="stack">
 <thead><tr><th scope="col">供应商</th><th scope="col">登录方式</th><th scope="col">存储</th><th scope="col">刷新</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">openai-codex</code></th><td><code translate="no">pkce_oauth</code>，或复制 <code translate="no">~/.codex/auth.json</code></td><td>副本，或委托指针</td><td>OpenProgram，经由 <code translate="no">~/.codex/auth.json</code>（见<a href="#refresh">刷新</a>）</td></tr>
-<tr><th scope="row"><code translate="no">github-copilot</code></th><td><code translate="no">device_code</code></td><td>副本</td><td>OpenProgram</td></tr>
-<tr><th scope="row"><code translate="no">xai-subscription</code></th><td><code translate="no">pkce_oauth</code>、<code translate="no">import_from_cli</code>（<code translate="no">~/.grok/auth.json</code>）、<code translate="no">paste_token</code></td><td>存储</td><td>视方式而定</td></tr>
 <tr><th scope="row"><code translate="no">anthropic</code></th><td><code translate="no">api_key</code></td><td>副本</td><td>无。订阅凭据会被拒绝。</td></tr>
-<tr><th scope="row"><code translate="no">gemini-subscription</code></th><td><code translate="no">import_from_cli</code>（<code translate="no">~/.gemini/oauth_creds.json</code>）</td><td>委托指针</td><td>外部 CLI；过期时 <code translate="no">gemini auth login</code></td></tr>
 <tr><th scope="row">其他 key 供应商</th><td><code translate="no">api_key</code></td><td>副本</td><td>无</td></tr>
 </tbody>
 </table>
@@ -27,7 +23,7 @@
 </table>
 <p class="note"><code translate="no">methods/cli_import.py</code> 有 <code translate="no">mode="link"</code>（默认）和 <code translate="no">mode="copy"</code>，后者生成可写、归存储所有的 <code translate="no">oauth</code> 凭据。</p>
 <h2>登录注册表</h2>
-<p><code translate="no">auth/login/login_method_registry.py</code> 是唯一的 <code translate="no">provider → [method]</code> 表；第一项为默认，CLI、网页、TUI 都按它显示。处理器在 <code translate="no">auth/methods/</code> 和 <code translate="no">auth/login/</code>。Google Code-Assist OAuth 内嵌 OpenProgram 不能分发的 client secret，所以该供应商保持委托；Anthropic 没有公开第三方 OAuth client。</p>
+<p><code translate="no">auth/login/login_method_registry.py</code> 是唯一的 <code translate="no">provider → [method]</code> 表；第一项为默认，CLI、网页、TUI 都按它显示。处理器在 <code translate="no">auth/methods/</code> 和 <code translate="no">auth/login/</code>。Anthropic 没有公开第三方 OAuth client。</p>
 <p>每种方式带中英文的标题和一行说明，导入还写明它读取的文件；网页的接入对话框据此列出各种接入方式。</p>
 <h2 id="refresh">刷新</h2>
 <p>refresh token 会轮换：第一个用掉它的持有者拿到新的一对，之后再用旧的会被拒绝（<code translate="no">invalid_grant</code>），这个持有者就被登出。所以同一时间只有一个进程花掉 refresh token，每个进程拿到锁后先重读登录。</p>
@@ -40,24 +36,12 @@
 <tr><th scope="row">过期前被拒</th><td>HTTP 401 让这个登录刷新一次，并立刻重发同一个请求，不算传输重试。刷新记一行 <code translate="no">INFO</code></td></tr>
 </tbody>
 </table>
-<h3 id="codex-shared-login">一台机器一个 ChatGPT 登录</h3>
-<p>一次 ChatGPT 登录是一个 refresh token 家族，在一台机器上它存在 Codex CLI 的 <code translate="no">~/.codex/auth.json</code>（或 <code translate="no">$CODEX_HOME</code>）里。Codex CLI 刷新它，<code translate="no">import</code> 凭据读它（开发版只有这一个），同一账号的 OpenProgram <code translate="no">oauth</code> 登录保留一份副本。它们都使用这个文件的刷新锁。</p>
-<table class="stack fixed">
-<thead><tr><th scope="col">持有者</th><th scope="col">刷新</th></tr></thead>
-<tbody>
-<tr><th scope="row"><code translate="no">import</code></th><td>每次请求都读文件。token 自身的 <code translate="no">exp</code> 在 60 秒内，或后端回 401 时，用文件里的 refresh token 刷新，把新 token 写回文件，和 Codex CLI 的做法一样</td></tr>
-<tr><th scope="row"><code translate="no">oauth</code> 副本</th><td>每次请求前，采用文件里同一账号更新的登录并存进存储。需要刷新时，先在锁内重读文件，有更新的登录就采用，不去花别的持有者已经花掉的 refresh token；否则刷新并把结果同步回文件</td></tr>
-<tr><th scope="row">文件里是别的账号</th><td>既不采用也不覆盖</td></tr>
-<tr><th scope="row">写文件</th><td>以仅本人可读写（<code translate="no">0600</code>）创建、落盘，再改名覆盖原文件：对 delegated 读取方来说，轮换后的 refresh token 只有这一份。写失败记一条警告，只写路径，不写 token</td></tr>
-<tr><th scope="row">保存采用的登录</th><td>只在存储里还是被替换的那个 token 时才保存。期间已有刷新存下更新的登录，就保留那个</td></tr>
-</tbody>
-</table>
 <p>凭据层在工作线程里让选中的登录可用（<code translate="no">prepare</code>），不在事件循环上，因为它可能要等别的进程的刷新锁和一次刷新请求。</p>
 <h2 id="unreadable">读不了不等于空</h2>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">步骤</th><th scope="col">行为</th></tr></thead>
 <tbody>
-<tr><th scope="row">写入（<code translate="no">credentials/io._atomic_write</code>）</th><td>被替换的文件是合法 JSON 时保留为 <code translate="no">&lt;file&gt;.bak</code>（<code translate="no">state/last_good.keep_previous</code>）</td></tr>
+<tr><th scope="row">写入（<code translate="no">state/private_files._atomic_write</code>）</th><td>被替换的文件是合法 JSON 时保留为 <code translate="no">&lt;file&gt;.bak</code>（<code translate="no">state/last_good.keep_previous</code>）</td></tr>
 <tr><th scope="row">读到非法 JSON（<code translate="no">last_good.load_json</code>）</th><td>把原字节复制一次到 <code translate="no">&lt;file&gt;.bad-&lt;UTC 时间&gt;-&lt;摘要&gt;</code>，返回合法的 <code translate="no">.bak</code>，否则返回空</td></tr>
 <tr><th scope="row">使用方</th><td><code translate="no">read_config</code>、<code translate="no">update_config</code>、认证存储</td></tr>
 <tr><th scope="row">删除或更换密钥</th><td>它所在列表的 <code translate="no">.bak</code> 和 <code translate="no">.bad-</code> 副本也一起删除，旧密钥不留在磁盘上</td></tr>
@@ -73,8 +57,5 @@
 <tr><th scope="row">openclaw</th><td><code translate="no">auth-profiles.json</code> 按 <code translate="no">&lt;provider&gt;:&lt;label&gt;</code>；轮询状态放旁边的文件；<code translate="no">oauth</code>、<code translate="no">api_key</code>、<code translate="no">token</code>；刷新在跨进程锁内重读磁盘（值得借鉴的部分）；一个处理器选择浏览器或粘贴。会直接读其他 CLI 的文件，本设计不这样做。</td></tr>
 </tbody>
 </table>
-</details>
-<details><summary>实现状态</summary>
-<p>尚未实现：把 Gemini 订阅 token 复制进存储作为默认导入方式。</p>
 </details>
 <p class="next"><a href="unified-account-management.zh.html">Provider 的 key 与故障切换</a></p>

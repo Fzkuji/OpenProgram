@@ -1,6 +1,6 @@
 """Amazon Bedrock model list — ``list_foundation_models`` via boto3.
 
-Convention module (see ``openai_codex/list_models.py`` for the pattern): the
+Convention module (see ``anthropic/list_models.py`` for the pattern): the
 dispatcher loads ``fetch(provider_id, timeout)`` by directory name.
 
 Uses the AWS credentials chain (env, profile, instance metadata, …) so there's

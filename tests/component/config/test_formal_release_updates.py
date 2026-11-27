@@ -127,25 +127,6 @@ def test_release_wheel_probe_runs_outside_the_checkout():
     assert 'python -P -m openprogram.interfaces.cli --version' in workflow
 
 
-def test_release_workflow_builds_and_signs_official_update_assets():
-    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
-
-    assert "create-update-assets.py platform" in workflow
-    assert "--previous" not in workflow, "every release carries its base, for machines that skipped some"
-    trust = workflow[workflow.index("id: update-key") : workflow.index("name: Select release platforms")]
-    assert "official/assets.py" in trust and "self-update/update-service.js" in trust
-    assert "name: update-assets-${{ matrix.platform }}-${{ matrix.arch }}" in workflow
-    assert "create-update-assets.py finalize" in workflow
-    assert "secrets.OPENPROGRAM_UPDATE_SIGNING_KEY" in workflow
-    sign = workflow.index("name: Sign official update assets")
-    publish = workflow.index("name: Publish GitHub Release")
-    manifest = workflow.index("name: Create release manifest")
-    assert sign < manifest < publish
-    move = workflow.index('mv "$directory"/* "$RUNNER_TEMP/official-update/"')
-    guard = workflow.index('if [ -z "$UPDATE_SIGNING_KEY" ]; then')
-    assert move < guard, "unsigned update assets must leave release-artifacts before the guard"
-
-
 def test_upgrade_docs_describe_replay_of_own_commits():
     for name, phrase in (
         ("docs/install/upgrade.html", "unreplayable/<release>/<commit>.patch"),
@@ -196,7 +177,7 @@ def test_automatic_update_design_is_one_accessible_review_page():
 
     for contract in (
         'id="architecture"',
-        '<title>Stable release automatic updates</title>',
+        '<title>Automatic updates</title>',
         'role="img"',
         'id="desktop-states"',
         'id="trust-boundaries"',

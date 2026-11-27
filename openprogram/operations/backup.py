@@ -157,7 +157,7 @@ def _profile_name() -> str:
 def backups_dir() -> Path:
     state = _state_dir()
     state.mkdir(parents=True, exist_ok=True)
-    from openprogram.models.auth.credentials import _ensure_private_directory
+    from openprogram.state.private_files import _ensure_private_directory
 
     directory = _ensure_private_directory(state / "backups", root=state)
     from openprogram.host._platform.filesystem import restrict_directory_to_user
@@ -222,10 +222,10 @@ def create_backup(
 
     from openprogram.models.auth.credentials import (
         SECRET_INVENTORY,
-        _private_atomic_write,
         backup_bytes,
         inventory_for_path,
     )
+    from openprogram.state.private_files import _private_atomic_write
 
     included_secret_kinds: set[str] = set()
     redacted_secret_kinds: set[str] = set()
@@ -469,7 +469,7 @@ def _restore_state_lock(state: Path):
 def _restore_target_locks(state: Path, relative_paths: Iterable[str]):
     """Hold target writer locks in one stable order for a restore transaction."""
 
-    from openprogram.models.auth.credentials import _private_file_lock
+    from openprogram.state.private_files import _private_file_lock
 
     with ExitStack() as stack:
         for relative in sorted(set(relative_paths)):
@@ -631,7 +631,8 @@ class _RestoreJournal:
         return previous
 
     def finish(self) -> None:
-        from openprogram.models.auth.credentials import _read_private_bytes, inventory_for_path
+        from openprogram.models.auth.credentials import inventory_for_path
+        from openprogram.state.private_files import _read_private_bytes
 
         for entry in self.entries:
             relative = entry["relative_path"]
@@ -760,7 +761,7 @@ def recover_interrupted_restore(state: Path, *, _lock_held: bool = False) -> boo
         journal_file.unlink(missing_ok=True)
         return False
 
-    from openprogram.models.auth.credentials import PrivateAtomicWriteError
+    from openprogram.state.private_files import PrivateAtomicWriteError
 
     try:
         with _restore_target_locks(
@@ -1117,7 +1118,7 @@ def _restore_opened_source(source: int, parent: int, target_name: str) -> None:
 def _publish_restored(target: Path, payload: bytes, *, root: Path) -> None:
     """Publish one validated member through the shared private writer."""
 
-    from openprogram.models.auth.credentials import _private_atomic_write
+    from openprogram.state.private_files import _private_atomic_write
 
     _private_atomic_write(target, lambda handle: handle.write(payload), root=root)
 
@@ -1136,11 +1137,11 @@ def restore_archive(
     """
 
     from openprogram.models.auth.credentials import (
-        _read_private_bytes,
         backup_bytes,
         inventory_for_path,
         preserve_local_secret_bytes,
     )
+    from openprogram.state.private_files import _read_private_bytes
 
     state = Path(state).resolve()
     if not _lock_held:
@@ -1283,7 +1284,7 @@ def restore_archive(
                 for relative, staged_file, inventory in staged_files:
                     payload = staged_file.read_bytes()
                     target = state / relative
-                    from openprogram.models.auth.credentials import _ensure_private_directory
+                    from openprogram.state.private_files import _ensure_private_directory
 
                     _ensure_private_directory(target.parent, root=state)
                     if inventory and all(not entry.whole_file for entry in inventory):

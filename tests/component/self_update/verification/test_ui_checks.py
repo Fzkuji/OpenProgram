@@ -145,7 +145,7 @@ def ui_install(package_factory, installed_cli, monkeypatch):
 def live(ui_install, http_live, monkeypatch):
     from openprogram.runtime.permissions.authority import owner_principal_id
     # The HTTP fixture fixes owner identity; align the tool's imported alias.
-    monkeypatch.setattr("openprogram.programs.tools.system.self_update.owner_principal_id", owner_principal_id)
+    monkeypatch.setattr("openprogram.operations.self_update.candidate_source.owner_principal_id", owner_principal_id)
     ui_install["state"] = http_live[2]
     return http_live
 

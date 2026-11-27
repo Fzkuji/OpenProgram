@@ -30,6 +30,9 @@ export interface BrandLogo {
   url: string;
   /** A one-colour mark, drawn through a mask, rather than a picture in its own colours. */
   mono: boolean;
+  /** The picture shown on a dark theme, for a logo whose own background would glare there
+   *  (Codex's white tile). */
+  darkUrl?: string;
 }
 
 /** Where a logo's ink sits; a logo the generator has not measured counts
@@ -67,18 +70,21 @@ export function BrandMark({ fit = "contain", ...props }: BrandMarkProps) {
 /** The whole logo fitted into the box, centred; no hover motion. */
 function ContainedBrandMark({ logo, size = 16, color = "currentColor", className, attributes, lazy }: BrandMarkProps) {
   if (!logo.mono) {
-    return (
+    const picture = (url: string, theme?: "light" | "dark") => (
       <img
         {...attributes}
-        src={logo.url}
+        key={url}
+        src={url}
         alt=""
         aria-hidden="true"
         width={size}
         height={size}
         loading={lazy ? "lazy" : undefined}
+        data-logo-theme={theme}
         className={cn("block shrink-0", className)}
       />
     );
+    return logo.darkUrl ? <>{picture(logo.url, "light")}{picture(logo.darkUrl, "dark")}</> : picture(logo.url);
   }
   const mask = `${cssUrl(logo.url)} center / contain no-repeat`;
   return (
@@ -89,6 +95,12 @@ function ContainedBrandMark({ logo, size = 16, color = "currentColor", className
       style={{ width: size, height: size, backgroundColor: color, mask, WebkitMask: mask }}
     />
   );
+}
+
+/** Where a logo's dark-theme picture sits in the box: fitted by its own ink. */
+function darkDrawing(url: string, size: number): CSSProperties {
+  const fit = fitInk(inkBoundsFor(url), size);
+  return { left: fit.left, top: fit.top, width: fit.width, height: fit.height };
 }
 
 /** The logo's ink filling the box, popping to 18 px on its control's hover. */
@@ -130,7 +142,13 @@ function FilledBrandMark({ logo, size = 16, color = "currentColor", className, a
       {logo.mono ? (
         <span style={{ ...drawing, backgroundColor: color, mask, WebkitMask: mask }} />
       ) : (
-        <img src={logo.url} alt="" draggable={false} style={drawing} />
+        logo.darkUrl ? (
+          <>
+            <img src={logo.url} alt="" draggable={false} style={drawing} data-logo-theme="light" />
+            <img src={logo.darkUrl} alt="" draggable={false} style={{ ...drawing, ...darkDrawing(logo.darkUrl, size) }}
+              data-logo-theme="dark" />
+          </>
+        ) : <img src={logo.url} alt="" draggable={false} style={drawing} />
       )}
     </motion.span>
   );

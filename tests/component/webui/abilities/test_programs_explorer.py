@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 import json
 import types
 from pathlib import Path
@@ -843,6 +845,7 @@ def test_application_without_an_agent_entry_gets_a_neutral_note(tmp_path, monkey
     } == {"applications/toolkit/stages"}
 
 
+@pytest.mark.slow
 def test_a_builtin_application_without_entries_lists_as_a_library() -> None:
     from openprogram.interfaces.server.routes.catalog.programs import _list_entries, _program_logic
 

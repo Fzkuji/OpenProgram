@@ -15,16 +15,24 @@ permission policy independently.
 | `approvals/lifecycle.py` | Per-call snapshots, confirmed live changes and durable wait reconciliation |
 | `modes.py` | Permission modes (`VALID_PERMISSION`, `DEFAULT_PERMISSION`) and `PermissionRules`; session settings re-export them |
 | `session_facts.py` | The session and turn facts permission code reads, registered by the conversation package |
+| `tool_profiles.py` | What a tool says about its own calls (capability, read-only, screen approval and rule key, page scripts, written files, its own card), registered by the tool |
+| `file_safety.py` | Path safety: working directories, dangerous files and directories, Windows name tricks, a check-in's protected reads |
 
 `authority.py` is the identity core: authority fields and constructors, the
 fixed tier-capability table (`decide_capability`, `has_capability`) and the
 model-visible speaker envelope. It names no tools. `tool_authority.py` maps a
 tool call onto one capability (`capability_for_tool`) and decides it
-(`decide_tool_authority`). `attended.py` withholds the question tool when
+(`decide_tool_authority`); a tool whose arguments decide its capability
+says which in its profile. `attended.py` withholds the question tool when
 nobody is watching.
 
-The package sits below the call core and the conversation package and
-imports neither. A turn request is any object with `TurnRequest`'s fields;
+The package sits below the call core, the conversation package and the
+Programs, and imports none of them. Only a tool knows what its arguments
+mean, so each tool that has more to say than its name registers a
+`ToolProfile` in `tool_profiles` when it loads (`computer_use`,
+`self_update`, `ask_user_question`, `apply_patch`, the builtin readers); the
+Program host's generic services (the tool registry, Plan's unsafe tools,
+the call prechecks) are reached through `runtime.program_host`. A turn request is any object with `TurnRequest`'s fields;
 tools are `AgentTool` from `openprogram.models.providers.types`. What only a
 conversation knows (the bound session and execution, a running turn, plan
 mode, session-layer rules, project defaults, surface grants, the Agent's

@@ -12,7 +12,8 @@ import textwrap
 
 import pytest
 
-from openprogram.operations.worker import lifecycle, paths, runner
+from openprogram.host.worker import paths
+from openprogram.operations.worker import lifecycle, runner
 
 
 @pytest.fixture
@@ -156,7 +157,8 @@ def test_a_running_process_reads_a_stop_asked_from_another(request_file) -> None
             """
             import sys
             from pathlib import Path
-            from openprogram.operations.worker import paths, runner
+            from openprogram.host.worker import paths
+            from openprogram.operations.worker import runner
             target = Path(sys.argv[1])
             paths.stop_request_path = lambda: target
             print("ready", flush=True)

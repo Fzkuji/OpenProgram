@@ -122,11 +122,17 @@ def test_background_append_cannot_restore_stale_selection(store, monkeypatch):
     checkout("ab")
     store.update_session("s", agent_id="beta")
     checkout("a1")
-    original = store.spill_large_node
-    def interleave(sid, node):
-        original(sid, node)
-        checkout("ab")
-    monkeypatch.setattr(store, "spill_large_node", interleave)
+    # The checkout lands after the background writer opened the
+    # conversation and before it takes the write lock for its append.
+    original = store._open
+    pending = [True]
+    def interleave(sid, **kwargs):
+        pair = original(sid, **kwargs)
+        if pending:
+            pending.clear()
+            checkout("ab")
+        return pair
+    monkeypatch.setattr(store, "_open", interleave)
     SessionNodeWriter(store, "s", advance_head=False).append(
         Call(id="background", role="assistant", output="done", predecessor="a1"))
     row = store.get_session("s")

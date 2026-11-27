@@ -71,8 +71,7 @@ async def handle_switch_model(ws, cmd: dict):
             head, tail = model.split(":", 1)
             from openprogram.models.providers import get_providers as _get_providers
             known = set(_get_providers())
-            known.update({"openai-codex", "gemini-cli",
-                          "anthropic", "openai", "gemini"})
+            known.update({"anthropic", "openai", "gemini"})
             if head in known:
                 inferred_provider = head
                 bare_model = tail

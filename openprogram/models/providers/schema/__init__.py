@@ -72,7 +72,6 @@ _OPENAI_STRICT_APIS: frozenset[str] = frozenset({
     "openai-completions",
     "openai-responses",
     "azure-openai-responses",
-    "openai-codex",
 })
 
 # The Anthropic Messages API id (strict support is per-model, below).

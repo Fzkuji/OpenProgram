@@ -11,7 +11,8 @@ the same bubblewrap policy to the default WSL2 distribution; it never rewrites
 Windows ACLs.
 
 The policy is resolved from ``~/.openprogram/config.json`` (the
-``sandbox.*`` keys in ``state.settings.SETTINGS``) at the moment a command
+``sandbox.*`` keys in ``state.settings.SETTINGS``, whose modes and defaults
+are ``state.sandbox_settings``) at the moment a command
 is wrapped. That matters more than it sounds: the switch used to live on
 a ``ContextVar`` and was lost at every boundary that starts a fresh
 context — the web UI's asyncio task handing work to a bare thread, the

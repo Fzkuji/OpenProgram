@@ -24,7 +24,7 @@ import pytest
 @pytest.fixture(autouse=True)
 def _worker_lock_is_held(monkeypatch):
     monkeypatch.setattr(
-        "openprogram.operations.worker.lock.is_held_by", lambda _pid: True,
+        "openprogram.host.worker.lock.is_held_by", lambda _pid: True,
     )
 
 

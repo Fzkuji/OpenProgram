@@ -76,18 +76,18 @@ def test_row_api_and_base_url_win_over_endpoint(monkeypatch):
 
 
 def test_key_prefix_produces_independent_key(monkeypatch):
-    cfg = {"gemini-subscription": {"models": [
-        {"id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro (Subscription)"},
-        {"id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro (Cloud Code Assist)",
-         "key_prefix": "google-gemini-cli"},
+    cfg = {"google": {"models": [
+        {"id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro"},
+        {"id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro (Vertex)",
+         "key_prefix": "google-vertex"},
     ]}}
     reg = _reload(monkeypatch, cfg)
-    assert "gemini-subscription/gemini-2.5-pro" in reg
-    assert "google-gemini-cli/gemini-2.5-pro" in reg
-    assert reg["gemini-subscription/gemini-2.5-pro"].name == "Gemini 2.5 Pro (Subscription)"
-    assert reg["google-gemini-cli/gemini-2.5-pro"].name == "Gemini 2.5 Pro (Cloud Code Assist)"
+    assert "google/gemini-2.5-pro" in reg
+    assert "google-vertex/gemini-2.5-pro" in reg
+    assert reg["google/gemini-2.5-pro"].name == "Gemini 2.5 Pro"
+    assert reg["google-vertex/gemini-2.5-pro"].name == "Gemini 2.5 Pro (Vertex)"
     # provider is the config key, never the key prefix
-    assert reg["google-gemini-cli/gemini-2.5-pro"].provider == "gemini-subscription"
+    assert reg["google-vertex/gemini-2.5-pro"].provider == "google"
 
 
 def test_empty_config_yields_empty_registry(monkeypatch):
@@ -113,17 +113,17 @@ def test_manual_source_row_loads_like_any_other(monkeypatch):
 
 
 def test_nested_cost_headers_compat_round_trip(monkeypatch):
-    cfg = {"github-copilot": {"models": [
+    cfg = {"openrouter": {"models": [
         {"id": "gpt-5.2-codex", "name": "GPT-5.2-Codex",
          "api": "openai-responses",
          "input": ["text", "image"],
-         "headers": {"Copilot-Integration-Id": "vscode-chat"},
+         "headers": {"X-Title": "OpenProgram"},
          "compat": {"supports_store": True},
          "cost": {"input": 1.25, "output": 10.0, "cache_read": 0.125}},
     ]}}
     reg = _reload(monkeypatch, cfg)
-    m = reg["github-copilot/gpt-5.2-codex"]
-    assert m.headers == {"Copilot-Integration-Id": "vscode-chat"}
+    m = reg["openrouter/gpt-5.2-codex"]
+    assert m.headers == {"X-Title": "OpenProgram"}
     # pydantic coerces the compat dict into OpenAICompletionsCompat; the
     # declared field survives faithfully.
     assert getattr(m.compat, "supports_store", None) is True
@@ -221,67 +221,66 @@ def test_community_provider_base_url_filled_from_models_dev(monkeypatch):
 
 
 def test_alias_provider_endpoints_resolve_from_canonical(monkeypatch):
-    # F3 (endpoint half): chatgpt-subscription has an EMPTY provider dir but
-    # aliases to openai-codex. Its row carries no api/base_url. The registry
-    # must fill both from openai-codex's provider.json (api=openai-codex,
-    # base_url=chatgpt.com backend) so the row routes to the codex transport,
-    # not to a hostless openai-completions request.
+    # F3 (endpoint half): an alias key (gemini) with an EMPTY provider dir
+    # aliases to google. Its row carries no api/base_url. The registry must
+    # fill both from google's provider.json so the row routes to the Gemini
+    # API, not to a hostless openai-completions request.
     import openprogram.models.providers.catalog.metadata as pm
     real = pm._endpoints
 
     def fake(pid):
-        if pid == "openai-codex":
-            return {"default": {"api": "openai-codex",
-                                "base_url": "https://chatgpt.com/backend-api"}}
-        if pid in ("chatgpt-subscription",):
+        if pid == "google":
+            return {"default": {"api": "google-generative-ai",
+                                "base_url": "https://generativelanguage.googleapis.com/v1beta"}}
+        if pid in ("gemini",):
             return {}          # empty dir
         return real(pid)
     monkeypatch.setattr(pm, "_endpoints", fake)
-    cfg = {"chatgpt-subscription": {"models": [
-        {"id": "gpt-5.5", "name": "GPT-5.5"},
+    cfg = {"gemini": {"models": [
+        {"id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro"},
     ]}}
     reg = _reload(monkeypatch, cfg)
-    m = reg["chatgpt-subscription/gpt-5.5"]
-    assert m.api == "openai-codex"
-    assert m.base_url == "https://chatgpt.com/backend-api"
+    m = reg["gemini/gemini-2.5-pro"]
+    assert m.api == "google-generative-ai"
+    assert m.base_url == "https://generativelanguage.googleapis.com/v1beta"
 
 
 def test_alias_key_folds_into_canonical_when_both_present(monkeypatch):
-    # Merge fix: config carries BOTH the alias key (chatgpt-subscription) and
-    # its canonical (openai-codex), each with a gpt-5.5 spec row. The registry
-    # must produce ONE key (openai-codex/gpt-5.5) — no duplicate picker row.
+    # Merge fix: config carries BOTH the alias key (gemini) and its canonical
+    # (google), each with a gemini-2.5-pro spec row. The registry must
+    # produce ONE key (google/gemini-2.5-pro) — no duplicate picker row.
     # The alias key's rows are dropped; canonical owns them.
     cfg = {
-        "openai-codex": {"models": [
-            {"id": "gpt-5.5", "name": "GPT-5.5", "api": "openai-codex",
-             "base_url": "https://chatgpt.com/backend-api"}]},
-        "chatgpt-subscription": {"models": [
-            {"id": "gpt-5.5", "name": "GPT-5.5", "api": "openai-codex",
-             "base_url": "https://chatgpt.com/backend-api"}]},
+        "google": {"models": [
+            {"id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro", "api": "google-generative-ai",
+             "base_url": "https://generativelanguage.googleapis.com/v1beta"}]},
+        "gemini": {"models": [
+            {"id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro", "api": "google-generative-ai",
+             "base_url": "https://generativelanguage.googleapis.com/v1beta"}]},
     }
     reg = _reload(monkeypatch, cfg)
-    assert "openai-codex/gpt-5.5" in reg
-    assert "chatgpt-subscription/gpt-5.5" not in reg
-    assert [k for k in reg if k.endswith("/gpt-5.5")] == ["openai-codex/gpt-5.5"]
+    assert "google/gemini-2.5-pro" in reg
+    assert "gemini/gemini-2.5-pro" not in reg
+    assert [k for k in reg if k.endswith("/gemini-2.5-pro")] == ["google/gemini-2.5-pro"]
 
 
 def test_get_model_still_resolves_alias_after_fold(monkeypatch):
-    # After the fold, an old session referencing chatgpt-subscription/gpt-5.5
+    # After the fold, an old session referencing gemini/gemini-2.5-pro
     # must still resolve via get_model's alias fallback to the canonical row.
     from openprogram.models.providers.catalog import models as pm
     cfg = {
-        "openai-codex": {"models": [
-            {"id": "gpt-5.5", "name": "GPT-5.5", "api": "openai-codex",
-             "base_url": "https://chatgpt.com/backend-api"}]},
-        "chatgpt-subscription": {"models": [
-            {"id": "gpt-5.5", "name": "GPT-5.5", "api": "openai-codex",
-             "base_url": "https://chatgpt.com/backend-api"}]},
+        "google": {"models": [
+            {"id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro", "api": "google-generative-ai",
+             "base_url": "https://generativelanguage.googleapis.com/v1beta"}]},
+        "gemini": {"models": [
+            {"id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro", "api": "google-generative-ai",
+             "base_url": "https://generativelanguage.googleapis.com/v1beta"}]},
     }
     reg = _reload(monkeypatch, cfg)
     monkeypatch.setattr(mg, "ENABLED_MODELS", reg)
     monkeypatch.setattr(pm, "ENABLED_MODELS", reg)
-    assert pm.get_model("chatgpt-subscription", "gpt-5.5") is not None
-    assert pm.get_model("openai-codex", "gpt-5.5") is not None
+    assert pm.get_model("gemini", "gemini-2.5-pro") is not None
+    assert pm.get_model("google", "gemini-2.5-pro") is not None
 
 
 def test_real_config_untouched(monkeypatch, tmp_path):

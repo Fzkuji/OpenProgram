@@ -14,7 +14,10 @@ from __future__ import annotations
 
 import re
 import time
-from typing import Any, AsyncGenerator, Optional
+from typing import TYPE_CHECKING, Any, AsyncGenerator, Optional
+
+if TYPE_CHECKING:
+    import anthropic
 
 
 from ...types import (
@@ -149,7 +152,7 @@ def _observe_api_key_limits(model: Any, ant_stream: Any, *, is_oauth: bool,
     headers = getattr(response, "headers", None)
     if headers is None:
         return
-    from openprogram.models.usage.quota import observe_headers
+    from openprogram.models.providers.usage_port import observe_headers
     observe_headers(model.provider, api_key, headers, account=account)
 
 
@@ -276,7 +279,7 @@ def _build_client(
         beta_features.append(_tool_search_beta(base_url))
 
     # The SDK's own retries are off: the credential layer
-    # (``models/auth/selection.py``) and the stream's re-send handle every
+    # (``models/providers/streaming/credential_failover.py``) and the stream's re-send handle every
     # failure once, so a 429 is not retried on the same key behind their back.
     sdk_max_retries = 0
 
@@ -371,7 +374,6 @@ def _shared_http_client(base_url: str | None = None):
     pending" + RuntimeError('Event loop is closed'), a half-sent request,
     and Anthropic 400ing it. ``get_shared_async_client`` caches per
     (name, loop), so the client's lifecycle matches the turn's loop exactly
-    — the same fix that keeps openai-codex working under the worker.
     Policy and construction failures propagate so the SDK cannot fall back to
     its unmanaged default transport.
     """
@@ -764,7 +766,7 @@ async def stream_simple(
     from openprogram.models.auth.provider_policy import require_supported_provider
     require_supported_provider(model.provider)
     # The credential this request goes out with, chosen by the credential
-    # layer every adapter is wrapped in (``models/auth/selection.py``); its
+    # layer every adapter is wrapped in (``models/providers/streaming/credential_failover.py``); its
     # own base URL and headers win over the catalogue's.
     _conn = getattr(opts, "credential", None)
     api_key = opts.api_key or ""

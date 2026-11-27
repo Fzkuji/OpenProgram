@@ -95,7 +95,7 @@ def _print_banner(console, provider: str, model: str,
 
       ┌──── OpenProgram ────────────────────────┐
       │                                         │
-      │    Model: openai-codex / gpt-5.5        │
+      │    Model: anthropic / claude-sonnet-4-6 │
       │    Agent: main                          │
       │  Session: local_xxx                     │
       │                                         │
@@ -123,8 +123,8 @@ def _print_banner(console, provider: str, model: str,
     from rich import box
 
     # Strip the redundant ``provider:`` prefix from a model id like
-    # ``openai-codex:gpt-5.5`` so the banner doesn't say
-    # ``openai-codex / openai-codex:gpt-5.5``.
+    # ``anthropic:claude-sonnet-4-6`` so the banner doesn't say
+    # ``anthropic / anthropic:claude-sonnet-4-6``.
     pretty_model = model
     if isinstance(model, str) and ":" in model:
         head, _, tail = model.partition(":")

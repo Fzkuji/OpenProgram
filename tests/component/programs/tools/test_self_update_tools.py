@@ -346,7 +346,9 @@ def test_prepare_aborts_if_head_changes_during_persistence(
     worktree, _base_sha, candidate_sha = _candidate(tmp_path)
     candidate = Path(worktree.worktree_path)
     store = SelfUpdateStore(tmp_path / "state")
-    original_git = self_update_module._git
+    from openprogram.operations.self_update import candidate_source
+
+    original_git = candidate_source.git
     head_reads = 0
 
     def racing_git(cwd: Path, *args: str) -> str:
@@ -360,7 +362,8 @@ def test_prepare_aborts_if_head_changes_during_persistence(
                 _git(candidate, "commit", "-m", "concurrent change")
         return value
 
-    monkeypatch.setattr(self_update_module, "_git", racing_git)
+    monkeypatch.setattr(self_update_module, "git", racing_git)
+    monkeypatch.setattr(candidate_source, "git", racing_git)
 
     with pytest.raises(SelfUpdateToolError, match="candidate"):
         _prepare(worktree, candidate_sha, store)

@@ -152,7 +152,7 @@ def test_public_evidence_read_is_bound_to_owner_session_and_signed_receipt(verif
 
     # The live fixture fixes the owner function; keep the tool module's
     # already-imported alias on that same identity without bypassing checks.
-    monkeypatch.setattr("openprogram.programs.tools.system.self_update.owner_principal_id", owner_principal_id)
+    monkeypatch.setattr("openprogram.operations.self_update.candidate_source.owner_principal_id", owner_principal_id)
     v = verifier
     v.run()
     consume(v)

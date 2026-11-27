@@ -75,7 +75,7 @@ def continue_stop_hook_turns(
             return result
 
         reason = "; ".join(outcome.reasons) or "hook denied the stop"
-        from openprogram.runtime.permissions.authority import runtime_authority
+        from openprogram.state.authority import runtime_authority
         from openprogram.runtime.permissions.identity import detached_from_window
         next_req = replace(
             prev_req,

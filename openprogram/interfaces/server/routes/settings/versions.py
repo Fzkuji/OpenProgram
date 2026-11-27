@@ -17,7 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from openprogram.interfaces.server.routes.self_updates import require_owner
 from openprogram.operations.self_update.control.projection import ProjectionAccessError
 from openprogram.operations.self_update.store import SelfUpdateStore
-from openprogram.operations.self_update.versions import layout as paths
+from openprogram.host._platform import runtime_layout as paths
 from openprogram.operations.self_update.versions import overview
 from openprogram.operations.self_update.versions.pointer import PointerError
 

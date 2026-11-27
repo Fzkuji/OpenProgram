@@ -1027,8 +1027,9 @@ def default_policy(store=None, execution_id=None):
 
 
 def retained_function_names(store, execution_id):
-    from openprogram.programs._host.runtime import get
+    from openprogram.runtime import program_host
 
+    get = program_host.host().get
     log = store.function_log(execution_id)
     names = set()
     for saved in log.admitted() if log is not None else ():

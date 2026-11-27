@@ -1,20 +1,17 @@
-"""Side calls that repeat a prefix reach the Codex cache that holds it.
+"""Side calls that repeat a prefix reach the cache replica that holds it.
 
-A title or a topic sort makes a new Runtime per call. Measured on the
-ChatGPT backend, each of those calls used to carry its Runtime's own random
-id as ``prompt_cache_key`` and read 0 cached tokens out of about 3,000,
-although every call of a kind sends the same instructions; with one key per
-prefix the second call read the whole shared prefix.
+A title or a topic sort makes a new Runtime per call. Each of those calls
+used to carry its Runtime's own random id as ``prompt_cache_key`` and read
+0 cached tokens out of about 3,000, although every call of a kind sends the
+same instructions; with one key per prefix the second call read the whole
+shared prefix. Read here through the Responses adapter's request body.
 """
 from __future__ import annotations
 
 import json
 import time
 
-import openprogram.models.providers.adapters.openai_codex.openai_codex as cx
-from openprogram.models.providers.shared.openai_responses import (
-    convert_responses_messages,
-)
+import openprogram.models.providers.adapters.openai_responses.openai_responses as rx
 from openprogram.models.providers.types import (
     AssistantMessage,
     EventDone,
@@ -24,10 +21,10 @@ from openprogram.models.providers.types import (
 from openprogram.runtime.agent.runtime import Runtime
 
 
-class _CodexModel:
+class _ResponsesModel:
     id = "gpt-test"
-    api = "openai-codex"
-    provider = "openai-codex"
+    api = "openai-responses"
+    provider = "openai"
     reasoning = False
     input = ["text"]
 
@@ -36,7 +33,7 @@ def _capturing_stream_fn(seen: list):
     def stream_fn(model, context, opts):
         seen.append((context, opts))
         msg = AssistantMessage(
-            content=[TextContent(text="ok")], api="openai-codex", provider="openai-codex",
+            content=[TextContent(text="ok")], api="openai-responses", provider="openai",
             model="gpt-test", stop_reason="stop", timestamp=int(time.time() * 1000),
         )
 
@@ -49,11 +46,12 @@ def _capturing_stream_fn(seen: list):
     return stream_fn
 
 
-def _codex_body(context, opts) -> dict:
-    model = _CodexModel()
-    session_id = getattr(opts, "session_id", None)
-    messages = convert_responses_messages(model, context, include_system_prompt=False)
-    return cx._build_request_body(model, context, {"session_id": session_id}, messages)
+def _body(context, opts) -> dict:
+    """The request body, with the system prompt split out as ``instructions``."""
+    body = rx._build_params(_ResponsesModel(), context, {"session_id": getattr(opts, "session_id", None)})
+    first, *rest = body["input"]
+    assert first.get("role") in ("system", "developer")
+    return {**body, "instructions": json.dumps(first.get("content"), ensure_ascii=False), "input": rest}
 
 
 def _one_call(system: str, text: str) -> dict:
@@ -64,7 +62,7 @@ def _one_call(system: str, text: str) -> dict:
     runtime.exec(content=[{"type": "text", "text": text}], toolset="none",
                  stream_fn=_capturing_stream_fn(seen))
     assert seen, "no provider request was made"
-    return _codex_body(*seen[0])
+    return _body(*seen[0])
 
 
 def _cached_prefix(body: dict, text: str) -> str:
@@ -112,11 +110,11 @@ def test_a_session_id_the_caller_set_is_used_as_given():
     runtime.session_id = "local_conversation"
     runtime.exec(content=[{"type": "text", "text": "hi"}], toolset="none",
                  stream_fn=_capturing_stream_fn(seen))
-    assert _codex_body(*seen[0])["prompt_cache_key"] == "local_conversation"
+    assert _body(*seen[0])["prompt_cache_key"] == "local_conversation"
 
 
 def test_a_side_call_keeps_its_instructions_across_midnight_and_is_told_the_date(monkeypatch):
-    """The date is not in the instructions, which come first in a Codex
+    """The date is not in the instructions, which come first in a
     request, so a call made the next day reads the same cached prefix; the
     model is told the date beside the call's own message."""
     import datetime
@@ -134,7 +132,7 @@ def test_a_side_call_keeps_its_instructions_across_midnight_and_is_told_the_date
         runtime.system = "Name this conversation."
         runtime.exec(content=[{"type": "text", "text": text}], toolset="none",
                      stream_fn=_capturing_stream_fn(seen))
-        return _codex_body(*seen[0])
+        return _body(*seen[0])
 
     first = model_call("<session>rotate a PDF page</session>")
     day["value"] = datetime.date(2026, 11, 13)
@@ -144,17 +142,3 @@ def test_a_side_call_keeps_its_instructions_across_midnight_and_is_told_the_date
     assert "Today is Thursday, November 12, 2026." in json.dumps(first["input"])
     assert "Today is Friday, November 13, 2026." in json.dumps(second["input"])
     assert _cached_prefix(first, "Today is") == _cached_prefix(second, "Today is")
-
-
-def test_a_call_made_straight_to_the_adapter_gets_the_runtimes_key():
-    """A summary or a permission check calls the adapter without a Runtime;
-    with the same model, instructions and tools it is keyed as a Runtime
-    call is (``providers.shared.cache_key``), not by a second derivation."""
-    from openprogram.models.providers.shared.cache_key import prefix_cache_key
-    from openprogram.models.providers.types import Context
-
-    through_runtime = _one_call("Name this conversation.", "<session>rotate a PDF page</session>")
-    context = Context(system_prompt=through_runtime["instructions"], messages=[])
-    direct = cx._build_request_body(_CodexModel(), context, {}, [])
-    assert direct["prompt_cache_key"] == prefix_cache_key(
-        "openai-codex", "gpt-test", through_runtime["instructions"], [])

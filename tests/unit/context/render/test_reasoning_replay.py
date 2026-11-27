@@ -172,8 +172,8 @@ def test_another_model_reads_no_earlier_reasoning(tmp_db, lookup_tool, monkeypat
     for other in (
         Model(id="claude-x", name="claude-x", api="anthropic-messages", provider="anthropic",
               base_url="https://api.anthropic.com"),
-        Model(id="cache-test-2", name="cache-test-2", api="openai-codex", provider="openai-codex",
-              base_url="https://chatgpt.com/backend-api"),
+        Model(id="cache-test-2", name="cache-test-2", api="openai-responses", provider="openai",
+              base_url="https://api.openai.com/v1"),
     ):
         monkeypatch.setattr(D, "_resolve_model", lambda profile, override=None, other=other: other)
         _turn("thanks", stream, monkeypatch)

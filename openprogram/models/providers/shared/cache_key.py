@@ -5,8 +5,7 @@ no conversation of its own, but calls of one kind repeat their model,
 instructions and tools. Keyed by those, they reach the replica that cached
 that prefix instead of a random one. One derivation for every such call:
 a ``Runtime`` call (``runtime.agent.runtime.providers._provider_session_id``)
-and a call made straight to an adapter (``openai_codex._build_request_body``)
-with the same prefix get the same key.
+and a call made straight to an adapter with the same prefix get the same key.
 
 The key only routes the request and names its cache; no credential is
 chosen by it. A Runtime call also passes it as its ``session_id`` option,

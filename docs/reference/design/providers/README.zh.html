@@ -5,11 +5,11 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">方面</th><th scope="col">当前设计</th></tr></thead>
 <tbody>
-<tr><th scope="row">厂商</th><td>每个厂商一个适配目录，在 <code translate="no">openprogram/models/providers/adapters/</code> 下，由 <code translate="no">provider.json</code> 声明模型、线路 API 和登录方式。包括 Anthropic、OpenAI、Google Gemini、Amazon Bedrock、Azure OpenAI、xAI、DeepSeek、Mistral、Groq、OpenRouter、GitHub Copilot 等，以及本地的 Ollama、LM Studio、vLLM、llama.cpp。</td></tr>
+<tr><th scope="row">厂商</th><td>每个厂商一个适配目录，在 <code translate="no">openprogram/models/providers/adapters/</code> 下，由 <code translate="no">provider.json</code> 声明模型、线路 API 和登录方式。包括 Anthropic、OpenAI、Google Gemini、Amazon Bedrock、Azure OpenAI、xAI、DeepSeek、Mistral、Groq、OpenRouter 等，以及本地的 Ollama、LM Studio、vLLM、llama.cpp。</td></tr>
 <tr><th scope="row">请求</th><td>运行时交来完整的 <code translate="no">Context</code>（system、messages、tools）。适配器翻译成线路请求，并应用该厂商的提示缓存。上层不知道厂商格式。</td></tr>
 <tr><th scope="row">Key</th><td>每个 provider 一个有序的 key 和登录列表。对话固定用一个；被限流或被拒时换到下一个。</td></tr>
 <tr><th scope="row">失败</th><td>所有错误映射到同一分类，按类别重试或故障转移，受超时约束，以结构化错误到达界面。</td></tr>
-<tr><th scope="row">目录</th><td>来自 <code translate="no">provider.json</code>、订阅目录和 models.dev。思考强度和 Fast 档按厂商声明。</td></tr>
+<tr><th scope="row">目录</th><td>来自 <code translate="no">provider.json</code> 和 models.dev。思考强度和 Fast 档按厂商声明。</td></tr>
 <tr><th scope="row">管理</th><td><code translate="no">openprogram providers</code>（<code translate="no">login</code>、<code translate="no">list</code>、<code translate="no">use</code>、<code translate="no">status</code>、<code translate="no">doctor</code>、<code translate="no">accounts</code>），或 设置 → 模型服务</td></tr>
 </tbody>
 </table>
@@ -24,7 +24,6 @@
 <tr><th scope="row"><a href="requests/request-redaction.html">请求脱敏</a></th><td>发送前用占位符替换密钥和邮箱，在回复中还原</td></tr>
 <tr><th scope="row"><a href="requests/web-search.html">网页搜索</a></th><td>厂商搜索或本地 <code translate="no">web_search</code>；转录中的引用</td></tr>
 <tr><th scope="row"><a href="requests/record-replay.zh.html">录制与回放</a></th><td>脱敏 JSONL 录制，离线回放用于确定性测试</td></tr>
-<tr><th scope="row"><a href="requests/codex-transport.html">Codex 传输</a></th><td>保持 WebSocket 只发新输入；否则 zstd 压缩的 HTTP</td></tr>
 <tr><th scope="row"><a href="provider-quota.html">供应商额度</a></th><td>每个供应商的套餐窗口、余额和速率限制；30 天花费；失败原因</td></tr>
 <tr><th scope="row"><a href="../context/composition.html">上下文组成</a></th><td>上游：内容如何分层和组装（L0、L1、L2）</td></tr>
 </tbody>
@@ -40,6 +39,7 @@
 <tr><th scope="row"><a href="auth/api-key-resolution-unification.zh.html">API key 解析</a></th><td>key 从哪里来</td></tr>
 <tr><th scope="row"><a href="auth/unified-auth-storage.html">认证存储</a></th><td>自包含存储</td></tr>
 <tr><th scope="row"><a href="auth/unified-account-management.html">Provider 的 key 与故障切换</a></th><td>列表、每个对话的选择、出错时怎么办</td></tr>
+<tr><th scope="row"><a href="auth/subscription-policy.zh.html">订阅政策</a></th><td>套餐只通过厂商自己的程序使用；撤下了什么、为什么</td></tr>
 </tbody>
 </table>
 

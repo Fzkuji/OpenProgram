@@ -7,7 +7,6 @@ const {
   Menu,
   dialog,
   ipcMain: nativeIpcMain,
-  powerMonitor,
   powerSaveBlocker,
   Notification,
   session,
@@ -35,10 +34,12 @@ const { readClientHints, registerClientHints } = require("./main/web-views/webta
 const webTabPermissions = require("./main/web-views/webtab-permissions");
 const {
   DesktopUpdateService,
+  compareVersions,
   desktopUpdateFetch,
   parseUpgradeOutcome,
 } = require("./main/self-update/update-service");
-const { appImageInPlace, macInPlace, windowsInPlace } = require("./main/self-update/app-replace");
+const { readRunningBuild } = require("./main/self-update/running-build");
+const { shellSwap } = require("./main/self-update/app-replace");
 const { DesktopAttentionService } = require("./main/windows/attention-service");
 const {
   killWindowsProcessTree,
@@ -133,10 +134,12 @@ const COMMIT_RECONCILE_MAX_MS = 5_000;
 // Bounded retries for a clean (unambiguous) committed-decision write failure
 // before abandoning the commit and taking the pre-commit rollback path.
 const COMMIT_DECISION_RETRY_LIMIT = 4;
+// As VS Code does: a check ~30 s after start, then every hour, a failed one
+// included; channel.json is a tiny static file.
 const UPDATE_INITIAL_DELAY_MS = 30_000;
+const UPDATE_CHECK_INTERVAL_MS = 3600_000;
 
 let desktopUpdates = null;
-let updateTimer = null;
 
 let menuReadyVersion = null;
 
@@ -157,23 +160,15 @@ function broadcastUpdateState(state) {
   }
 }
 
-function scheduleAutomaticUpdateCheck(initial = false) {
-  if (updateTimer !== null) clearTimeout(updateTimer);
-  updateTimer = null;
-  if (!app.isPackaged || !desktopUpdates?.getState().automaticChecks) return;
-  const now = Date.now();
-  const dueAt = desktopUpdates.automaticCheckDueAt();
-  const delay = initial && dueAt === 0
-    ? UPDATE_INITIAL_DELAY_MS
-    : Math.max(1_000, dueAt - now);
-  updateTimer = setTimeout(async () => {
-    updateTimer = null;
-    try {
-      await desktopUpdates.check();
-    } finally {
-      scheduleAutomaticUpdateCheck();
-    }
-  }, Math.min(delay, 2_147_000_000));
+function startAutomaticUpdateChecks() {
+  if (!app.isPackaged) return;
+  const run = () => {
+    if (desktopUpdates?.getState().automaticChecks) void desktopUpdates.check();
+  };
+  setTimeout(() => {
+    run();
+    setInterval(run, UPDATE_CHECK_INTERVAL_MS);
+  }, UPDATE_INITIAL_DELAY_MS);
 }
 
 /** The release this App runs: a sealed version's own, otherwise the App's. */
@@ -196,18 +191,26 @@ function updateFileFilters() {
     : [{ name: "Debian Package", extensions: ["deb"] }];
 }
 
-/** A sealed version updates through its own Python, which holds the fetcher. */
-function runVersionStoreUpdate() {
+/**
+ * A sealed version updates through its own Python, which holds the fetcher:
+ * ``--prepare`` downloads, builds and tries the update and stops before the
+ * switch; without it a prepared update is switched to.
+ */
+function runVersionStoreUpdate(extraArgs = []) {
   const launch = shellContext.resolveWorker();
   const env = { ...process.env, ...webPort.workerPortEnv(WEB_PORT_CHOICE), ...launch.env };
   // The worker lists this App among the version store's users, so the last
-  // uninstaller knows whether the store is still needed.
-  if (app.isPackaged) env.OPENPROGRAM_APP_PATH = path.dirname(process.execPath);
+  // uninstaller knows whether the store is still needed; the updater also
+  // stages a newer App shell beside this App, which it names with its version.
+  if (app.isPackaged) {
+    env.OPENPROGRAM_APP_PATH = path.dirname(process.execPath);
+    env.OPENPROGRAM_SHELL_VERSION = app.getVersion();
+  }
   delete env.PYTHONHOME;
   if (!launch.env.PYTHONPATH) delete env.PYTHONPATH;
   return new Promise((resolve, reject) => {
     let output = "";
-    const child = spawn(launch.authCommand, [...launch.authArgs, "upgrade", "--json"], {
+    const child = spawn(launch.authCommand, [...launch.authArgs, "upgrade", ...extraArgs, "--json"], {
       stdio: ["ignore", "pipe", "ignore"],
       env,
       windowsHide: process.platform === "win32",
@@ -218,30 +221,17 @@ function runVersionStoreUpdate() {
   });
 }
 
-/**
- * How this App installs an update itself (main/self-update/app-replace.js),
- * or null when it can only open the installer for the user.
- */
-function desktopInPlace(appImage) {
-  const quit = () => setTimeout(() => app.quit(), 300);
-  try {
-    if (process.platform === "darwin") {
-      return macInPlace({ execPath: process.execPath, userData: app.getPath("userData"), quit });
-    }
-    if (process.platform === "win32") return windowsInPlace({ userData: app.getPath("userData"), quit });
-    if (appImage) {
-      return appImageInPlace({
-        appImage,
-        relaunch: () => setTimeout(() => {
-          app.relaunch(shellContext?.relaunchOptions?.());
-          app.exit(0);
-        }, 300),
-      });
-    }
-  } catch (error) {
-    console.error(`[desktop] updates cannot install in place: ${error.message}`);
-  }
-  return null;
+/** How a packaged App (macOS, Windows, an AppImage) swaps in the App shell the updater staged, or null. */
+function desktopShellSwap(appImage) {
+  if (!app.isPackaged || !shellContext?.runtimeRoot) return null;
+  return shellSwap({
+    runtimeRoot: shellContext.runtimeRoot,
+    execPath: process.execPath,
+    appImage,
+    appVersion: app.getVersion(),
+    isNewer: (version) => compareVersions(version, app.getVersion()) > 0,
+    quit: () => setTimeout(() => app.quit(), 300),
+  });
 }
 
 function initializeDesktopUpdates() {
@@ -262,8 +252,17 @@ function initializeDesktopUpdates() {
     windowsLine: readLine,
     versionStore,
     readCurrentVersion: versionStore ? runningReleaseVersion : null,
-    applyVersionUpdate: versionStore ? runVersionStoreUpdate : null,
-    inPlace: desktopInPlace(appImage),
+    applyVersionUpdate: versionStore ? () => runVersionStoreUpdate() : null,
+    prepareVersionUpdate: versionStore ? () => runVersionStoreUpdate(["--prepare"]) : null,
+    // After the switch the new version's own App code runs from the next start.
+    relaunchApp: () => setTimeout(() => {
+      app.relaunch(shellContext?.relaunchOptions?.());
+      app.exit(0);
+    }, 300),
+    readRunningBuild: versionStore
+      ? () => readRunningBuild(shellContext.runtimeRoot, shellContext.versionId, shellContext.shellCompat || null)
+      : null,
+    shellSwap: versionStore ? desktopShellSwap(appImage) : null,
     chooseSavePath: async (name) => {
       const result = await dialog.showSaveDialog({
         title: "Download OpenProgram Update",
@@ -281,9 +280,9 @@ function initializeDesktopUpdates() {
     },
     emit: broadcastUpdateState,
   });
-  scheduleAutomaticUpdateCheck(true);
-  desktopUpdates.prepareInBackground();
-  powerMonitor.on("resume", () => scheduleAutomaticUpdateCheck());
+  startAutomaticUpdateChecks();
+  // After a swap to a new App shell, the prepared version is switched to now.
+  void desktopUpdates.resumeAfterShellSwap().then(() => desktopUpdates.prepareInBackground());
 }
 
 function registerOwnerAuthIpc() {
@@ -302,14 +301,10 @@ function registerOwnerAuthIpc() {
 function registerUpdateIpc() {
   ipcMain.handle("updates:get-state", () => desktopUpdates?.getState() || null);
   ipcMain.handle("updates:check", async () => {
-    const state = await desktopUpdates?.check({ force: true }) || null;
-    scheduleAutomaticUpdateCheck();
-    return state;
+    return await desktopUpdates?.check() || null;
   });
   ipcMain.handle("updates:set-automatic-checks", (_event, enabled) => {
-    const state = desktopUpdates?.setAutomaticChecks(enabled) || null;
-    scheduleAutomaticUpdateCheck();
-    return state;
+    return desktopUpdates?.setAutomaticChecks(enabled) || null;
   });
   ipcMain.handle("updates:download", () => desktopUpdates?.download() || null);
   ipcMain.handle("updates:install", () => desktopUpdates?.install() || null);

@@ -46,7 +46,7 @@ def tasks_changed() -> None:
 def watch_files() -> None:
     """Signal :data:`WORK_TOPIC` when the task list or this record changes
     on disk, written by any process (the CLI, the cron tool)."""
-    from openprogram.programs.tools.jobs.cron.cron import _resolve_path
+    from openprogram.runtime.scheduler.store import _resolve_path
     from openprogram.host._platform import changes
     tasks = _resolve_path()
     changes.watch(os.path.dirname(tasks) or ".", WORK_TOPIC,
@@ -54,7 +54,7 @@ def watch_files() -> None:
 
 
 def _path() -> str:
-    from openprogram.programs.tools.jobs.cron.cron import _resolve_path
+    from openprogram.runtime.scheduler.store import _resolve_path
     return os.path.join(os.path.dirname(_resolve_path()) or ".", "task-runs.json")
 
 
@@ -98,7 +98,7 @@ def record(task_id: str, status: str, text: str = "", tip: str | None = None,
     A turn is one run however many paths report its end: with an
     ``execution_id`` already on record nothing changes and ``None`` comes back.
     """
-    from openprogram.programs.tools.jobs.cron.cron import _store_lock
+    from openprogram.runtime.scheduler.store import _store_lock
 
     path = _path()
     with _store_lock(path):
@@ -127,7 +127,7 @@ def record(task_id: str, status: str, text: str = "", tip: str | None = None,
 
 def clear_failed_checks(task_id: str) -> None:
     """A watch's check worked: the failed checks before it stop counting."""
-    from openprogram.programs.tools.jobs.cron.cron import _store_lock
+    from openprogram.runtime.scheduler.store import _store_lock
 
     path = _path()
     if not int((_read(path).get(task_id) or {}).get("failed_checks") or 0):

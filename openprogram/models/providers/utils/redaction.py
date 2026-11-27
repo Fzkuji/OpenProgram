@@ -11,6 +11,9 @@ Placeholders are numbered by first appearance in the request, so the same
 history redacts to the same text on every call and the provider's prompt
 cache keeps working. The vault lives for one provider call and only in
 memory. Off by default; the ``privacy.redact_requests`` setting turns it on.
+
+The secret shapes are ``state.secret_removal``'s, which also removes them
+for good from copies that must never hold the value.
 """
 
 from __future__ import annotations
@@ -20,29 +23,8 @@ from typing import Any, Callable
 
 from pydantic import BaseModel
 
-# High-precision shapes only: a false positive breaks the request it hides
-# (a placeholder where a hash or id was needed), so generic long strings are
-# not treated as secrets.
-_SECRET_PATTERNS: tuple[re.Pattern[str], ...] = (
-    re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]+?-----END [A-Z0-9 ]*PRIVATE KEY-----"),
-    re.compile(r"\bsk-ant-[A-Za-z0-9_\-]{20,}"),
-    re.compile(r"\bsk-(?:proj-|svcacct-)?[A-Za-z0-9_\-]{20,}"),
-    re.compile(r"\bgh[pousr]_[A-Za-z0-9]{36,}"),
-    re.compile(r"\bgithub_pat_[A-Za-z0-9_]{22,}"),
-    re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"),
-    re.compile(r"\bAIza[0-9A-Za-z_\-]{35}"),
-    re.compile(r"\bxox[abprs]-[A-Za-z0-9-]{10,}"),
-    re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}"),
-)
-# ``Bearer <token>`` and ``password=…`` style assignments: only the value
-# (group 1) is a secret.
-_SECRET_VALUE_PATTERNS: tuple[re.Pattern[str], ...] = (
-    re.compile(r"(?i)\bbearer\s+([A-Za-z0-9._~+/\-]{20,}=*)"),
-    re.compile(
-        r"(?i)\b(?:api[_-]?key|secret(?:[_-]?key)?|password|passwd|pwd|access[_-]?token"
-        r"|auth[_-]?token|client[_-]?secret)\b[\"']?\s*[:=]\s*[\"']?([^\s\"',;]{8,})"
-    ),
-)
+from openprogram.state.secret_removal import SECRET_ASSIGNMENT_PATTERNS, SECRET_PATTERNS
+
 _EMAIL = re.compile(r"(?<![\w.+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}\b")
 _PLACEHOLDER = re.compile(r"\[\[(?:SECRET|EMAIL)_\d+\]\]")
 # The longest a placeholder can be while it is still arriving across deltas.
@@ -55,29 +37,6 @@ _SKIP_FIELDS = frozenset({
     "tool_call_id", "api", "provider", "model", "mime_type", "type", "role",
     "cache_control", "redacted",
 })
-
-
-def remove_secrets(text: str, replacement: str = "[secret removed]") -> str:
-    """``text`` with every secret shape above replaced for good.
-
-    The same high-precision shapes as a request, without a vault: for
-    copies that must never hold the value (an imported transcript), where
-    nothing will ask for it back. Emails are not secrets and stay."""
-    if not text:
-        return text
-    for pattern in _SECRET_PATTERNS:
-        text = pattern.sub(replacement, text)
-    for pattern in _SECRET_VALUE_PATTERNS:
-        text = pattern.sub(lambda m: _replace_group(m, replacement), text)
-    return text
-
-
-def _replace_group(match: re.Match[str], replacement: str) -> str:
-    """The match with only its value (group 1) replaced, by position."""
-    start, end = match.span(1)
-    base = match.start(0)
-    whole = match.group(0)
-    return whole[:start - base] + replacement + whole[end - base:]
 
 
 class Vault:
@@ -101,9 +60,9 @@ class Vault:
     def redact(self, text: str) -> str:
         if not text:
             return text
-        for pattern in _SECRET_PATTERNS:
+        for pattern in SECRET_PATTERNS:
             text = pattern.sub(lambda m: self._placeholder(m.group(0), "SECRET"), text)
-        for pattern in _SECRET_VALUE_PATTERNS:
+        for pattern in SECRET_ASSIGNMENT_PATTERNS:
             text = pattern.sub(
                 lambda m: m.group(0).replace(m.group(1), self._placeholder(m.group(1), "SECRET")),
                 text,

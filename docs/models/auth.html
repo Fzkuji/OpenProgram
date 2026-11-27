@@ -11,20 +11,17 @@
 <tbody>
 <tr><th scope="row">API key</th><td><code translate="no">openprogram providers login deepseek</code>, or <code translate="no">printf %s "$KEY" | openprogram providers login deepseek --api-key-stdin</code>. <code translate="no">--api-key</code> also works but lands in shell history.</td></tr>
 <tr><th scope="row">Anthropic</th><td><code translate="no">openprogram providers login anthropic</code>, then your Anthropic API key</td></tr>
-<tr><th scope="row"><code translate="no">openai-codex</code></th><td>ChatGPT subscription, browser PKCE; or import an existing <code translate="no">codex</code> login</td></tr>
-<tr><th scope="row"><code translate="no">gemini-subscription</code></th><td>Imports <code translate="no">~/.gemini/oauth_creds.json</code>; log in with the Gemini CLI first</td></tr>
-<tr><th scope="row"><code translate="no">google-gemini-cli</code></th><td>Reads <code translate="no">~/.gemini/oauth_creds.json</code> directly, without discover</td></tr>
-<tr><th scope="row"><code translate="no">github-copilot</code></th><td>GitHub device code in the browser, or import <code translate="no">COPILOT_GITHUB_TOKEN</code>, <code translate="no">GH_TOKEN</code> or <code translate="no">GITHUB_TOKEN</code>. The short-lived Copilot token is exchanged on demand and never written to disk.</td></tr>
 </tbody>
 </table>
 <p class="note"><code translate="no">login</code> picks the method; <code translate="no">--method</code> forces one.</p>
+<h3>Subscriptions</h3>
+<p>A ChatGPT or Claude plan is used by running the vendor's own program as an outside agent: <a href="third-party-harnesses.html">Third-Party Harnesses</a>. OpenProgram never signs in to a plan itself (<a href="../reference/design/providers/auth/subscription-policy.html">why</a>).</p>
 <h3>Import from this machine</h3>
 <pre translate="no"><code>openprogram providers discover        # lists only, writes nothing
-openprogram providers adopt codex_cli # one entry; --all imports everything</code></pre>
+openprogram providers adopt qwen_cli  # one entry; --all imports everything</code></pre>
 <table class="stack">
 <thead><tr><th scope="col">Source</th><th scope="col">Location</th><th scope="col">Imported into</th></tr></thead>
 <tbody>
-<tr><th scope="row">Codex CLI</th><td><code translate="no">~/.codex/auth.json</code></td><td><code translate="no">openai-codex</code></td></tr>
 <tr><th scope="row">Qwen CLI</th><td><code translate="no">~/.qwen/oauth_creds.json</code></td><td><code translate="no">qwen</code></td></tr>
 <tr><th scope="row">gh CLI</th><td><code translate="no">~/.config/gh/hosts.yml</code></td><td><code translate="no">github</code></td></tr>
 <tr><th scope="row">Environment</th><td><code translate="no">OPENAI_API_KEY</code>, <code translate="no">ANTHROPIC_API_KEY</code> and others</td><td>The matching provider</td></tr>
@@ -53,21 +50,4 @@ openprogram providers adopt codex_cli # one entry; --all imports everything</cod
 openprogram providers keys openai add --name work
 openprogram providers keys openai move work --to 1
 openprogram providers keys openai strategy evenly</code></pre>
-<details>
-<summary>Codex sign-in</summary>
-<ul>
-<li>Program calls use the provider's list like a conversation does: the first usable sign-in, in the order <code translate="no">openprogram providers keys openai-codex list</code> shows. Signing in again with the same ChatGPT account renews its row.</li>
-<li>Terminal authentication failures and errors marked non-retryable stop after one request, keeping their category through the Program runtime. Other callback failures keep the Program's bounded recovery.</li>
-<li>The callback listener starts before the authorization page. Keep the provider panel open until it reports success.</li>
-</ul>
-<table class="stack">
-<thead><tr><th scope="col">Problem</th><th scope="col">Do</th></tr></thead>
-<tbody>
-<tr><th scope="row">Page does not open</th><td><strong>Open sign-in page</strong></td></tr>
-<tr><th scope="row">Callback cannot reach the app</th><td>Paste the callback URL into the login panel; it must belong to the current attempt</td></tr>
-<tr><th scope="row">Code expired or already used</th><td>Start a fresh sign-in</td></tr>
-<tr><th scope="row">Token exchange returns HTTP 403</th><td>OpenAI refused; account access or the network may be the cause. The panel names recognized authorization errors and shows connection retries.</td></tr>
-</tbody>
-</table>
-<p class="note">Cancelling or leaving the panel ends the attempt.</p>
-</details>
+

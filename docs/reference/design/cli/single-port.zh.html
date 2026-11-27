@@ -39,6 +39,7 @@
 <tbody>
 <tr><th scope="row"><code translate="no">apps/web/next.config.mjs</code></th><td><code translate="no">output: "export"</code>：<code translate="no">next build</code> 把 HTML、JS、CSS 写入 <code translate="no">apps/web/out/</code></td></tr>
 <tr><th scope="row">动态段</th><td>会话、skill、provider 设置路径没有页面文件；没有 <code translate="no">generateStaticParams</code> 时静态导出会拒绝它们。SPA 回退返回外壳，客户端按 <code translate="no">pathname</code> 路由。真正干活的段保留一个占位的 <code translate="no">generateStaticParams</code>。</td></tr>
+<tr><th scope="row">根地址</th><td><code translate="no">/</code> 以 307 转到 <code translate="no">/chat</code>，带上查询串；浏览器保留片段，登录用的 <code translate="no">#token=…</code> 直接随聊天页到达，不再先加载一个空页再跳转。</td></tr>
 <tr><th scope="row">API route handler</th><td>没有；这些路径由 worker 提供</td></tr>
 <tr><th scope="row">提供</th><td><code translate="no">openprogram/interfaces/server/frontend.py</code>，在 <code translate="no">create_app()</code> 中最后挂载</td></tr>
 <tr><th scope="row">构建门</th><td><code translate="no">ensure_frontend_built</code>：<code translate="no">out/index.html</code> 缺失或早于最新源码时，启动时跑一次 <code translate="no">npm run build</code>。打包版本自带 <code translate="no">out/</code>，从不调用 Node。</td></tr>

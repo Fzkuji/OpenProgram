@@ -439,7 +439,7 @@ def test_credential_remove_drops_the_row(secret_api):
 
 
 def test_check_key_stores_nothing_and_the_add_that_follows_reuses_its_check(secret_api, monkeypatch):
-    from openprogram.models.auth import manage
+    from openprogram.models.listing import manage
     from openprogram.models.listing import credentials
 
     manage._checked.clear()

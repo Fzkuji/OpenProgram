@@ -434,7 +434,7 @@ def sandbox_override_from_config(
     mode = project_defaults(session_id).get("sandbox_mode")
     if not mode:
         return None
-    from openprogram.host.sandbox import MODE_WORKSPACE_WRITE
+    from openprogram.state.sandbox_settings import MODE_WORKSPACE_WRITE
     return str(mode).strip().lower() == MODE_WORKSPACE_WRITE
 
 

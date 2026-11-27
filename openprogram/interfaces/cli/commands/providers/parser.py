@@ -30,7 +30,7 @@ def build_parser(sub: argparse._SubParsersAction) -> None:
     # login — the same as `keys <provider> add`
     p_login = auth_sub.add_parser(
         "login", help="Add a key or sign in to a provider (same as `keys PROVIDER add`)")
-    p_login.add_argument("provider", help="Provider id (e.g. openai-codex, anthropic)")
+    p_login.add_argument("provider", help="Provider id (e.g. anthropic, deepseek)")
     add_key_arguments(p_login)
 
     # list
@@ -70,7 +70,7 @@ def build_parser(sub: argparse._SubParsersAction) -> None:
     p_adopt = auth_sub.add_parser("adopt",
         help="Adopt a discovered credential into the store")
     p_adopt.add_argument("source_id", nargs="?", default=None,
-        help="Source id from `discover` output (codex_cli, qwen_cli, gh_cli). "
+        help="Source id from `discover` output (qwen_cli, gh_cli). "
              "Omit when using --all.")
     p_adopt.add_argument("--all", dest="adopt_all", action="store_true",
                          help="Adopt every sign-in discover finds; ones already added are skipped")

@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from openprogram.operations.self_update.trial import engine
-from openprogram.operations.self_update.versions.layout import Layout
+from openprogram.host._platform.runtime_layout import Layout
 
 BASE = "py3.12-216d6c812b107d3c"
 

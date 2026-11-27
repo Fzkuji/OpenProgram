@@ -21,8 +21,12 @@ function fakeBlocker() {
   };
 }
 
+// Each harness gets its own directory under one scratch directory, removed on exit.
+const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "op-attention-"));
+process.on("exit", () => fs.rmSync(scratch, { recursive: true, force: true }));
+
 function harness(overrides = {}) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "op-attention-"));
+  const dir = fs.mkdtempSync(path.join(scratch, "harness-"));
   const shown = [];
   const opened = [];
   const emitted = [];

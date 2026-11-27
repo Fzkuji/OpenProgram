@@ -303,3 +303,8 @@ test('the live phrase is the call in progress, in the present tense, and empty w
   assert.equal(livePhrase(blocks, { text: en }), '');
   assert.equal(livePhrase(blocks, { text: en, active: false, runningIds: running.runningIds }), '');
 });
+
+test('an MCP tool reads as its words, with its server before a one-word tool', () => {
+  assert.equal(summarizeToolGroup([tool('mcp__ccd_turn__update_plan', {})], { text: en }).label, 'Used update plan');
+  assert.equal(summarizeToolGroup([tool('mcp__Claude_Browser__computer', {})], { text: en }).label, 'Used Claude Browser computer');
+});

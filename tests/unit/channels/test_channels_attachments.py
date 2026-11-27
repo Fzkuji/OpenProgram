@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.state.attachments import format_marker
+from openprogram.state.attachment_markers import format_marker
 from openprogram.interfaces.channels.inbound import _attachments
 from openprogram.interfaces.channels.inbound._message import Attachment, ChannelMessage
 from openprogram.interfaces.channels.delivery._transport import SendResult

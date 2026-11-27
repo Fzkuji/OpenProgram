@@ -3,6 +3,14 @@ from __future__ import annotations
 
 ANTHROPIC_PATH = "/gateway/anthropic"
 OPENAI_PATH = "/gateway/openai/v1"
+#: Each protocol's base under ``/gateway`` (and under ``/gateway/agent/<id>``).
+PROTOCOL_PATHS = {
+    "anthropic": "/anthropic",
+    "openai-responses": "/openai/v1",
+    "openai-chat": "/openai/v1",
+    "gemini": "/gemini",
+    "ollama": "/ollama",
+}
 
 
 def worker_base_url(*, stable: bool = False) -> str:
@@ -13,7 +21,7 @@ def worker_base_url(*, stable: bool = False) -> str:
     harness's own files outlives this Worker and must name the profile's
     port, not a port a single start moved to.
     """
-    from openprogram.operations.worker.lifecycle import read_worker_port, resolve_worker_port
+    from openprogram.host.worker.process import read_worker_port, resolve_worker_port
     port = None if stable else read_worker_port()
     return f"http://127.0.0.1:{port or resolve_worker_port()}"
 

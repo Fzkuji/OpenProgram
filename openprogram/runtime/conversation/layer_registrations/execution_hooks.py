@@ -7,11 +7,11 @@ lazily, when the control plane first calls it. Importing this module also
 loads ``openprogram.runtime.jobs``, which registers the Job hooks: a
 conversation spawns and cancels Jobs.
 
-The conversation engine also registers the Goal hooks. A chat Goal runs as
-conversation turns, and the Goal tool (``openprogram.programs.tools.planning
-.goal``) loads on first use, which can be later than startup recovery; these
-hooks import it when first called, so registration never depends on when the
-tool loaded.
+The conversation engine also answers for the Programs that react when an
+execution ends or a worker restarts (a chat Goal runs as conversation
+turns): those register with the conversation's turn moments
+(``openprogram.runtime.conversation.turn_hooks``), whose lookup loads the
+Programs first, so these hooks never depend on when a Program loaded.
 """
 from __future__ import annotations
 
@@ -40,9 +40,9 @@ def _agent_activator(executions: Any, service: Any):
 
 
 def _run_ended(executions: Any, execution: Any, result: Any) -> None:
-    from openprogram.runtime.scheduler import run_finish
+    from openprogram.runtime import scheduler_link
 
-    run_finish.finish_resumed(executions, execution, result)
+    scheduler_link.run_ended(executions, execution, result)
 
 
 def _start_recovery_turn(store: Any, execution: Any, event: Any) -> str | None:
@@ -89,54 +89,57 @@ class _LiveOwnerSignals:
 
 
 def _settle_terminal(executions: Any, execution: Any) -> None:
-    import openprogram.programs.tools.planning.goal as goals
-    from openprogram.programs.tools.planning.goal import chat
+    from openprogram.runtime.conversation import turn_hooks
 
     try:
-        chat.after_terminal(executions, execution)
-    except (goals.GoalConflictError, goals.GoalStateUnavailable):
-        # The Goal's lock stayed held or its usage is not in yet. The turn is
-        # over either way, and whoever closes it (a Stop's cancelled reply,
-        # resource release) goes on. The accounting is not lost: the turn's
-        # owner retries it (``chat.settle_terminal``), and a Goal left on an
-        # ended turn is settled when it is next read (``chat.recover_unsettled``).
-        _log.info("Goal accounting of %s deferred", getattr(execution, "execution_id", ""), exc_info=True)
+        # What Programs account for the ended execution (a chat Goal's usage
+        # and next turn). A handler defers what it cannot settle now itself.
+        for settle in turn_hooks.handlers("execution_terminal"):
+            settle(executions, execution)
     finally:
         # However the run ended (finished, failed, stopped by the user, cut off): its own pages go with it.
-        from openprogram.runtime.scheduler import run_finish
+        from openprogram.runtime import scheduler_link
 
-        run_finish.close_run_tabs(str(getattr(execution, "execution_id", "") or ""))
-        # What computer use kept for the run (its code interpreter, an agent's tabs and element ids) ends too.
-        try:
-            from openprogram.programs.tools.computer_use.computer_use.tool import run_ended
-
-            run_ended(str(getattr(execution, "session_id", "") or ""),
-                      str(getattr(execution, "execution_id", "") or ""))
-        except Exception:
-            _log.warning("computer use state of %s not closed", getattr(execution, "execution_id", ""),
-                         exc_info=True)
+        session_id = str(getattr(execution, "session_id", "") or "")
+        execution_id = str(getattr(execution, "execution_id", "") or "")
+        scheduler_link.close_run_pages(execution_id)
+        # What Programs kept for the run (the screen tool's code interpreter,
+        # an agent's tabs and element ids) ends too.
+        for release in turn_hooks.handlers("execution_released"):
+            try:
+                release(session_id, execution_id)
+            except Exception:
+                _log.warning("what %s kept for execution %s was not released",
+                             getattr(release, "__qualname__", release), execution_id, exc_info=True)
 
 
 def _close_ownerless_run(executions: Any, execution: Any) -> None:
+    from openprogram.runtime import scheduler_link
     from openprogram.runtime.execution.model import ExecutionStatus
-    from openprogram.runtime.scheduler import run_finish
 
     if execution.status is not ExecutionStatus.CANCELLED:
-        run_finish.finish_resumed(executions, execution, None)
+        scheduler_link.run_ended(executions, execution, None)
 
 
 class _SessionGoals:
-    """``execution.hooks.SessionGoals`` over the Goal tool."""
+    """``execution.hooks.SessionGoals`` over the turn moments a chat Goal registers.
+
+    Without one, nothing owns a session and nothing pauses after a restart.
+    """
 
     def owner(self, store: Any, session_id: str):
-        from openprogram.programs.tools.planning.goal.ownership import goal_owner
+        from contextlib import nullcontext
 
-        return goal_owner(store, session_id)
+        from openprogram.runtime.conversation import turn_hooks
+
+        owner = turn_hooks.provider("session_owner")
+        return nullcontext(True) if owner is None else owner(store, session_id)
 
     def pause_for_restart(self, store: Any, session_id: str) -> bool:
-        from openprogram.programs.tools.planning.goal.restart import pause_for_worker_restart
+        from openprogram.runtime.conversation import turn_hooks
 
-        return pause_for_worker_restart(store, session_id)
+        pause = turn_hooks.provider("restart_pause")
+        return False if pause is None else pause(store, session_id)
 
 
 hooks.register("agent_activator", _agent_activator)

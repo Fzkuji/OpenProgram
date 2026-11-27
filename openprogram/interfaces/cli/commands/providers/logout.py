@@ -78,6 +78,6 @@ def _cmd_aliases(as_json: bool) -> int:
     print(f"{'alias':24s}  canonical")
     for alias in sorted(table):
         print(f"{alias:24s}  {table[alias]}")
-    print("\nUse either form: `openprogram providers login codex` and "
-          "`openprogram providers login openai-codex` do the same thing.")
+    print("\nUse either form: `openprogram providers login claude` and "
+          "`openprogram providers login anthropic` do the same thing.")
     return 0

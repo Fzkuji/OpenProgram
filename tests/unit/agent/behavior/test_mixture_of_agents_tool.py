@@ -20,8 +20,8 @@ def _model(provider: str, model_id: str) -> SimpleNamespace:
 FOUR_PROVIDER_REGISTRY = [
     _model("claude-code", "claude-haiku-4"),
     _model("claude-code", "claude-opus-4-8"),
-    _model("openai-codex", "gpt-5.6-terra"),
-    _model("openai-codex", "gpt-5.5"),
+    _model("openai", "gpt-5.6-terra"),
+    _model("openai", "gpt-5.5"),
     _model("opencode-go", "deepseek-v4-flash"),
     _model("opencode-go", "deepseek-v4-pro"),
     _model("deepseek", "deepseek-v4-flash"),
@@ -50,7 +50,7 @@ def test_pick_defaults_one_per_provider(monkeypatch):
     refs, agg = moa._pick_defaults()
     assert refs == [
         "claude-code:claude-opus-4-8",   # opus beats haiku
-        "openai-codex:gpt-5.6-terra",    # terra beats plain 5.5
+        "openai:gpt-5.6-terra",    # terra beats plain 5.5
         "opencode-go:deepseek-v4-pro",   # pro beats flash
     ]
     assert agg == "deepseek:deepseek-v4-flash"  # unused fourth provider
@@ -59,7 +59,7 @@ def test_pick_defaults_one_per_provider(monkeypatch):
 def test_pick_defaults_two_providers_reuses_first_as_aggregator(monkeypatch):
     _patch_registry(monkeypatch, FOUR_PROVIDER_REGISTRY[:4])
     refs, agg = moa._pick_defaults()
-    assert refs == ["claude-code:claude-opus-4-8", "openai-codex:gpt-5.6-terra"]
+    assert refs == ["claude-code:claude-opus-4-8", "openai:gpt-5.6-terra"]
     assert agg == refs[0]
 
 
@@ -76,7 +76,7 @@ def test_pick_defaults_skips_providers_without_a_credential(monkeypatch):
                     unconfigured=["claude-code"])
     refs, agg = moa._pick_defaults()
     assert refs == [
-        "openai-codex:gpt-5.6-terra",
+        "openai:gpt-5.6-terra",
         "opencode-go:deepseek-v4-pro",
         "deepseek:deepseek-v4-flash",
     ]
@@ -98,7 +98,7 @@ def test_check_fn_needs_two_providers(monkeypatch):
 def test_check_fn_counts_only_credentialed_providers(monkeypatch):
     """Four providers on paper, one credentialed — MoA has nothing to mix."""
     _patch_registry(monkeypatch, FOUR_PROVIDER_REGISTRY, unconfigured=[
-        "claude-code", "openai-codex", "opencode-go",
+        "claude-code", "openai", "opencode-go",
     ])
     assert moa._tool_check_fn() is False
 
@@ -119,7 +119,7 @@ def test_execute_uses_registry_defaults(monkeypatch):
     monkeypatch.setattr(moa, "_ask_one", _fake_ask(
         {
             "claude-code:claude-opus-4-8": ("A1", True),
-            "openai-codex:gpt-5.6-terra": ("A2", True),
+            "openai:gpt-5.6-terra": ("A2", True),
             "opencode-go:deepseek-v4-pro": ("A3", True),
         }, seen))
 
@@ -143,7 +143,7 @@ def test_execute_explicit_references_pass_through(monkeypatch):
     monkeypatch.setattr(moa, "_ask_one", _fake_ask(
         {
             "claude-code:claude-haiku-4": ("A1", True),
-            "openai-codex:gpt-5.5": ("A2", True),
+            "openai:gpt-5.5": ("A2", True),
         }, seen))
 
     async def fake_aggregate(spec, prompt, answers):
@@ -153,12 +153,12 @@ def test_execute_explicit_references_pass_through(monkeypatch):
 
     out = asyncio.run(moa.execute(
         user_prompt="q",
-        references=["claude-code:claude-haiku-4", "openai-codex:gpt-5.5",
+        references=["claude-code:claude-haiku-4", "openai:gpt-5.5",
                     "claude-code:claude-haiku-4"],  # duplicate is dropped
-        aggregator="openai-codex:gpt-5.6-terra",
+        aggregator="openai:gpt-5.6-terra",
     ))
-    assert seen == ["claude-code:claude-haiku-4", "openai-codex:gpt-5.5"]
-    assert "AGG:openai-codex:gpt-5.6-terra" in out
+    assert seen == ["claude-code:claude-haiku-4", "openai:gpt-5.5"]
+    assert "AGG:openai:gpt-5.6-terra" in out
 
 
 def test_execute_unknown_reference_lists_registry(monkeypatch):
@@ -187,7 +187,7 @@ def test_execute_single_success_skips_aggregator(monkeypatch):
     # The other two died — say so, or the caller can't tell a deliberate
     # single-model answer from a lineup that collapsed.
     assert "**Skipped**:" in out
-    assert "openai-codex:gpt-5.6-terra (boom)" in out
+    assert "openai:gpt-5.6-terra (boom)" in out
 
 
 def test_execute_all_failed_reports_registry(monkeypatch):

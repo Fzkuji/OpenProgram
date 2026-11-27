@@ -48,7 +48,7 @@
 
 <details>
 <summary>源码 checkout 中的 <code translate="no">openprogram upgrade</code></summary>
-<p>验证 Git 目标，仅在相关源文件变化时更新依赖和构建产物，probe 新 checkout，probe 成功后才重启 worker。<code translate="no">openprogram update</code>（<code translate="no">--check</code>、<code translate="no">--force</code>）是单独的遗留命令，目前会抛出 <code translate="no">ImportError</code>；更新只用 <code translate="no">upgrade</code>。</p>
+<p>验证 Git 目标，仅在相关源文件变化时更新依赖和构建产物，probe 新 checkout，probe 成功后才重启 worker。</p>
 <pre translate="no"><code>openprogram upgrade --check
 openprogram upgrade --dry-run
 openprogram upgrade</code></pre>

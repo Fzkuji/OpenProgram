@@ -15,7 +15,8 @@ from types import SimpleNamespace
 import pytest
 
 from openprogram.operations.self_update.control import held_turns, maintenance
-from openprogram.programs.tools.jobs.cron import cron, worker
+from openprogram.runtime.scheduler import store as task_store, worker
+from openprogram.runtime import maintenance as runtime_maintenance
 from openprogram.runtime.agent.turn_request import TurnRequest
 from openprogram.runtime.context.session_db import SessionDB
 from openprogram.runtime.conversation import turn_runtime
@@ -25,6 +26,7 @@ from openprogram.runtime import execution as execution_package
 from openprogram.host._platform.processes import process_start_token
 from openprogram.runtime.execution import hooks, process_owner
 from openprogram.runtime.execution.recovery import restart
+from openprogram.runtime.execution.run_control import stop_reasons
 from openprogram.runtime.execution.attempts import AttemptStore
 from openprogram.runtime.execution.recovery.checkpoints import CheckpointFragment
 from openprogram.runtime.execution.control import RuntimeControlService
@@ -51,9 +53,9 @@ def world(tmp_path, monkeypatch):
     from openprogram.runtime import interface_link
     from openprogram.runtime.conversation.always_on import runtime as always_on
 
-    monkeypatch.setattr(cron, "_resolve_path", lambda: str(tmp_path / "tasks.json"))
+    monkeypatch.setattr(task_store, "_resolve_path", lambda: str(tmp_path / "tasks.json"))
     monkeypatch.setattr(worker, "_resolve_path", lambda: str(tmp_path / "tasks.json"))
-    cron._save(str(tmp_path / "tasks.json"), [dict(TASK)])
+    task_store._save(str(tmp_path / "tasks.json"), [dict(TASK)])
     db = SessionDB(tmp_path / "sessions")
     db.create_session(SESSION, "main", source="web")
     db.append_message(SESSION, {"id": "u0", "role": "user", "content": "hi", "predecessor": None, "timestamp": 0.1})
@@ -397,8 +399,8 @@ def test_a_task_deleted_meanwhile_gets_no_record_and_no_message(world, tmp_path)
 
 
 def test_a_turn_held_for_a_version_switch_ends_only_when_its_replay_does(world, monkeypatch):
-    held = TurnResult(final_text=held_turns.HELD_MESSAGE, user_msg_id="u1", assistant_msg_id="u1_reply",
-                      error_reason=held_turns.HELD_REASON)
+    held = TurnResult(final_text=runtime_maintenance.HELD_MESSAGE, user_msg_id="u1", assistant_msg_id="u1_reply",
+                      error_reason=runtime_maintenance.HELD_REASON)
     run = _child_run(monkeypatch, world, held, COMPLETED)
     assert run.frames == [] and _kept(world) == [] and task_runs.recent("t1") == []
     monkeypatch.setattr(turn_runtime, "process_user_turn", lambda *_a, **_k: _reply("Real news: stock is back"))
@@ -972,7 +974,7 @@ AFTER = datetime.datetime(2026, 11, 9, 2, 0, tzinfo=datetime.timezone.utc)
 
 
 def _on_file(world, **changes):
-    cron._save(str(world.root / "tasks.json"), [{**ONCE, **changes}])
+    task_store._save(str(world.root / "tasks.json"), [{**ONCE, **changes}])
 
 
 def _claimed(world, entry=ONCE):
@@ -1205,7 +1207,7 @@ def test_a_scheduled_run_past_its_limit_stops_and_says_why(world, tmp_path, monk
     now = _past_limit(store, active.execution_id, time_limits.SCHEDULED_RUN_LIMIT_S)
     assert time_limits.stop_overdue(now) == [active.execution_id]
     stopping = store.get_execution(active.execution_id)
-    assert stopping.status is ExecutionStatus.CANCELLING and stopping.reason_code == time_limits.TIME_LIMIT
+    assert stopping.status is ExecutionStatus.CANCELLING and stopping.reason_code == stop_reasons.TIME_LIMIT
     event = threading.Event()
     event.set()
     driver._finish_attempt(active, _reply("half done"), event)
@@ -1262,7 +1264,7 @@ def test_a_check_in_has_the_shorter_limit(world, tmp_path, monkeypatch):
     driver, active, store = _ran_turn(tmp_path, scheduled_task=None, speaker=CHECK_IN)
     _limits_see(driver, store, monkeypatch)
     time_limits.stop_overdue(_past_limit(store, active.execution_id, time_limits.CHECK_IN_LIMIT_S))
-    assert store.get_execution(active.execution_id).reason_code == time_limits.TIME_LIMIT
+    assert store.get_execution(active.execution_id).reason_code == stop_reasons.TIME_LIMIT
 
 
 def test_a_turn_someone_is_attending_has_no_limit(world, tmp_path, monkeypatch):
@@ -1410,7 +1412,7 @@ def test_the_process_of_a_run_stops_it_at_its_limit(world, tmp_path, monkeypatch
     monkeypatch.setattr(time_limits, "_stop", stop)
     time_limits.watch(active.execution_id)
     assert expired.wait(5)
-    assert store.get_execution(active.execution_id).reason_code == time_limits.TIME_LIMIT
+    assert store.get_execution(active.execution_id).reason_code == stop_reasons.TIME_LIMIT
 
 
 def _running_command(world, monkeypatch, *, started_at, proc=None, token="t0"):
@@ -1418,7 +1420,7 @@ def _running_command(world, monkeypatch, *, started_at, proc=None, token="t0"):
     log.write_text("", encoding="utf-8")
     proc = proc or SimpleNamespace(pid=4242, poll=lambda: None)
     monkeypatch.setattr(worker, "process_start_token", lambda _pid: token)
-    monkeypatch.setattr(worker, "_resolve_path", cron._resolve_path)
+    monkeypatch.setattr(worker, "_resolve_path", task_store._resolve_path)
     with monkeypatch.context() as clock:
         clock.setattr(worker.time, "time", lambda: started_at)
         worker._remember_command({"id": "t1"}, proc, str(log))
@@ -1503,7 +1505,7 @@ def test_a_turn_that_ignores_its_stop_is_ended_without_it(world, tmp_path, monke
 
     time_limits.stop_overdue(stopped_at + time_limits.STOP_GRACE_S)
     ended = store.get_execution(active.execution_id)
-    assert ended.status is ExecutionStatus.CANCELLED and ended.reason_code == time_limits.TIME_LIMIT
+    assert ended.status is ExecutionStatus.CANCELLED and ended.reason_code == stop_reasons.TIME_LIMIT
     assert always_on._stopped_at_time_limit(active.execution_id)  # What a stuck check-in is recorded by.
     assert not conversation_control.is_turn_running(SESSION)
     assert _runs() == [(task_runs.FAILED, time_limits.SCHEDULED_RUN_STOPPED)]
@@ -1596,7 +1598,7 @@ def catch_up(tmp_path, monkeypatch):
 def _daily(path, *, stamped_at=_at(8, day=9), **changes):
     entry = {"id": "t1", "type": "recurring", "cron": "0 9 * * *", "enabled": True, "prompt": "look",
              "created_at": int(stamped_at.timestamp()), "updated_at": int(stamped_at.timestamp()), **changes}
-    cron._save(str(path), [entry])
+    task_store._save(str(path), [entry])
 
 
 def _restart_tick(now):
@@ -1638,14 +1640,14 @@ def test_a_disabled_or_edited_task_does_not_catch_up(catch_up, changes):
 
 def test_an_entry_with_no_edit_time_waits_for_its_next_firing_then_catches_up(catch_up):
     _daily(catch_up.path)
-    entries = cron._load(str(catch_up.path))
+    entries = task_store._load(str(catch_up.path))
     del entries[0]["updated_at"]
-    cron._save(str(catch_up.path), entries)
+    task_store._save(str(catch_up.path), entries)
     worker._tick({}, now=_at(10))
     assert catch_up.fired == [] and task_runs.recent("t1") == []
     worker._tick({}, now=_at(9, day=11))
     assert catch_up.fired == ["t1"]
-    assert cron._load(str(catch_up.path))[0]["updated_at"] == int(_at(9, day=11).timestamp())
+    assert task_store._load(str(catch_up.path))[0]["updated_at"] == int(_at(9, day=11).timestamp())
     worker._tick(worker._load_state(), now=_at(10, day=12))
     assert catch_up.fired == ["t1", "t1"]
 
@@ -1666,7 +1668,7 @@ def test_a_task_with_an_unreadable_time_does_not_stop_the_others(catch_up):
     stamped = int(_at(8, day=9).timestamp())
     task = {"type": "recurring", "cron": "0 9 * * *", "enabled": True, "prompt": "look",
             "created_at": stamped, "updated_at": stamped}
-    cron._save(str(catch_up.path), [{**task, "id": "bad", "created_at": 10 ** 18}, {**task, "id": "good"}])
+    task_store._save(str(catch_up.path), [{**task, "id": "bad", "created_at": 10 ** 18}, {**task, "id": "good"}])
     state = {}
     worker._tick(state, now=_at(10))
     assert catch_up.fired == ["good"]

@@ -18,6 +18,7 @@ from dataclasses import replace
 from openprogram.host.backend.base import Backend, RunResult, decode_maybe
 from openprogram.host.backend.process import run_command
 from openprogram.host import sandbox as _sandbox
+from openprogram.state import sandbox_settings
 from openprogram.host._platform.process_ownership import ProcessTreeOwner, no_window_creation_flags
 from openprogram.host._platform import command_shell
 from openprogram.host._platform.terminal import git_bash_invocation, powershell_invocation
@@ -67,7 +68,7 @@ def _invocation(command: str, cwd: str | None = None, *,
         # Configured, but resolve_shell found the sandbox cannot run here.
         reason = _sandbox.unavailable_reason()
         if (policy.network_domains is not None
-                or _sandbox.unavailable_policy() == _sandbox.UNAVAILABLE_POLICY_REFUSE):
+                or _sandbox.unavailable_policy() == sandbox_settings.UNAVAILABLE_POLICY_REFUSE):
             raise _sandbox.SandboxUnavailable(
                 f"sandbox.mode is on but the sandbox cannot run here: {reason}. "
                 "Install it, or set sandbox.unavailable_policy=warn to run without "
@@ -77,6 +78,31 @@ def _invocation(command: str, cwd: str | None = None, *,
                     "the command WITHOUT a sandbox", reason)
     args, shell, prepared_env = host_shell_invocation(command, prepare_child_env())
     return (args, shell, prepared_env, False)
+
+
+def sandbox_preferred_invocation(command: str, cwd: str, *, refusal: str | None = None,
+                                 ) -> tuple[str | list[str], bool, dict | None]:
+    """``(args, shell, env)`` that run ``command`` in ``cwd`` inside the
+    sandbox wherever the platform has one, even while the interactive
+    sandbox setting is off (``resolve_policy(required=True)``).
+
+    Where the platform has no sandbox, ``refusal`` (``{reason}`` names why)
+    refuses the command with ``SandboxUnavailable``; without one the command
+    runs outside the sandbox with the sandbox's filtered environment, so no
+    credential in ours reaches it. The memory workspace's shell runs here.
+    """
+    policy = _sandbox.resolve_policy(required=True)
+    assert policy is not None
+    reason = _sandbox.unavailable_reason()
+    if reason is None:
+        args, shell, env, _sandboxed = _invocation(command, cwd, policy=policy)
+        return args, shell, env
+    if refusal is not None:
+        raise _sandbox.SandboxUnavailable(refusal.format(reason=reason))
+    log.warning("a command that runs in the sandbox where there is one runs without it: %s", reason)
+    with _sandbox.without_policy():
+        args, shell, _env, _sandboxed = _invocation(command, cwd)
+    return args, shell, _sandbox.child_env(policy)
 
 
 def host_shell_invocation(command: str, env: dict | None = None, *,

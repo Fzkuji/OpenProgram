@@ -1,4 +1,4 @@
-"""Project entity layer + auto-commit.
+"""Project entity layer.
 
 Group ② of ``store/`` (see ``store/README.md`` and
 ``docs/design/memory/overview.md`` / ``file-management.md``). Treats the user's
@@ -10,8 +10,10 @@ Modules:
                           agent-attributed commits / Strategy A, and the
                           reset/revert-of-a-commit primitive) + the
                           projects.json registry helpers.
-  * ``project_commit``  — wires the agent's per-turn edits into the
-                          project repo at turn end (rules A/B, default-on).
+
+The turn-end commit of the agent's edits (rules A/B, default-on) is
+``openprogram.state.project_commit``: it also asks the worktrees, which sit
+above the store.
 
 ``from openprogram.state.store.project import ProjectGit, resolve_project`` etc.
 """
@@ -31,7 +33,6 @@ from .project_store import (
     ensure_footprint_ignored,
     set_location_state,
 )
-from . import project_commit
 
 __all__ = [
     "Project",
@@ -48,5 +49,4 @@ __all__ = [
     "set_location_state",
     "project_for_session",
     "ensure_footprint_ignored",
-    "project_commit",
 ]

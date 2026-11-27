@@ -151,7 +151,8 @@ export function useSessionActions(onDeleted?: () => void, forSessionId?: string 
     ) : null}
     </>
   );
-  return { sessionId, conv, title, saved, transcriptView, defaultView, actions, dialogs };
+  // The phone app asks with its own dialogs (Framework7's) and calls these.
+  return { sessionId, conv, title, saved, transcriptView, defaultView, actions, dialogs, rename, remove: del };
 }
 
 export function SessionActionsMenu({

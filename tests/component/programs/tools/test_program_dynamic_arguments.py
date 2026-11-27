@@ -1,11 +1,62 @@
 from openprogram.programs._host import runtime as program_runtime
 
-"""Public program mappings through canonical validation and real Codex transport."""
+"""Public program mappings through canonical validation and the real Responses adapter."""
 
 import importlib
 import json
+from types import SimpleNamespace
 
 import pytest
+
+
+def _fc_added(idx, call_id, name):
+    return {
+        "type": "response.output_item.added", "output_index": idx,
+        "item": {"type": "function_call", "id": f"fc_{idx}",
+                 "call_id": call_id, "name": name, "arguments": ""},
+    }
+
+
+def _fc_done(idx, call_id, name, args):
+    return {
+        "type": "response.output_item.done", "output_index": idx,
+        "item": {"type": "function_call", "id": f"fc_{idx}",
+                 "call_id": call_id, "name": name, "arguments": args},
+    }
+
+
+_COMPLETED = {
+    "type": "response.completed",
+    "response": {"status": "completed",
+                 "usage": {"input_tokens": 1, "output_tokens": 1,
+                           "total_tokens": 2}},
+}
+
+
+class _FakeResponsesClient:
+    """Stands in for the OpenAI SDK client: records each request body and
+    replays one scripted event list per request."""
+
+    def __init__(self, replies):
+        self._replies = list(replies)
+        self.contents: list[str] = []
+        self.responses = SimpleNamespace(create=self._create)
+
+    @property
+    def calls(self) -> int:
+        return len(self.contents)
+
+    async def _create(self, **params):
+        self.contents.append(json.dumps(params, default=str))
+        if not self._replies:
+            pytest.fail("Unexpected extra request")
+        events = self._replies.pop(0)
+
+        async def stream():
+            for event in events:
+                yield event
+
+        return stream()
 
 
 @pytest.mark.parametrize(
@@ -49,7 +100,7 @@ import pytest
         ),
     ],
 )
-def test_program_task_mapping_reaches_consumer_through_native_codex_tool_loop(
+def test_program_task_mapping_reaches_consumer_through_native_responses_tool_loop(
     tmp_path, monkeypatch, call_args, expected, call_tool, record_property
 ):
     from openprogram.state import paths
@@ -60,14 +111,6 @@ def test_program_task_mapping_reaches_consumer_through_native_codex_tool_loop(
     from openprogram.models.providers.types import Model
     from openprogram.state.store import SessionStore, session_scope
     from openprogram.state.worktree.context import reset_worktree, set_worktree
-    from tests.component.providers.adapters.openai_codex.test_stream_fixes import (
-        _COMPLETED,
-        _FakeHTTPClient,
-        _FakeSSEResponse,
-        _fc_added,
-        _fc_done,
-        _sse,
-    )
 
     monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path / "state")
     monkeypatch.setattr(program_runtime, "_registry", dict(program_runtime._registry))
@@ -96,56 +139,38 @@ def test_program_task_mapping_reaches_consumer_through_native_codex_tool_loop(
         return "Owned nullable mapping saved"
 
     args = json.dumps(call_args)
-    first = _FakeSSEResponse(
-        [
-            _sse(_fc_added(0, "owned-program-call", call_tool)),
-            _sse(_fc_done(0, "owned-program-call", call_tool, args)),
-            _sse(_COMPLETED),
-            "data: [DONE]",
-        ]
-    )
-    last = _FakeSSEResponse(
-        [
-            _sse(
-                {
-                    "type": "response.output_item.added",
-                    "output_index": 0,
-                    "item": {"type": "message", "id": "owned-final"},
-                }
-            ),
-            _sse(
-                {
-                    "type": "response.output_text.delta",
-                    "output_index": 0,
-                    "delta": "Owned completed",
-                }
-            ),
-            _sse(
-                {
-                    "type": "response.output_item.done",
-                    "output_index": 0,
-                    "item": {
-                        "type": "message",
-                        "id": "owned-final",
-                        "content": [{"text": "Owned completed"}],
-                    },
-                }
-            ),
-            _sse(_COMPLETED),
-            "data: [DONE]",
-        ]
-    )
-    transport = _FakeHTTPClient([first, last])
+    first = [
+        _fc_added(0, "owned-program-call", call_tool),
+        _fc_done(0, "owned-program-call", call_tool, args),
+        _COMPLETED,
+    ]
+    last = [
+        {
+            "type": "response.output_item.added",
+            "output_index": 0,
+            "item": {"type": "message", "id": "owned-final"},
+        },
+        {
+            "type": "response.output_text.delta",
+            "output_index": 0,
+            "delta": "Owned completed",
+        },
+        {
+            "type": "response.output_item.done",
+            "output_index": 0,
+            "item": {
+                "type": "message",
+                "id": "owned-final",
+                "content": [{"text": "Owned completed"}],
+            },
+        },
+        _COMPLETED,
+    ]
+    transport = _FakeResponsesClient([first, last])
     provider = importlib.import_module(
-        "openprogram.models.providers.adapters.openai_codex.openai_codex"
+        "openprogram.models.providers.adapters.openai_responses.openai_responses"
     )
-    monkeypatch.setattr(provider, "get_shared_async_client", lambda *a, **kw: transport)
-    monkeypatch.setattr(
-        provider, "build_async_client", lambda **kw: pytest.fail("Unexpected retry")
-    )
-    from openprogram.models.providers.adapters.openai_codex import catalog as codex_catalog
-
-    monkeypatch.setattr(codex_catalog, "codex_client_version", lambda: "owned-version")
+    monkeypatch.setattr(provider, "_create_client", lambda *a, **kw: transport)
     runtime = Runtime(
         call=lambda **kw: pytest.fail("Legacy provider bypass"),
         model="owned",
@@ -153,13 +178,13 @@ def test_program_task_mapping_reaches_consumer_through_native_codex_tool_loop(
         max_retries=2,
     )
     runtime.api_model = Model(
-        id="owned-codex",
+        id="owned-responses",
         name="Owned",
-        api="openai-codex",
-        provider="openai-codex",
+        api="openai-responses",
+        provider="openai",
         base_url="https://example.invalid",
     )
-    runtime._stream_fn = provider.stream_simple_openai_codex_responses
+    runtime._stream_fn = provider.stream_simple_openai_responses
     store = SessionStore(tmp_path / "sessions")
     store.create_session("owned-mapping", "Owned mapping test")
     worktoken = set_worktree(str(project))
@@ -192,8 +217,7 @@ def test_program_task_mapping_reaches_consumer_through_native_codex_tool_loop(
                 assert not output.exists()
 
         assert transport.calls == 2
-        # The adapter sends the body as encoded bytes; the second request
-        # carries the program tool's result back to the model.
+        # The second request carries the program tool's result back to the model.
         tool_outputs = [
             str(item.get("output"))
             for item in json.loads(transport.contents[1])["input"]
@@ -240,7 +264,7 @@ def test_execute_code_fixed_wire_rejects_extra_key():
 
     importlib.import_module("openprogram.programs.tools.code.execute_code")
     tool = tools_runtime.get("execute_code")
-    (wire,) = convert_responses_tools([tool], "openai-codex", "owned")
+    (wire,) = convert_responses_tools([tool], "openai-responses", "owned")
     assert wire["strict"] is True
     assert "additionalProperties" not in tool.parameters
     with pytest.raises(ValidationError, match="unexpected"):

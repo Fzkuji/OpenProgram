@@ -373,7 +373,7 @@ def _steer_taken(entry: dict[str, Any]) -> bool:
     steer = entry.get("steer")
     if not isinstance(steer, dict) or not steer.get("command_id"):
         return False
-    from openprogram.programs.tools.agents.send_message.send_message.steer import taken
+    from openprogram.runtime.conversation.peer_agents.steer import taken
     return taken(str(steer["command_id"]))
 
 
@@ -407,7 +407,7 @@ def _branch_tip(session_id: str, head_id: Optional[str]) -> Optional[str]:
     entry was queued — the sub-agent that kept it busy has extended it."""
     if not head_id:
         return None
-    from openprogram.programs.tools.agents.send_message.send_message.addressing import (
+    from openprogram.runtime.conversation.peer_agents.addressing import (
         _normalize_existing_target,
     )
     status, tip = _normalize_existing_target(session_id, head_id)
@@ -479,7 +479,7 @@ def _deliver(session_id: str, entry: dict[str, Any]) -> None:
     pre-created job id so the dispatcher's handle stays valid."""
     from openprogram.runtime.context.session_db import default_db
     from openprogram.runtime.conversation.peer_agents.sub_agent_run import run_agent_turn_async
-    from openprogram.programs.tools.agents.send_message.send_message.delivery import (
+    from openprogram.runtime.conversation.peer_agents.delivery import (
         sender_header,
         job_header,
     )

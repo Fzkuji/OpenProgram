@@ -425,5 +425,5 @@ def test_adopt_all_route_answers_a_report(client, monkeypatch):
 def test_aliases_route_returns_table(client):
     c, _ = client
     body = c.get("/api/providers/aliases").json()
-    assert body.get("codex") == "openai-codex"
+    assert body.get("gemini") == "google"
     assert body.get("claude") == "anthropic"

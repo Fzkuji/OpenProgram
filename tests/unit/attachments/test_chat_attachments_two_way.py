@@ -23,6 +23,7 @@ from pathlib import Path
 import pytest
 
 from openprogram.state import attachments as att
+from openprogram.state import attachment_markers as lexicon
 
 
 def test_attachment_index_write_does_not_require_fchmod(tmp_path, monkeypatch):
@@ -58,53 +59,53 @@ def state(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Path:
 # ---------------------------------------------------------------------------
 
 def test_marker_round_trips():
-    marker = att.format_marker("shot.png", "/tmp/a/shot.png", 20481)
+    marker = lexicon.format_marker("shot.png", "/tmp/a/shot.png", 20481)
     assert marker == '[attachment: shot.png (png, 20 KB) @json "/tmp/a/shot.png"]'
-    assert att.find_markers(f"hi\n{marker}") == [
+    assert lexicon.find_markers(f"hi\n{marker}") == [
         (marker, "shot.png", "/tmp/a/shot.png")]
 
 
 def test_marker_uses_mime_when_the_name_has_no_extension():
-    assert "(jpeg, 1 KB)" in att.format_marker("photo", "/p", 10, mime="image/jpeg")
+    assert "(jpeg, 1 KB)" in lexicon.format_marker("photo", "/p", 10, mime="image/jpeg")
 
 
 def test_marker_keeps_the_count_badge_inside_the_parens():
-    marker = att.format_marker("spec.pdf", "/p/spec.pdf", 2048, count="500 pages")
+    marker = lexicon.format_marker("spec.pdf", "/p/spec.pdf", 2048, count="500 pages")
     assert marker == ('[attachment: spec.pdf (pdf, 2 KB, 500 pages) '
                       '@json "/p/spec.pdf"]')
-    assert att.find_markers(marker)[0][2] == "/p/spec.pdf"
+    assert lexicon.find_markers(marker)[0][2] == "/p/spec.pdf"
 
 
 def test_marker_keeps_source_path_and_immutable_preview_path():
-    marker = att.format_marker(
+    marker = lexicon.format_marker(
         "spec.pdf",
         "/Users/test/spec.pdf",
         2048,
         preview_path="/state/sessions/s1/workdir/attachments/spec.pdf",
     )
-    match = att.JSON_MENTION_RE.fullmatch(marker)
+    match = lexicon.JSON_MENTION_RE.fullmatch(marker)
     assert match is not None
     assert json.loads(match.group(5)) == "/Users/test/spec.pdf"
     assert json.loads(match.group(6)) == (
         "/state/sessions/s1/workdir/attachments/spec.pdf"
     )
-    assert att.find_markers(marker)[0][2] == "/Users/test/spec.pdf"
+    assert lexicon.find_markers(marker)[0][2] == "/Users/test/spec.pdf"
 
 
 def test_marker_neutralises_brackets_in_a_filename():
     """A ']' in the name would truncate the marker and leak the tail as
     prose — the exact class of bug this lexicon exists to prevent."""
-    marker = att.format_marker("we[ird](1).png", "/p/x.png", 100)
-    assert att.find_markers(marker)[0][2] == "/p/x.png"
+    marker = lexicon.format_marker("we[ird](1).png", "/p/x.png", 100)
+    assert lexicon.find_markers(marker)[0][2] == "/p/x.png"
 
 
 def test_marker_round_trips_path_delimiters_quotes_and_trailing_space():
     path = '/Users/test/dir]name/report "final".pdf '
-    marker = att.format_marker("report (final).pdf", path, 1024)
-    assert att.find_markers(marker) == [
+    marker = lexicon.format_marker("report (final).pdf", path, 1024)
+    assert lexicon.find_markers(marker) == [
         (marker, "report _final_.pdf", path),
     ]
-    assert att.strip_markers(f"{marker}\n\nexplain").strip() == "explain"
+    assert lexicon.strip_markers(f"{marker}\n\nexplain").strip() == "explain"
     from openprogram.interfaces.server.ws_actions import chat
     assert chat._title_from_text(f"{marker}\n\nexplain") == "explain"
 
@@ -117,7 +118,7 @@ def test_marker_matches_the_regex_the_web_chip_actually_ships():
            / "apps/web/lib/chat/send/attachment-marker.ts").read_text(encoding="utf-8")
     body = re.search(r"const JSON_ATTACHED_MENTION =\s*\n\s*/(.+)/g;", src).group(1)
     ts_re = re.compile(body.replace("(?:", "(?:"))
-    marker = att.format_marker("a.png", "/tmp/a.png", 20481)
+    marker = lexicon.format_marker("a.png", "/tmp/a.png", 20481)
     m = ts_re.search(marker)
     assert m is not None
     assert m.group(1) == "a.png"
@@ -222,7 +223,7 @@ def test_image_attachment_is_written_and_gets_a_marker(state):
         "data": base64.b64encode(_PNG).decode(),
         "media_type": "image/png",
     }], "what is this")
-    marker, name, path = att.find_markers(out)[0]
+    marker, name, path = lexicon.find_markers(out)[0]
     assert name.endswith(".png")
     saved = Path(path)
     assert saved.read_bytes() == _PNG
@@ -240,7 +241,7 @@ def test_steer_attachments_are_saved_and_the_command_keeps_only_paths(state):
         {"type": "image", "data": data, "media_type": "image/png", "source_path": "/elsewhere/a.png"},
     ]}))
     assert set(payload) == {"message", "images"}
-    _marker, _name, path = att.find_markers(payload["message"])[0]
+    _marker, _name, path = lexicon.find_markers(payload["message"])[0]
     assert Path(path).read_bytes() == _PNG
     [image] = payload["images"]
     assert image["media_type"] == "image/png"
@@ -269,7 +270,7 @@ def test_document_mention_is_still_rewritten_in_place(state):
         "media_type": "text/plain",
         "filename": "notes.txt",
     }], text)
-    assert len(att.find_markers(out)) == 1
+    assert len(lexicon.find_markers(out)) == 1
     assert "2 lines" in out
 
 
@@ -277,7 +278,7 @@ def test_original_local_path_marker_is_not_duplicated(state):
     """Desktop uploads keep their source path and an immutable preview copy."""
     from openprogram.interfaces.server.ws_actions import chat
     original = "/Users/test/Research Files/notes.txt"
-    text = att.format_marker("notes.txt", original, 1024, mime="text/plain")
+    text = lexicon.format_marker("notes.txt", original, 1024, mime="text/plain")
     text = f"{text}\n\nread this"
     out = chat._persist_attachments("sess-local-path", [{
         "type": "document",
@@ -286,10 +287,10 @@ def test_original_local_path_marker_is_not_duplicated(state):
         "filename": "notes.txt",
         "source_path": original,
     }], text)
-    markers = att.find_markers(out)
+    markers = lexicon.find_markers(out)
     assert len(markers) == 1
     assert markers[0][2] == original
-    match = att.JSON_MENTION_RE.search(out)
+    match = lexicon.JSON_MENTION_RE.search(out)
     assert match is not None and match.group(6)
     preview = Path(json.loads(match.group(6)))
     assert preview.read_bytes() == b"hello\nworld\n"
@@ -311,8 +312,8 @@ def test_same_source_path_versions_keep_distinct_preview_copies(state):
             "media_type": "text/plain",
             "filename": "notes.txt",
             "source_path": original,
-        }], att.format_marker("notes.txt", original, len(body)))
-        match = att.JSON_MENTION_RE.search(out)
+        }], lexicon.format_marker("notes.txt", original, len(body)))
+        match = lexicon.JSON_MENTION_RE.search(out)
         assert match is not None and match.group(6)
         previews.append(Path(json.loads(match.group(6))))
     assert previews[0] != previews[1]
@@ -324,7 +325,7 @@ def test_duplicate_source_path_in_one_turn_updates_each_marker_once(state):
     from openprogram.interfaces.server.ws_actions import chat
 
     original = "/Users/test/notes.txt"
-    marker = att.format_marker("notes.txt", original, 1024)
+    marker = lexicon.format_marker("notes.txt", original, 1024)
     out = chat._persist_attachments("sess-duplicate-source", [{
         "type": "document",
         "data": base64.b64encode(body).decode(),
@@ -332,7 +333,7 @@ def test_duplicate_source_path_in_one_turn_updates_each_marker_once(state):
         "filename": "notes.txt",
         "source_path": original,
     } for body in (b"first copy\n", b"second copy\n")], f"{marker}\n{marker}")
-    matches = list(att.JSON_MENTION_RE.finditer(out))
+    matches = list(lexicon.JSON_MENTION_RE.finditer(out))
     assert len(matches) == 2
     previews = [Path(json.loads(match.group(6))) for match in matches]
     assert previews[0] != previews[1]
@@ -351,8 +352,8 @@ def test_preview_token_text_inside_source_path_is_not_a_preview_field(state):
         "media_type": "text/plain",
         "filename": "notes.txt",
         "source_path": original,
-    }], att.format_marker("notes.txt", original, len(body)))
-    matches = list(att.JSON_MENTION_RE.finditer(out))
+    }], lexicon.format_marker("notes.txt", original, len(body)))
+    matches = list(lexicon.JSON_MENTION_RE.finditer(out))
     assert len(matches) == 1
     assert json.loads(matches[0].group(5)) == original
     assert Path(json.loads(matches[0].group(6))).read_bytes() == body
@@ -371,7 +372,7 @@ def test_reserved_attachment_names_do_not_overwrite_internal_indexes(
         "media_type": "application/json",
         "filename": reserved,
     }], f"[attachment: {reserved} (json, 1 KB)]")
-    saved = Path(att.find_markers(out)[0][2])
+    saved = Path(lexicon.find_markers(out)[0][2])
     assert saved.name.startswith("attachment-")
     assert saved.read_bytes() == body
     index = saved.parent / ".opdedup.json"
@@ -391,7 +392,7 @@ def test_same_name_browser_documents_each_get_a_saved_path(state):
         "filename": "notes.txt",
     } for body in (b"first\n", b"second\n")]
     out = chat._persist_attachments("sess-browser-docs", incoming, text)
-    markers = att.find_markers(out)
+    markers = lexicon.find_markers(out)
     assert len(markers) == 2
     assert all(Path(marker[2]).is_file() for marker in markers)
 
@@ -405,7 +406,7 @@ def test_same_name_browser_images_each_get_a_saved_path(state):
         "filename": "photo.png",
     } for suffix in (b"a", b"b")]
     out = chat._persist_attachments("sess-browser-images", incoming, "compare")
-    markers = att.find_markers(out)
+    markers = lexicon.find_markers(out)
     assert len(markers) == 2
     assert len({marker[2] for marker in markers}) == 2
 
@@ -428,7 +429,7 @@ def test_local_and_browser_same_name_keep_both_paths(state):
         "filename": "notes.txt",
     }]
     out = chat._persist_attachments("sess-mixed-docs", incoming, text)
-    markers = att.find_markers(out)
+    markers = lexicon.find_markers(out)
     assert len(markers) == 2
     assert markers[0][2] == original
     assert Path(markers[1][2]).is_file()
@@ -492,7 +493,7 @@ def test_send_file_registers_a_file_in_the_workdir(in_session):
     assert entries == [{"path": str(chart), "name": "chart.png",
                         "size": len(_PNG)}]
     marker = sf.markers_for(entries)
-    assert att.find_markers(marker)[0][2] == str(chart)
+    assert lexicon.find_markers(marker)[0][2] == str(chart)
 
 
 def test_send_file_refuses_a_path_outside_the_roots(in_session, tmp_path):
@@ -555,7 +556,7 @@ def test_send_file_is_idempotent_within_a_turn(in_session):
     f.write_text("x")
     calls = [_call(f, _send(f)), _call(f, _send(f))]
     text = sf.with_attachments("Here.", calls, "s1")
-    assert len(att.find_markers(text)) == 1
+    assert len(lexicon.find_markers(text)) == 1
     # Text that already carries the marker does not get it twice.
     assert sf.with_attachments(text, calls, "s1") == text
 
@@ -595,7 +596,7 @@ def test_channel_uploads_the_file_and_drops_the_marker(monkeypatch):
                         calls.append((ch, target, path))
                         or _transport.SendResult.success("m1"))
     reply = ("Here is the chart.\n\n"
-             + att.format_marker("chart.png", "/w/chart.png", 2048))
+             + lexicon.format_marker("chart.png", "/w/chart.png", 2048))
     out = _conversation._deliver_outbound_files(
         "telegram", "default", "42", reply, attached_files=["/w/chart.png"])
     assert calls == [("telegram", "42", "/w/chart.png")]
@@ -611,7 +612,7 @@ def test_channel_without_file_upload_says_so_in_words(monkeypatch):
     monkeypatch.setattr(
         _transport, "post_file",
         lambda *a, **k: _transport.SendResult.fail("not_supported", "no api"))
-    reply = "Done.\n\n" + att.format_marker("chart.png", "/w/chart.png", 2048)
+    reply = "Done.\n\n" + lexicon.format_marker("chart.png", "/w/chart.png", 2048)
     out = _conversation._deliver_outbound_files(
         "wechat", "default", "u", reply, attached_files=["/w/chart.png"])
     assert "[attachment:" not in out
@@ -665,10 +666,10 @@ def test_dispatcher_appends_the_marker_to_the_reply(state, tmp_path,
         )
 
     assert result.final_text.startswith("Here is the chart.")
-    assert att.find_markers(result.final_text)[0][2] == str(chart)
+    assert lexicon.find_markers(result.final_text)[0][2] == str(chart)
     assert result.attached_files == [str(chart)]
     stored = [m for m in db.get_messages("s1") if m.get("role") == "assistant"]
-    assert att.find_markers(stored[-1]["content"])
+    assert lexicon.find_markers(stored[-1]["content"])
 
 
 def test_a_marker_the_model_typed_is_not_a_file_card(in_session, monkeypatch):
@@ -689,8 +690,8 @@ def test_a_marker_the_model_typed_is_not_a_file_card(in_session, monkeypatch):
     monkeypatch.setattr("openprogram.state.store.default_store", lambda: db)
     chart = in_session / "chart.png"
     chart.write_bytes(_PNG)
-    forged = att.format_marker("id_rsa", "/home/me/.ssh/id_rsa", 2048)
-    upload = att.format_marker("notes.txt", str(in_session / "attachments" / "notes.txt"), 10)
+    forged = lexicon.format_marker("id_rsa", "/home/me/.ssh/id_rsa", 2048)
+    upload = lexicon.format_marker("notes.txt", str(in_session / "attachments" / "notes.txt"), 10)
     reply = f"Here is the chart.\n\n{forged}"
 
     def _stub(*, req, history, on_event, cancel_event, ordered_blocks_out=None, **_extra):
@@ -716,7 +717,7 @@ def test_a_marker_the_model_typed_is_not_a_file_card(in_session, monkeypatch):
     messages = db.get_messages("s1")
     stored = [m for m in messages if m.get("role") == "assistant"][-1]
     for content in (result.final_text, live["content"], stored["content"]):
-        assert [p for _w, _n, p in att.find_markers(content)] == [str(chart)]
+        assert [p for _w, _n, p in lexicon.find_markers(content)] == [str(chart)]
         assert "/home/me/.ssh/id_rsa" not in content
         assert "id_rsa" in content
     texts = [b["text"] for b in live["blocks"] if b.get("type") == "text"]
@@ -731,11 +732,11 @@ def test_a_marker_for_a_file_the_turn_did_not_record_reads_as_its_name(in_sessio
     chart = in_session / "chart.png"
     chart.write_bytes(_PNG)
     calls = [_call(chart, _send(chart))]
-    typed = att.format_marker("chart.png", str(chart), len(_PNG))
-    forged = att.format_marker("secret.pdf", "/etc/secret.pdf", 4096)
+    typed = lexicon.format_marker("chart.png", str(chart), len(_PNG))
+    forged = lexicon.format_marker("secret.pdf", "/etc/secret.pdf", 4096)
     legacy = "[attachment: old.pdf (pdf, 1 KB) @ /tmp/old.pdf]"
     text = sf.with_attachments(f"See {typed}, {forged} and {legacy}.", calls, "s1")
-    assert [p for _w, _n, p in att.find_markers(text)] == [str(chart)]
+    assert [p for _w, _n, p in lexicon.find_markers(text)] == [str(chart)]
     assert text == f"See {typed}, secret.pdf and old.pdf."
     assert sf.with_attachments(text, calls, "s1") == text
 
@@ -749,14 +750,14 @@ def test_a_preview_path_or_an_unreadable_path_does_not_carry_a_card(in_session):
     chart = in_session / "chart.png"
     chart.write_bytes(_PNG)
     calls = [_call(chart, _send(chart))]
-    previewed = att.format_marker("chart.png", str(chart), len(_PNG), preview_path="/etc/secret.pdf")
+    previewed = lexicon.format_marker("chart.png", str(chart), len(_PNG), preview_path="/etc/secret.pdf")
     tight = '[attachment: k.pdf (pdf, 1 KB) @json"/etc/k.pdf"]'
     broken = '[attachment: b.pdf (pdf, 1 KB) @json "\\x"]'
     text = sf.with_attachments(f"A {previewed} B {tight} C {broken} D", calls, "s1")
     assert text.startswith("A chart.png B k.pdf C b.pdf D")
     assert "/etc/" not in text and '\\x' not in text
-    assert [p for _w, _n, p in att.find_markers(text)] == [str(chart)]
-    assert att.strip_markers(f"{tight} tail") == " tail"
+    assert [p for _w, _n, p in lexicon.find_markers(text)] == [str(chart)]
+    assert lexicon.strip_markers(f"{tight} tail") == " tail"
 
 
 def test_a_resumed_turn_keeps_files_sent_before_the_pause(in_session, monkeypatch):
@@ -815,7 +816,7 @@ def test_a_resumed_turn_keeps_files_sent_before_the_pause(in_session, monkeypatc
 
     result = T.execute_continuation.__wrapped__(continuation)
 
-    sent = [path for _name, _meta, path in att.find_markers(result.final_text)]
+    sent = [path for _name, _meta, path in lexicon.find_markers(result.final_text)]
     assert sent == [str(before), str(after)]
     assert stored == [result.final_text]
     assert result.attached_files == [str(before), str(after)]
@@ -854,12 +855,12 @@ def test_dragged_image_uses_saved_version_even_when_original_changes(state, tmp_
     from openprogram.interfaces.server.ws_actions import chat
     original = tmp_path / "original.png"
     original.write_bytes(_PNG)
-    message = att.format_marker(original.name, original, len(_PNG), mime="image/png")
+    message = lexicon.format_marker(original.name, original, len(_PNG), mime="image/png")
     saved_text = chat._persist_attachments("saved-image", [{
         "type": "image", "filename": original.name, "source_path": str(original),
         "media_type": "image/png", "data": base64.b64encode(_PNG).decode(),
     }], message)
-    saved_path = Path(att.find_markers(saved_text)[0][2])
+    saved_path = Path(lexicon.find_markers(saved_text)[0][2])
     assert saved_path != original
     original.write_bytes(b"changed")
     assert saved_path.read_bytes() == _PNG
@@ -874,7 +875,7 @@ def test_uploaded_document_is_referenced_without_inlining_body(state):
     }], "Read the attached document")
     assert "PRIVATE_DOCUMENT_BODY_2948" not in out
     assert "attachment-preview" not in out
-    assert Path(att.find_markers(out)[0][2]).read_bytes() == body
+    assert Path(lexicon.find_markers(out)[0][2]).read_bytes() == body
 
 
 def test_invalid_upload_fails_instead_of_sending_without_file(state):
@@ -890,7 +891,7 @@ def test_empty_document_is_saved_and_referenced(state):
     out = chat._persist_attachments("empty-upload", [{
         "type": "document", "filename": "empty.txt", "data": "",
     }], "Read the attached document")
-    assert Path(att.find_markers(out)[0][2]).read_bytes() == b""
+    assert Path(lexicon.find_markers(out)[0][2]).read_bytes() == b""
 
 
 def test_resized_image_saves_original_but_dispatches_send_version(state):
@@ -901,7 +902,7 @@ def test_resized_image_saves_original_but_dispatches_send_version(state):
                  "original_data": base64.b64encode(original).decode(),
                  "original_media_type": "image/png"}]
     out = chat._persist_attachments("resized-image", incoming, "describe")
-    assert Path(att.find_markers(out)[0][2]).read_bytes() == original
+    assert Path(lexicon.find_markers(out)[0][2]).read_bytes() == original
     dispatched = chat._attachments_for_dispatch(incoming)
     assert dispatched[0]["data"] == base64.b64encode(_PNG).decode()
     assert "original_data" not in dispatched[0]

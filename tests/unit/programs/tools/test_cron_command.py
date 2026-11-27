@@ -16,7 +16,8 @@ import os
 import pytest
 
 from openprogram.programs.tools.jobs.cron import cron as cron_tool
-from openprogram.programs.tools.jobs.cron import worker
+from openprogram.runtime.scheduler import store as task_store
+from openprogram.runtime.scheduler import worker
 
 
 @pytest.fixture
@@ -28,9 +29,9 @@ def sched(tmp_path, monkeypatch):
     monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path / "state")
     authority._reset_owner_cache_for_tests()
     monkeypatch.setattr(
-        cron_tool, "_caller_authority", authority.local_owner_authority,
+        task_store, "_caller_authority", authority.local_owner_authority,
     )
-    monkeypatch.setenv(cron_tool.DEFAULT_CRON_ENV, str(path))
+    monkeypatch.setenv(task_store.DEFAULT_CRON_ENV, str(path))
     yield path
 
 
@@ -55,7 +56,7 @@ def test_scheduler_worker_bypasses_tui_stdio_redirect(argv):
 def test_create_with_command_persists_command_field(sched):
     out = _create(cron="*/5 * * * *", command="echo hi", cwd=str(sched.parent))
     assert "Created scheduler task" in out
-    entries = cron_tool._load(str(sched))
+    entries = task_store._load(str(sched))
     assert len(entries) == 1
     entry = entries[0]
     assert entry["command"] == "echo hi"
@@ -75,9 +76,9 @@ def test_paired_channel_cannot_create_or_delete_jobs(sched, monkeypatch):
     from openprogram.runtime.permissions.authority import paired_channel_authority
 
     assert "Created scheduler task" in _create(cron="@daily", command="echo kept")
-    entry_id = cron_tool._load(str(sched))[0]["id"]
+    entry_id = task_store._load(str(sched))[0]["id"]
     monkeypatch.setattr(
-        cron_tool,
+        task_store,
         "_caller_authority",
         lambda: paired_channel_authority("telegram", "main", "u456", "B"),
     )
@@ -85,20 +86,20 @@ def test_paired_channel_cannot_create_or_delete_jobs(sched, monkeypatch):
     assert "authority" in out.lower()
     deleted = cron_tool.execute(action="delete", id=entry_id)
     assert "authority" in deleted.lower()
-    entries = cron_tool._load(str(sched))
+    entries = task_store._load(str(sched))
     assert len(entries) == 1 and entries[0]["id"] == entry_id
 
 
 def test_create_rejects_both_prompt_and_command(sched):
     out = _create(cron="@daily", prompt="be productive", command="echo hi")
     assert "exactly one of `prompt`" in out.lower()
-    assert not cron_tool._load(str(sched))
+    assert not task_store._load(str(sched))
 
 
 def test_create_rejects_neither(sched):
     out = _create(cron="@daily")
     assert "exactly one of `prompt`" in out.lower()
-    assert not cron_tool._load(str(sched))
+    assert not task_store._load(str(sched))
 
 
 def test_list_shows_shell_marker(sched):
@@ -116,7 +117,7 @@ def test_worker_spawn_uses_frozen_command_and_the_configured_sandbox(
     marker = tmp_path / "ran.txt"
     tampered = tmp_path / "tampered.txt"
     _create(cron="@hourly", command=f"echo ok > {marker}", cwd=str(tmp_path))
-    entry = cron_tool._load(str(sched))[0]
+    entry = task_store._load(str(sched))[0]
     entry["command"] = f"echo bad > {tampered}"
     captured = {}
 
@@ -139,7 +140,7 @@ def test_worker_spawn_uses_frozen_command_and_the_configured_sandbox(
 def test_worker_direct_command_really_runs(sched, tmp_path):
     marker = tmp_path / "real.txt"
     _create(cron="@hourly", command=f"printf real > {marker}", cwd=str(tmp_path))
-    entry = cron_tool._load(str(sched))[0]
+    entry = task_store._load(str(sched))[0]
     log_dir = tmp_path / "real-logs"
     proc = worker._spawn(entry, str(log_dir))
     assert proc is not None
@@ -153,7 +154,7 @@ def test_worker_direct_needs_no_sandbox_when_none_is_configured(
 ):
     marker = tmp_path / "ran"
     _create(cron="@hourly", command=f"touch {marker}", cwd=str(tmp_path))
-    entry = cron_tool._load(str(sched))[0]
+    entry = task_store._load(str(sched))[0]
     monkeypatch.setattr(worker._sandbox, "unavailable_reason", lambda: "missing")
     proc = worker._spawn(entry, str(tmp_path / "run-logs"))
     assert proc is not None
@@ -163,7 +164,7 @@ def test_worker_direct_needs_no_sandbox_when_none_is_configured(
 
 def test_worker_refuses_a_tampered_execution_spec(sched, tmp_path):
     _create(cron="@hourly", command="echo ok", cwd=str(tmp_path))
-    entry = cron_tool._load(str(sched))[0]
+    entry = task_store._load(str(sched))[0]
     entry["execution"]["command"] = "echo changed"
     assert worker._spawn(entry, str(tmp_path / "logs")) is None
     log = next((tmp_path / "logs").iterdir()).read_text(encoding="utf-8")
@@ -177,27 +178,27 @@ def _as_version_one(entry, speaker_id):
     authority = spec["job_authority"]
     authority.pop("authority_hash")
     authority["creator"]["speaker_id"] = speaker_id
-    authority["authority_hash"] = cron_tool._json_hash(authority)
+    authority["authority_hash"] = task_store._json_hash(authority)
     spec.pop("spec_hash")
     spec.pop("signature")
-    spec["spec_hash"] = cron_tool._json_hash(spec)
-    spec["signature"] = cron_tool._signature(spec, create_key=False)
+    spec["spec_hash"] = task_store._json_hash(spec)
+    spec["signature"] = task_store._signature(spec, create_key=False)
     return spec
 
 
 def test_a_task_set_from_a_chat_in_the_old_format_no_longer_runs(sched, tmp_path):
     _create(cron="@hourly", command="echo ok", cwd=str(tmp_path))
-    entry = cron_tool._load(str(sched))[0]
-    verified, error = cron_tool._verify_execution_spec(_as_version_one(entry, "7000000"))
+    entry = task_store._load(str(sched))[0]
+    verified, error = task_store._verify_execution_spec(_as_version_one(entry, "7000000"))
     assert verified is None and "set it again" in error
     assert worker._spawn(entry, str(tmp_path / "logs")) is None
-    assert "set it again" in cron_tool.read_refusals()[entry["id"]]
+    assert "set it again" in task_store.read_refusals()[entry["id"]]
 
 
 def test_a_task_the_local_owner_set_in_the_old_format_still_runs(sched, tmp_path):
     _create(cron="@hourly", command="echo ok", cwd=str(tmp_path))
-    entry = cron_tool._load(str(sched))[0]
-    verified, error = cron_tool._verify_execution_spec(_as_version_one(entry, "owner/local"))
+    entry = task_store._load(str(sched))[0]
+    verified, error = task_store._verify_execution_spec(_as_version_one(entry, "owner/local"))
     assert error is None and verified is not None
 
 
@@ -205,24 +206,24 @@ def test_a_run_refused_at_verification_says_why_on_the_task(sched, tmp_path):
     work = tmp_path / "gone"
     work.mkdir()
     _create(cron="@hourly", command="echo ok", cwd=str(work))
-    entry = cron_tool._load(str(sched))[0]
+    entry = task_store._load(str(sched))[0]
     work.rmdir()
     assert worker._spawn(entry, str(tmp_path / "logs")) is None
-    assert "cwd does not exist" in cron_tool.read_refusals()[entry["id"]]
+    assert "cwd does not exist" in task_store.read_refusals()[entry["id"]]
     work.mkdir()
     worker._spawn(entry, str(tmp_path / "logs")).wait(timeout=10)
-    assert entry["id"] not in cron_tool.read_refusals()
+    assert entry["id"] not in task_store.read_refusals()
 
 
 def test_worker_refuses_rehashed_tampering_without_owner_signature(sched, tmp_path):
     _create(cron="@hourly", command="echo ok", cwd=str(tmp_path))
-    entry = cron_tool._load(str(sched))[0]
+    entry = task_store._load(str(sched))[0]
     entry["execution"]["command"] = "echo changed"
     unsigned = {
         key: value for key, value in entry["execution"].items()
         if key not in {"spec_hash", "signature"}
     }
-    entry["execution"]["spec_hash"] = cron_tool._json_hash(unsigned)
+    entry["execution"]["spec_hash"] = task_store._json_hash(unsigned)
     assert worker._spawn(entry, str(tmp_path / "logs")) is None
     log = next((tmp_path / "logs").iterdir()).read_text(encoding="utf-8")
     assert "signature" in log.lower()
@@ -231,7 +232,7 @@ def test_worker_refuses_rehashed_tampering_without_owner_signature(sched, tmp_pa
 def test_prompt_job_rebuilds_a_noninteractive_cron_turn(sched, tmp_path,
                                                          monkeypatch):
     _create(cron="@daily", prompt="summarize", cwd=str(tmp_path))
-    spec = cron_tool._load(str(sched))[0]["execution"]
+    spec = task_store._load(str(sched))[0]["execution"]
     seen = {}
 
     class Result:
@@ -273,7 +274,7 @@ def test_prompt_job_applies_memory_permission_rules(
     from openprogram.runtime.permissions import rule as permission_rule
 
     _create(cron="@daily", prompt="update memory", cwd=str(tmp_path))
-    spec = cron_tool._load(str(sched))[0]["execution"]
+    spec = task_store._load(str(sched))[0]["execution"]
     rules = PermissionRules(**{rule_kind: ["memory_update"]})
     monkeypatch.setattr(
         permission_rule, "load_merged_rules", lambda _session_id: rules,
@@ -315,7 +316,7 @@ def test_prompt_job_uses_the_sandbox_configured_when_it_runs(
     from openprogram.host import sandbox
 
     _create(cron="@daily", prompt="summarize", cwd=str(tmp_path))
-    spec = cron_tool._load(str(sched))[0]["execution"]
+    spec = task_store._load(str(sched))[0]["execution"]
     monkeypatch.setattr(
         sandbox, "_process_policy_override", sandbox._NO_PROCESS_POLICY,
     )
@@ -343,7 +344,7 @@ def test_worker_spawn_prompt_uses_managed_prompt_entry(
     sched, tmp_path, monkeypatch,
 ):
     _create(cron="@daily", prompt="summarize", cwd=str(tmp_path))
-    entry = cron_tool._load(str(sched))[0]
+    entry = task_store._load(str(sched))[0]
     seen = {}
 
     class Result:
@@ -396,6 +397,7 @@ def chat_turn(tmp_path, monkeypatch):
     import openprogram.state.paths as paths
     from openprogram.runtime.permissions import authority
     from openprogram.runtime.execution.run_control import binding
+    from openprogram.state.authority import runtime_authority
     from openprogram.runtime.context import session_db
     from openprogram.state import store as chat_store
 
@@ -410,12 +412,12 @@ def chat_turn(tmp_path, monkeypatch):
     })
     db.append_message("chat", {
         "id": "ask_reply", "role": "assistant", "content": "", "timestamp": 1,
-        "predecessor": "ask", **authority.runtime_authority(owner, "agent/main"),
+        "predecessor": "ask", **runtime_authority(owner, "agent/main"),
     })
     db.append_message("chat", {
         "id": "delegated", "role": "user", "content": "sub-agent prompt",
         "timestamp": 2, "predecessor": "ask_reply",
-        **authority.runtime_authority(owner, "agent/main"),
+        **runtime_authority(owner, "agent/main"),
     })
     monkeypatch.setattr(session_db, "default_db", lambda: db)
     session_token = binding._current_session_id.set("chat")
@@ -430,7 +432,7 @@ def chat_turn(tmp_path, monkeypatch):
 def test_a_schedule_created_from_the_owners_chat_turn_is_the_owners(chat_turn):
     token = chat_turn._current_turn_id.set("ask_reply")
     try:
-        authority, error = cron_tool._authorize("create")
+        authority, error = task_store._authorize("create")
     finally:
         chat_turn._current_turn_id.reset(token)
     assert error is None
@@ -442,7 +444,7 @@ def test_a_sub_agent_or_always_on_turn_of_the_owner_can_schedule(chat_turn):
     """A runtime speaker holding the owner's principal is still the owner."""
     token = chat_turn._current_turn_id.set("delegated")
     try:
-        authority, error = cron_tool._authorize("create")
+        authority, error = task_store._authorize("create")
     finally:
         chat_turn._current_turn_id.reset(token)
     assert error is None

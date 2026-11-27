@@ -27,7 +27,7 @@ from collections import deque
 from dataclasses import dataclass
 from typing import Optional
 
-from openprogram.host.security.identity_header import (
+from openprogram.state.identity_header import (
     IDENTITY_HEADER_PART_MAX_CHARS,
     normalize_identity_header_part,
 )

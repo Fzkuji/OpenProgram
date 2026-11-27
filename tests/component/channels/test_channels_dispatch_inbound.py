@@ -95,7 +95,7 @@ def stub_agent_profile(monkeypatch: pytest.MonkeyPatch):
 
 
 @pytest.fixture
-def stub_routing(monkeypatch: pytest.MonkeyPatch):
+def stub_routing(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     """Pretend wechat/<account>/<peer> always routes to ``main``,
     and ``main`` is a known agent with a ``per-account-channel-peer``
     session scope (the channels default)."""
@@ -123,8 +123,7 @@ def stub_routing(monkeypatch: pytest.MonkeyPatch):
 
     # The session-init helper writes a meta.json under the agent's
     # sessions dir; redirect that to tmp so we don't pollute ~/.
-    import tempfile
-    tmp = Path(tempfile.mkdtemp())
+    tmp = tmp_path / "agents"
     monkeypatch.setattr("openprogram.runtime.agent_registry.manager.sessions_dir",
                         lambda agent_id: tmp / agent_id)
 
@@ -791,7 +790,7 @@ def test_room_list_writes_wait_for_the_cross_process_lock(
     import threading
 
     from openprogram.interfaces.channels.inbound import _room
-    from openprogram.models.auth.credentials import _private_file_lock
+    from openprogram.state.private_files import _private_file_lock
 
     state = tmp_path / "state"
     state.mkdir(mode=0o700)
@@ -817,7 +816,7 @@ def test_an_inbound_turn_uploads_only_what_it_recorded(
     from types import SimpleNamespace
 
     from openprogram.interfaces.channels.delivery._transport import SendResult
-    from openprogram.state.attachments import format_marker
+    from openprogram.state.attachment_markers import format_marker
 
     uploaded: list[str] = []
 

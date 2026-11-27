@@ -158,8 +158,8 @@ export function status(id, overrides = {}) {
 
 /** One provider in each state the cards and rows draw. */
 export const STATES = {
-  windowed: withKey(status("openai-codex", {
-    label: "OpenAI Codex", billing: "subscription", default_model: "gpt-5.5",
+  windowed: withKey(status("opencode-go", {
+    label: "OpenCode Go", billing: "subscription", default_model: "gpt-5.5",
     spend: { included: true, cost_usd: null, list_price_usd: 41.2 },
     quota: { kind: "windowed", limits: [limit(), limit({ limit_key: "week", label: "Week", used_fraction: 0.85, left_fraction: 0.15, window_minutes: 10080, resets_at: NOW + 3 * 86400 })] },
   })),
@@ -200,7 +200,7 @@ export function payload(providers = Object.values(STATES)) {
 
 export const CATALOGUE = [
   { id: "openai", label: "OpenAI", enabled: false, kind: "api", api_key_env: "OPENAI_API_KEY", base_url: "https://api.openai.com/v1" },
-  { id: "openai-codex", label: "OpenAI Codex", enabled: true, kind: "api", login_methods: ["browser"] },
+  { id: "opencode-go", label: "OpenCode Go", enabled: true, kind: "api", login_methods: ["browser"] },
   { id: "anthropic", label: "Anthropic", enabled: false, kind: "api", api_key_env: "ANTHROPIC_API_KEY", base_url: "https://api.anthropic.com" },
   { id: "deepseek", label: "DeepSeek", enabled: false, kind: "api", api_key_env: "DEEPSEEK_API_KEY", base_url: "https://api.deepseek.com" },
   { id: "groq", label: "Groq", enabled: false, kind: "api", api_key_env: "GROQ_API_KEY" },
@@ -214,7 +214,7 @@ export const DETECTED = {
   ],
   local: [{ id: "ollama", label: "Ollama", base_url: "http://127.0.0.1:11434", running: true, enabled: false }],
   popular: [
-    { id: "openai-codex", label: "OpenAI", auth: "sign_in", console_url: null, connected: false, env_var: null, variants: [{ id: "openai", label: "OpenAI API", auth: "api_key", console_url: "https://platform.example.test/keys", connected: false, env_var: "OPENAI_API_KEY" }] },
+    { id: "opencode-go", label: "OpenCode", auth: "sign_in", console_url: null, connected: false, env_var: null, variants: [{ id: "opencode", label: "OpenCode Zen", auth: "api_key", console_url: "https://platform.example.test/keys", connected: false, env_var: "OPENCODE_API_KEY" }] },
     { id: "anthropic", label: "Anthropic", auth: "api_key", console_url: "https://console.example.test/keys", connected: false, env_var: "ANTHROPIC_API_KEY", variants: [] },
     { id: "deepseek", label: "DeepSeek", auth: "api_key", console_url: "https://platform.deepseek.example.test/api_keys", connected: false, env_var: "DEEPSEEK_API_KEY", variants: [] },
   ],

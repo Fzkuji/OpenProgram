@@ -1,0 +1,11 @@
+<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <!-- OpenChamber's logo (github.com/openchamber/openchamber, MIT: packages/web/public/favicon.svg) -->
+  <g transform="translate(16, 16) scale(0.48)">
+    <path d="M0 0 L-26 -15 L-26 15 L0 30 Z" fill="#000" fill-opacity="0.25" stroke="#000" stroke-width="4" stroke-linejoin="round"/>
+    <path d="M0 0 L26 -15 L26 15 L0 30 Z" fill="#000" fill-opacity="0.4" stroke="#000" stroke-width="4" stroke-linejoin="round"/>
+    <path d="M0 -30 L-26 -15 L0 0 L26 -15 Z" fill="none" stroke="#000" stroke-width="4" stroke-linejoin="round"/>
+    <g transform="matrix(0.866, 0.5, -0.866, 0.5, 0, -15) scale(0.55)">
+      <rect x="-12" y="-14" width="24" height="28" fill="#000" fill-opacity="0.4" stroke="#000" stroke-width="8"/>
+    </g>
+  </g>
+</svg>

@@ -24,11 +24,11 @@ import time
 from typing import Any, Iterator
 
 from ..store import SelfUpdateStore, is_candidate_worker
-from ..types import ConcurrentUpdateError, UpdatePhase, UpdateRecord, is_terminal
-from ..versions import layout as paths
+from ..types import ConcurrentUpdateError, UpdatePhase, UpdateRecord, is_held, is_terminal
+from openprogram.host._platform import runtime_layout as paths
 from ..versions import pointer as pointers
 from ..versions import store as sealed
-from ..versions.layout import Layout
+from openprogram.host._platform.runtime_layout import Layout
 from .held_turns import count as count_held
 from .maintenance import enter_maintenance, leave_maintenance
 from .rollback_intent import RECOVERY_SECONDS, begin_rollback
@@ -229,13 +229,13 @@ class LiveHost:
         # The verifier is a Job in the conversation that asked for the change;
         # an official release has no such conversation, so it skips this check.
         conversational = (self.store.root / record.request.update_id / "verifier-config.json").is_file()
-        shell = self._running_shell()
+        shell = self._trial_shell()
         result = run_trial(TrialRequest(
             layout=self.layout, record=record, store=self.store, candidate=version,
             previous=pointers.read_or_recover(self.layout).version, live_state=self.state_dir,
             worktree=self.worktree(record), tests=plan_tests(self.store, record) if conversational else (),
             verifier=verify if conversational else None,
-            shell_executable=None if shell is None else Path(str(shell.get("executable"))),
+            shell_executable=shell,
         ))
         if not result.passed:
             raise Failed(f"{result.failed_check}: {result.reason}")
@@ -403,6 +403,18 @@ class LiveHost:
             return shell if isinstance(shell.get("pid"), int) and process_alive(shell["pid"]) else None
         except (OSError, ValueError, AttributeError):
             return None
+
+    def _trial_shell(self) -> Path | None:
+        """The App a candidate's desktop code is tried in: a shell staged for the next restart, else the open one."""
+        from ..official import shell as shells
+
+        staged = shells.read_staged(self.layout)
+        if staged and staged.get("executable"):
+            executable = Path(str(staged.get("path") or "")) / str(staged["executable"])
+            if executable.is_file():
+                return executable
+        shell = self._running_shell()
+        return None if shell is None else Path(str(shell.get("executable")))
 
     def shell_handshake(self, record: UpdateRecord, version: str) -> None:
         """Relaunch the open shell on the new desktop code and wait for it to load."""
@@ -750,8 +762,12 @@ class SwitchController:
         self._end(target, reason, **changes)
         self._reopen_admission()
 
-    def advance(self, until: UpdatePhase | None = None) -> None:
-        """Run until the update is terminal, or has reached ``until``."""
+    def advance(self, until: UpdatePhase | None = None, *, release_hold: bool = False) -> None:
+        """Run until the update is terminal, or has reached ``until``.
+
+        An update held ready for a restart stops in ``ready`` unless
+        ``release_hold``: only its owner's restart takes it further.
+        """
         steps = {
             UpdatePhase.PREPARING: self._preparing,
             UpdatePhase.BUILDING: self._building,
@@ -761,7 +777,9 @@ class SwitchController:
             UpdatePhase.ACTIVATING: self._activating,
             UpdatePhase.VERIFYING: self._verifying,
         }
-        while not is_terminal(phase := self._record().state.phase) and phase is not until:
+        while not is_terminal(phase := (record := self._record()).state.phase) and phase is not until:
+            if not release_hold and is_held(record):
+                return
             try:
                 steps[phase]()
             except ConcurrentUpdateError:
@@ -880,6 +898,8 @@ def record_guard_rollback(store: SelfUpdateStore, record: UpdateRecord, layout: 
 def reconcile_at_start(store: SelfUpdateStore, record: UpdateRecord | None) -> None:
     """Worker start: finish what a dead controller left, then start the next."""
     clear_finished_admission(store, paths.for_state(store.root.parent))
+    if record is not None and is_held(record):
+        return  # Prepared ahead of a restart; it waits for its owner.
     if record is not None and owns(record):
         layout = paths.for_state(store.root.parent)
         if record_guard_rollback(store, record, layout):

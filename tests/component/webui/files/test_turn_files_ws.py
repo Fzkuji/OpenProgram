@@ -671,6 +671,7 @@ def _index_text(root, rel="tracked.py"):
     ).stdout
 
 
+@pytest.mark.slow
 def test_review_stage_and_unstage_one_hunk_through_the_index(store, tmp_path, monkeypatch):
     root, target = _stage_repo(tmp_path, monkeypatch)
     scope = tf._workspace_scope("session", segment="unstaged")
@@ -716,6 +717,7 @@ def test_review_stage_and_unstage_one_hunk_through_the_index(store, tmp_path, mo
     assert _index_text(root).splitlines()[17] == "line 18"
 
 
+@pytest.mark.slow
 def test_review_stage_whole_files_and_refuses_where_staging_is_off(store, tmp_path, monkeypatch):
     root, target = _stage_repo(tmp_path, monkeypatch, "stage-file-repo")
     fresh = root / "fresh.py"

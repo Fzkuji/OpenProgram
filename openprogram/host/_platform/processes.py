@@ -5,13 +5,51 @@ import signal as _signal
 import subprocess as _subprocess
 import sys as _sys
 from openprogram.host._platform import process_ownership
-from openprogram.host._platform import terminal
 
 
 def _oem_codec() -> str:
     """Codec of the code page Windows console tools write to a pipe in."""
 
     return "oem"
+
+
+def _windows_powershell(script: str, *, timeout: float = 5.0) -> str:
+    """Run one read-only Windows CIM query and return UTF-8 output.
+
+    Kept here because modern Windows no longer ships WMIC and product
+    modules must not grow their own platform subprocesses.
+    """
+
+    import shutil
+
+    executable = shutil.which("powershell.exe") or shutil.which("pwsh.exe")
+    if executable is None:
+        return ""
+    prefix = (
+        "$ErrorActionPreference='Stop';"
+        "[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new();"
+    )
+    flags = getattr(_subprocess, "CREATE_NO_WINDOW", 0)
+    try:
+        result = _subprocess.run(
+            [
+                executable,
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                prefix + script,
+            ],
+            check=False,
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+            creationflags=flags,
+        )
+    except (OSError, _subprocess.TimeoutExpired):
+        return ""
+    return result.stdout if result.returncode == 0 else ""
 
 
 def console_text(data: bytes | str | None) -> str:
@@ -157,7 +195,7 @@ def process_command_line(pid: int) -> str:
         native = _windows_command_line(int(pid))
         if native is not None:
             return native.strip()
-        output = terminal._windows_powershell(
+        output = _windows_powershell(
             "$p=Get-CimInstance Win32_Process -Filter \"ProcessId = "
             f"{int(pid)}\";if($null -ne $p){{[Console]::Out.Write($p.CommandLine)}}"
         )

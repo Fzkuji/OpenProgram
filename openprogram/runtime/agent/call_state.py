@@ -43,6 +43,24 @@ _render_range_override: ContextVar[Optional[dict]] = ContextVar(
     '_render_range_override', default=None,
 )
 
+# The provider tool call running in this context. The agent loop and the
+# tool wrappers (``@function``, Agent methods) bind them around a call, so
+# a tool body can correlate what it emits with the block drawn for its call
+# (``task`` anchors its spawn card on the right timeline row). The raw id is
+# the provider's wire ``tool_call_id``, which a provider may reuse in a later
+# turn; the dispatcher also binds the qualified occurrence for DAG identity.
+# ``_tool_call_identity_consumed`` says a wrapper already took the identity
+# for its own node, so a nested call does not reuse it.
+_current_tool_call_id: ContextVar[Optional[str]] = ContextVar(
+    "_current_tool_call_id", default=None,
+)
+_current_tool_call_occurrence_id: ContextVar[Optional[str]] = ContextVar(
+    "_current_tool_call_occurrence_id", default=None,
+)
+_tool_call_identity_consumed: ContextVar[bool] = ContextVar(
+    "_tool_call_identity_consumed", default=False,
+)
+
 # Self-recursion safety net. The primary guard against an agentic
 # function re-entering itself (paper_agent calling paper_agent →
 # unbounded nesting) is the situational prompt injected in
@@ -143,33 +161,18 @@ def current_call_id() -> str:
 
 
 def current_tool_call_id() -> str:
-    """Provider tool-call id currently executing in this context, if any."""
-    try:
-        from openprogram.programs._host.runtime import current_tool_call_id as _current
-
-        return _current() or ""
-    except Exception:
-        return ""
+    """Provider tool-call id currently executing in this context, or ""."""
+    return _current_tool_call_id.get() or ""
 
 
 def current_tool_call_occurrence_id() -> str:
-    """Qualified provider tool-call occurrence currently executing."""
-    try:
-        from openprogram.programs._host.runtime import current_tool_call_occurrence_id as _current
-
-        return _current() or ""
-    except Exception:
-        return ""
+    """Qualified provider tool-call occurrence currently executing, or ""."""
+    return _current_tool_call_occurrence_id.get() or ""
 
 
 def tool_call_identity_consumed() -> bool:
     """Whether the current provider identity was consumed by a wrapper."""
-    try:
-        from openprogram.programs._host.runtime import tool_call_identity_consumed as _consumed
-
-        return bool(_consumed())
-    except Exception:
-        return False
+    return bool(_tool_call_identity_consumed.get())
 
 
 def tool_node_id(parent_id: str, tool_call_identity: str) -> str:
@@ -416,7 +419,7 @@ def _update_function_call_exit(
     # ToolReturn and AgentToolResult encode failure without raising. Respect
     # that explicit protocol in both sync and async function DAG records.
     from openprogram.models.providers.types import AgentToolResult
-    from openprogram.programs._host.execution import ToolReturn
+    from openprogram.runtime.agent.tool_execution import ToolReturn
     if status == "completed" and isinstance(output, (ToolReturn, AgentToolResult)) and output.is_error:
         status = "error"
         if isinstance(output, ToolReturn):

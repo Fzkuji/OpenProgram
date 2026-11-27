@@ -29,11 +29,13 @@ picks packages), ``front`` (giving the front back to the application the user is
 - **`file_manager.py`** — Showing a file in the file manager of the computer the worker runs on
 - **`filesystem.py`** — Platform filesystem
 - **`front.py`** — What the user has in front stays in front while an agent operates something else
+- **`host_facts.py`** — What the layers above tell the platform layer
 - **`locking.py`** — Advisory file locking with the POSIX ``fcntl.flock`` surface on every platform
 - **`power.py`** — Optional idle-system-sleep assertion for active agent execution
 - **`process_exits.py`** — Learning that a process ended the moment it ends
 - **`process_ownership.py`** — Platform process ownership
 - **`processes.py`** — Platform processes
+- **`runtime_layout.py`** — Where everything lives under ``<state>/runtime``, and whether we run from it
 - **`screen_capture_audio.py`** — Audio-only ScreenCaptureKit streams on macOS, and the WAV their samples become
 - **`screen_windows.py`** — The windows on screen, front to back, with their frames: what a screenshot snaps to
 - **`system_sound.py`** — The computer's sound, recorded in the worker and cut into chunks

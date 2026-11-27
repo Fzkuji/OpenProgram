@@ -45,6 +45,7 @@ import { HoverTip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { isPhoneViewport, PHONE_QUERY, usePhoneViewport } from "@/lib/layout/phone";
 import { ChevronLeft } from "lucide-react";
+import { PageTitleContext, PhoneRouteContext } from "@/lib/layout/phone-route";
 
 import styles from "./secondary-rail.module.css";
 
@@ -83,6 +84,20 @@ function publish(railKey: string, open: boolean, persist: boolean) {
     try { localStorage.setItem(storageKey(railKey), open ? "1" : "0"); } catch { /* the page still updates */ }
   }
   subscribers.get(railKey)?.forEach((subscriber) => subscriber(open));
+}
+
+/** The address a phone's list page was on when a row was chosen: when the
+ *  row moved to another address, going back to the list is going back in
+ *  history. */
+let chosenFrom: string | null = null;
+export function railChosenFrom(): string | null {
+  return chosenFrom;
+}
+
+/** Every rail back on its list: the phone app does this when its history
+ *  goes back, since a list's content page came from its list. */
+export function reopenRails(): void {
+  for (const [railKey, open] of openByKey) if (!open) publish(railKey, true, false);
 }
 
 /** Whether the rail named `railKey` is open, and a toggle for it. */
@@ -125,6 +140,18 @@ export function RailToggle({
   const [open, toggle] = useRailOpen(railKey);
   const phone = usePhoneViewport();
   const name = open ? label.collapse : label.expand;
+  const route = useContext(PhoneRouteContext);
+  const title = useContext(PageTitleContext);
+  const content = phone && !open;
+  // In the phone app the app's own Back goes to the list, named after it.
+  useEffect(() => {
+    if (!route || !content) return;
+    route({ label: title ?? "", open: toggle });
+    return () => route(null);
+    // `toggle` reads the shared state, so the first one stays right.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route, content, title]);
+  if (route) return content ? <span data-phone-route-content hidden /> : null;
   // A phone's list page has nothing to collapse: the header keeps only the
   // sidebar drawer's button. Its content page has only this back arrow.
   if (phone && open) return null;
@@ -303,7 +330,9 @@ export function RailItem({
   const railKey = useContext(RailKeyContext);
   // On a phone's list page, choosing a row turns to its content page.
   const choose = () => {
-    if (railKey && isPhoneViewport()) publish(railKey, false, false);
+    if (!railKey || !isPhoneViewport()) return;
+    chosenFrom = window.location.pathname + window.location.search;
+    publish(railKey, false, false);
   };
   const classes = cn(
     styles.item,

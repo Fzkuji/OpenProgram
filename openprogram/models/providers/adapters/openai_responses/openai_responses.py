@@ -1,7 +1,7 @@
 """
 OpenAI Responses API provider.
 
-Handles reasoning, prompt caching, service tiers, and GitHub Copilot integration.
+Handles reasoning, prompt caching and service tiers.
 
 Mirrors openai-responses.ts
 """
@@ -12,7 +12,6 @@ import asyncio
 import os
 from typing import TYPE_CHECKING, Any
 
-from openprogram.models.providers.shared.github_copilot_headers import build_copilot_dynamic_headers, has_copilot_vision_input
 from openprogram.models.providers.shared.openai_responses import (
     convert_responses_messages,
     convert_responses_tools,
@@ -26,7 +25,7 @@ if TYPE_CHECKING:
     from openprogram.models.providers.types import Context, Model, SimpleStreamOptions
 
 #: Providers that refuse a function tool named like their built-in search.
-_ONE_TOOL_PER_NAME = frozenset({"xai", "xai-subscription"})
+_ONE_TOOL_PER_NAME = frozenset({"xai"})
 
 
 def stream_openai_responses(
@@ -51,13 +50,12 @@ def stream_openai_responses(
         from openprogram.models.providers.types import AssistantMessage
 
         # AssistantMessage object, NOT a dict — process_responses_stream
-        # (and every consumer downstream) uses attribute access; the codex
-        # provider is the reference shape.
+        # (and every consumer downstream) uses attribute access.
         output = AssistantMessage.empty(model)
 
         try:
             # The credential chosen by the credential layer every adapter is
-            # wrapped in (``models/auth/selection.py``).
+            # wrapped in (``models/providers/streaming/credential_failover.py``).
             _conn = opts.get("credential")
             api_key = opts.get("api_key") or ""
             conn_base_url = _conn.base_url if _conn and _conn.base_url else None
@@ -82,7 +80,7 @@ def stream_openai_responses(
 
             openai_stream = await client.responses.create(**params)
             # Per-minute headroom (``x-ratelimit-*``) the reply carries.
-            from openprogram.models.usage.quota import observe_headers
+            from openprogram.models.providers.usage_port import observe_headers
             observe_headers(
                 model.provider, api_key,
                 getattr(getattr(openai_stream, "response", None), "headers", None),
@@ -125,7 +123,7 @@ def stream_openai_responses(
             # stream end. Previously this provider pushed an "error"
             # event then ended cleanly, which made agent_loop see
             # the stream as successful and auto-retry forever (same
-            # bug openai-codex had — see its provider for context).
+            # bug every Responses adapter once had).
             ev_stream.fail(exc)
 
     # Owned by the stream: closing it (a steer, a stop, the idle bound)
@@ -187,30 +185,16 @@ def _create_client(
         **(conn_headers or {}),
     }
 
-    # GitHub Copilot needs dynamic headers
-    messages = context.messages
-    has_images = has_copilot_vision_input(messages)
-    copilot_headers = build_copilot_dynamic_headers(messages, has_images)
-
     # The credential's own base_url wins (e.g. an Aliyun Bailian api-key
     # carries its own endpoint) — else the catalog default.
     base_url = conn_base_url or getattr(model, "base_url", None) or ""
     from ...shared.opencode_headers import opencode_headers
     headers.update(opencode_headers(model.provider, base_url, session_id))
-    if getattr(model, "provider", None) == "xai-subscription":
-        from openprogram.models.providers.adapters.xai_subscription.headers import (
-            CLI_CHAT_PROXY_BASE_URL,
-            grok_cli_headers,
-        )
-        base_url = CLI_CHAT_PROXY_BASE_URL
-        headers.update(grok_cli_headers(model.id))
-    if "copilot" in base_url.lower() or "githubcopilot" in base_url.lower():
-        headers.update(copilot_headers)
     if idempotency_key:
         headers["Idempotency-Key"] = idempotency_key
 
     # The SDK's own retries are off: the credential layer
-    # (``models/auth/selection.py``) and the stream's re-send see every
+    # (``models/providers/streaming/credential_failover.py``) and the stream's re-send see every
     # failure once.
     sdk_max_retries = 0
 
@@ -332,8 +316,7 @@ def _build_params(
         # model always asks for it back encrypted, whatever the effort (as
         # Codex does); otherwise the next tool round loses it. ``include``
         # is a top-level field and never enters the input prefix.
-        if getattr(model, "provider", None) != "xai-subscription":
-            params["include"] = ["reasoning.encrypted_content"]
+        params["include"] = ["reasoning.encrypted_content"]
 
     return params
 

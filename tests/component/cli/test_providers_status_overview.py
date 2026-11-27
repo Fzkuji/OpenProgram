@@ -135,7 +135,7 @@ def test_status_without_a_provider_is_the_overview(monkeypatch, capsys):
         calls.append(refresh)
         return PAYLOAD
 
-    import openprogram.models.usage.provider_status as provider_status
+    import openprogram.models.listing.provider_status as provider_status
     monkeypatch.setattr(provider_status, "build_status", build_status)
     monkeypatch.setattr(quota_status, "worker_status", lambda refresh: None)
     from openprogram.interfaces.cli.commands.providers import dispatch
@@ -154,7 +154,7 @@ def test_a_running_worker_answers_so_the_cli_prints_what_the_page_shows(monkeypa
     """A key's use count and last use live in the Worker's memory: with a
     Worker up, the CLI prints its payload instead of building one that
     reads them as never used."""
-    import openprogram.models.usage.provider_status as provider_status
+    import openprogram.models.listing.provider_status as provider_status
     from openprogram.host.security import backend_endpoint
     from openprogram.interfaces.cli.commands.providers import dispatch
 

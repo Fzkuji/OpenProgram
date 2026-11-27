@@ -36,7 +36,9 @@ assert.equal(set, browser);
     get: async () => jar,
     remove: async (url, name) => { removed.push(`${url} ${name}`); },
   } };
-  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "webtab-ua-")), "webtab-user-agent.json");
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "webtab-ua-"));
+  process.on("exit", () => fs.rmSync(directory, { recursive: true, force: true }));
+  const file = path.join(directory, "webtab-user-agent.json");
   assert.equal(await forgetClearanceOnChange(cookieSession, file, browser), 3, "first run clears");
   assert.deepEqual(removed, [
     "https://vps.hosting/ cf_clearance", "https://vps.hosting/ cf_chl_rc_ni", "https://example.com/ __cf_bm",

@@ -56,6 +56,7 @@ from pathlib import Path
 from urllib.parse import unquote
 
 from openprogram.programs._host.runtime import ToolReturn, function
+from openprogram.runtime.conversation import turn_hooks as _turn_hooks
 
 
 _DESCRIPTION = (
@@ -123,7 +124,7 @@ def attached_paths(tool_calls: list[dict] | None, session_id: str | None) -> lis
 
 def markers_for(entries: list[dict]) -> str:
     """The entries as attachment markers, one per line ("" when empty)."""
-    from openprogram.state.attachments import format_marker
+    from openprogram.state.attachment_markers import format_marker
     return "\n".join(
         format_marker(e["name"], e["path"], int(e.get("size") or 0))
         for e in entries
@@ -139,7 +140,7 @@ def with_attachments(final_text: str, tool_calls: list[dict] | None,
     ones in ``final_text`` whose file the turn did not record become the
     file's name as plain text: what turns into a file card (and opens in
     the preview) is what the turn recorded, nothing the reply says."""
-    from openprogram.state.attachments import find_markers, markers_as_names
+    from openprogram.state.attachment_markers import find_markers, markers_as_names
     recorded = [*outbound_files(tool_calls, session_id), *(produced or [])]
     final_text = markers_as_names(final_text or "", [e["path"] for e in recorded])
     sent = {path for _name, _meta, path in find_markers(final_text)}
@@ -175,10 +176,10 @@ def turn_attachments(final_text: str, tool_calls: list[dict] | None, req,
 
 def _may_attach_produced(req) -> bool:
     try:
-        from openprogram.programs import _unsafe_in_for
+        from openprogram.programs._host.runtime import unsafe_in_for
         from openprogram.state.authority import has_capability
         source = getattr(req, "source", None)
-        if source and source in _unsafe_in_for("send_file"):
+        if source and source in unsafe_in_for("send_file"):
             return False
         return has_capability(req, "fs.read")
     except Exception:
@@ -266,7 +267,7 @@ def _clean(raw: str, *, link: bool = False) -> str | None:
 
 def _reply_candidates(text: str) -> list[str]:
     """Paths named in the reply: link targets, code spans, bare tokens."""
-    from openprogram.state.attachments import strip_markers
+    from openprogram.state.attachment_markers import strip_markers
     text = strip_markers(text or "")
     found: list[str] = []
     found += [c for m in _LINK_RE.finditer(text) if (c := _clean(m.group(1), link=True))]
@@ -508,6 +509,16 @@ def _sendable_summary(session_id: str | None, roots: list) -> str:
         parts.append(f"{len(others)} other folder{'s' if len(others) != 1 else ''} "
                      "(other projects' chats folders)")
     return "Allowed: " + "; ".join(parts) + "."
+
+
+def _reply_attachments(final_text: str, tool_calls: list[dict] | None, req,
+                       started_at: float | None) -> tuple[str, list[str]]:
+    return turn_attachments(final_text, tool_calls, req, started_at)
+
+
+# Both turn-end sites of the conversation runtime ask the ``reply_attachments``
+# turn moment for the reply's files; the runtime never imports this tool.
+_turn_hooks.register("reply_attachments", "send_file", _reply_attachments)
 
 
 # ponytail: no caption parameter. The reply text is delivered next to

@@ -4,7 +4,7 @@ import subprocess
 
 from openprogram.host._platform.process_ownership import no_window_creation_flags
 from openprogram.state.worktree.manager import _run_git
-from openprogram.programs.tools.system.self_update import _git
+from openprogram.operations.self_update.candidate_source import git as _git
 
 
 def test_worktree_and_update_git_preserve_unicode_paths(tmp_path, monkeypatch):

@@ -333,7 +333,8 @@ def _compute_breakdown(
     # runtime 的 provider 没走采集路径）就回退到会话当前 toolset，
     # 这样 /context 对所有 provider 都能显示 tools/per-tool。
     try:
-        from openprogram.programs import agent_tools as _agent_tools
+        from openprogram.runtime import program_host
+        _agent_tools = program_host.host().agent_tools
         if has_tool_snapshot:
             tools = []
         elif latest_tools:
@@ -433,14 +434,15 @@ def _classify(
     # 系统提示里每个 skill 只占「name: 一行描述」的索引条目（skill
     # 正文按需加载、不常驻），所以算 name + description 首行，而非 body 全文。
     try:
-        from openprogram.extensions.skills import loader as _sl
+        from openprogram.runtime import extension_link
+        _sl = extension_link.skills()
         sk_items = []
         skill_match = re.search(
             r"<available_skills>[\s\S]*?</available_skills>",
             latest_system,
         )
         skill_block = skill_match.group(0) if skill_match else ""
-        for s in (_sl.list_skills() if skill_block else []):
+        for s in (_sl.list_skills() if skill_block and _sl is not None else []):
             name = getattr(s, "name", "") or ""
             if name not in skill_block:
                 continue
@@ -586,8 +588,8 @@ def _draft_breakdown(agent_id: str, provider: str, model: str, channel: str) -> 
     from openprogram.runtime.context.prompt_assembly.components import build_system_prompt
 
     try:
-        from openprogram.programs import agent_tools
-        tools = agent_tools(toolset="full")
+        from openprogram.runtime import program_host
+        tools = program_host.host().agent_tools(toolset="full")
     except Exception:
         tools = []
     profile = load_agent_profile(agent_id or "main")
@@ -687,9 +689,9 @@ def _describe_tools(rows: list, mcp_rows: list, tools: list) -> None:
                if r.get("name") and r.get("name") not in by_name]
     if missing:
         try:
-            from openprogram.programs import agent_tools
+            from openprogram.runtime import program_host
             by_name.update({getattr(t, "name", ""): t
-                            for t in agent_tools(names=list(dict.fromkeys(missing)))})
+                            for t in program_host.host().agent_tools(names=list(dict.fromkeys(missing)))})
         except Exception:
             _log.debug("tool descriptions unavailable", exc_info=True)
     for row in [*rows, *mcp_rows]:

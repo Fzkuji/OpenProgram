@@ -67,7 +67,7 @@
 <p class="note">Rejected: tox, nox, arbitrary global coverage thresholds. Web source checks in <code translate="no">apps/web/scripts/check-*.mjs</code> stay only when source structure itself is contractual.</p>
 
 <h2 id="full-run">Full run</h2>
-<p>Routine changes run <code translate="no">scripts/testing/affected_tests.py</code> only. The full suite is the jobs below, in the <code translate="no">CI</code> workflow, started by hand before a release.</p>
+<p>Routine changes run <code translate="no">scripts/testing/affected_tests.py</code> only, without the tests marked <code translate="no">slow</code> (a real bundle, a cross-compile, many seconds of real processes) unless their own file changed; <code translate="no">--slow</code> adds them. The full suite, slow tests included, is the jobs below, in the <code translate="no">CI</code> workflow, started by hand before a release.</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Job</th><th scope="col">Runs</th></tr></thead>
 <tbody>

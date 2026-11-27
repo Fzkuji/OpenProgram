@@ -106,15 +106,15 @@ def _waiting(session_id: str, rows: list[dict[str, Any]], oldest: float) -> list
 def items(now: float | None = None) -> list[dict[str, Any]]:
     """Every report still waiting for the user, newest first."""
     from openprogram.runtime.agent_registry import manager
+    from openprogram.runtime import scheduler_link
     from openprogram.runtime.conversation.always_on.runtime import owner_conversation
-    from openprogram.runtime.scheduler import service as scheduler
 
     now = time.time() if now is None else now
     oldest = now - MAX_AGE_DAYS * 86400
     found: list[dict[str, Any]] = []
     done: set[str] = set()
     try:
-        tasks = {str(task.get("id")): task for task in scheduler.list_tasks()}
+        tasks = {str(task.get("id")): task for task in scheduler_link.scheduled_tasks()}
     except Exception:
         _log.warning("scheduled tasks not read for the inbox", exc_info=True)
         tasks = {}

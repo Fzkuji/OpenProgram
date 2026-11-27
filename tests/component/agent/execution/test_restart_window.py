@@ -197,7 +197,7 @@ def test_job_restart_reacquires_resources_and_completes(
     h = real_agent_chat
     monkeypatch.setattr("openprogram.runtime.execution.store.default_store", lambda: h.store)
     monkeypatch.setattr("openprogram.state.paths.get_run_state_path", lambda: h.store.path)
-    monkeypatch.setattr("openprogram.operations.worker.lock.is_held_by", lambda _pid: True)
+    monkeypatch.setattr("openprogram.host.worker.lock.is_held_by", lambda _pid: True)
     import openprogram.models.providers.catalog.api_registry as api_registry
 
     monkeypatch.setattr(h.model, "api", "openai-completions")

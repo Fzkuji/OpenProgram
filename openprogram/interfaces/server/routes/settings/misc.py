@@ -68,7 +68,7 @@ def _product_version() -> str:
 
 def _runtime_version() -> str | None:
     """The sealed version this worker runs from, when it runs from one."""
-    from openprogram.operations.self_update.versions.layout import current_runtime
+    from openprogram.host._platform.runtime_layout import current_runtime
 
     runtime = current_runtime()
     return runtime.version if runtime is not None else None

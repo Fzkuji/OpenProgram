@@ -34,7 +34,7 @@ def image_case(tmp_path, monkeypatch):
         writable_roots=(str(tmp_path),), deny_read=(), deny_write=(), network=False,
     ))
     monkeypatch.delenv("FAL_KEY", raising=False)
-    monkeypatch.setattr("openprogram.models.providers.settings.env_api_keys.resolve_provider_key", lambda _: None)
+    monkeypatch.setattr("openprogram.models.auth.env_api_keys.resolve_provider_key", lambda _: None)
     path = tmp_path / "owned.png"
     path.write_bytes(PNG)
     return path
@@ -63,7 +63,7 @@ def test_unknown_image_provider_is_typed_failure(name, image_case):
 
 
 def enable_openai(monkeypatch):
-    monkeypatch.setattr("openprogram.models.providers.settings.env_api_keys.resolve_provider_key", lambda p: "controlled-test-key" if p == "openai" else None)
+    monkeypatch.setattr("openprogram.models.auth.env_api_keys.resolve_provider_key", lambda p: "controlled-test-key" if p == "openai" else None)
 
 
 def test_vision_success_reads_owned_image_and_preserves_error_like_answer(image_case, monkeypatch):

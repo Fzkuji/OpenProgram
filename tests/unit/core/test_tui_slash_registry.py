@@ -29,8 +29,8 @@ def clean_registry(monkeypatch):
     ~/.openprogram/commands and project commands dirs."""
     monkeypatch.setattr(_reg, "load_user", lambda: [])
     monkeypatch.setattr(_reg, "load_project", lambda cwd=None: [])
-    import openprogram.runtime.commands._plugin_adapter as _pa
-    import openprogram.runtime.commands._skill_adapter as _sa
+    import openprogram.extensions.plugins.commands as _pa
+    import openprogram.extensions.skills.commands as _sa
     monkeypatch.setattr(_pa, "sync_into_registry", lambda: None)
     monkeypatch.setattr(_sa, "sync_into_registry", lambda: None)
     _reg.clear_all()

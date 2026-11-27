@@ -59,7 +59,7 @@ def test_images_keep_their_place_and_a_single_block_is_left_alone():
 
 
 def test_a_tool_search_result_is_bounded_and_keeps_its_load_record(monkeypatch, tmp_path):
-    import openprogram.programs._host.runtime as host_runtime
+    import openprogram.runtime.agent.tool_execution as tool_execution
     from openprogram.state.store.session.files.spill import result_cap
 
     saved = {}
@@ -70,7 +70,7 @@ def test_a_tool_search_result_is_bounded_and_keeps_its_load_record(monkeypatch, 
         path.write_text(whole)
         return str(path)
 
-    monkeypatch.setattr(host_runtime, "_persist_full_result", _persist)
+    monkeypatch.setattr(tool_execution, "_persist_full_result", _persist)
     loads = {"loads": [{"name": "t", "definition": {"name": "t", "description": "", "parameters": {}}}]}
     whole = "definition line\n" * (result_cap() // 2)
     result = AgentToolResult(content=[TextContent(text=whole)], details=loads)
@@ -103,11 +103,11 @@ def test_media_alone_is_sent_without_an_empty_text_block():
 
 
 def test_a_tool_declared_cap_bounds_below_the_models(monkeypatch, tmp_path):
-    import openprogram.programs._host.runtime as host_runtime
-    from openprogram.programs._host.execution import with_cap
+    import openprogram.runtime.agent.tool_execution as tool_execution
+    from openprogram.runtime.agent.tool_execution import with_cap
     from openprogram.state.store.session.weight import weight
 
-    monkeypatch.setattr(host_runtime, "_persist_full_result",
+    monkeypatch.setattr(tool_execution, "_persist_full_result",
                         lambda call_id, whole: str(tmp_path / "w.txt"))
     result = with_cap(AgentToolResult(content=[TextContent(text="z\n" * 2_000)]), 500)
     stored = _as_stored(CALL, result)

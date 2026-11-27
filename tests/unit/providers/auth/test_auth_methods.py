@@ -17,8 +17,7 @@ import pytest
 from openprogram.models.auth.methods import (
     ApiKeyPasteMethod,
     CliImportMethod,
-    PkceConfig, PkceLoginMethod,
-    SsoStubMethod,
+    PkceConfig, SsoStubMethod,
 )
 from openprogram.models.auth.methods.cli_import import CliImportConfig, _walk, _normalize_expires
 from openprogram.models.auth.methods.pkce_oauth import _generate_pkce, _ask_manual_paste
@@ -53,20 +52,18 @@ class FakeUi:
 
 
 def test_login_driver_records_identity_and_applies_user_label(monkeypatch):
+    from openprogram.models.auth.login import credential_login
     from openprogram.models.auth.login.login_driver import run_login
     from openprogram.models.auth.types import Credential, CredentialData
 
-    async def fake_run(self, ui):
-        return Credential(
-            provider_id="openai-codex",
-            kind="oauth",
-            payload=CredentialData(kind="oauth", auth_value="access"),
-            metadata={"email": "person@example.com"},
-        )
+    monkeypatch.setattr(credential_login, "import_from_cli", lambda provider: Credential(
+        provider_id=provider,
+        kind="oauth",
+        payload=CredentialData(kind="oauth", auth_value="access"),
+        metadata={"email": "person@example.com"},
+    ))
 
-    monkeypatch.setattr(PkceLoginMethod, "run", fake_run)
-
-    cred = asyncio.run(run_login("openai-codex", "pkce_oauth", FakeUi(), label="Personal 工作", source="cli"))
+    cred = asyncio.run(run_login("qwen", "import_from_cli", FakeUi(), label="Personal 工作", source="cli"))
 
     assert cred.label == "Personal 工作"
     assert cred.identity["email"] == "person@example.com"
@@ -83,7 +80,7 @@ def test_a_sign_in_reads_its_identity_from_the_id_token():
         json.dumps({"email": "legacy@example.com", "name": "Legacy User"}).encode()
     ).rstrip(b"=").decode()
     cred = Credential(
-        provider_id="openai-codex",
+        provider_id="qwen",
         kind="oauth",
         payload=CredentialData(
             kind="oauth",
@@ -219,7 +216,7 @@ def test_normalize_expires_empty_is_zero():
 # ---- CliImportMethod: link mode ------------------------------------------
 
 def test_cli_import_link_mode_creates_an_imported_login(tmp_path: Path):
-    store = tmp_path / "codex" / "auth.json"
+    store = tmp_path / "qwen" / "oauth_creds.json"
     store.parent.mkdir(parents=True)
     store.write_text(json.dumps({
         "tokens": {
@@ -229,7 +226,7 @@ def test_cli_import_link_mode_creates_an_imported_login(tmp_path: Path):
         },
     }))
     cfg = CliImportConfig(
-        source_id="codex_cli",
+        source_id="qwen_cli",
         store_path=str(store),
         access_path=["tokens", "access_token"],
         refresh_path=["tokens", "refresh_token"],
@@ -238,7 +235,7 @@ def test_cli_import_link_mode_creates_an_imported_login(tmp_path: Path):
         metadata_paths={"account_id": ["tokens", "account_id"]},
         mode="link",
     )
-    m = CliImportMethod("openai-codex", cfg)
+    m = CliImportMethod("qwen", cfg)
     cred = asyncio.run(m.run(FakeUi()))
     assert cred.kind == "import"
     assert cred.payload.kind == "import"
@@ -248,7 +245,7 @@ def test_cli_import_link_mode_creates_an_imported_login(tmp_path: Path):
 
 
 def test_cli_import_copy_mode_creates_oauth_payload(tmp_path: Path):
-    store = tmp_path / "codex" / "auth.json"
+    store = tmp_path / "qwen" / "oauth_creds.json"
     store.parent.mkdir(parents=True)
     store.write_text(json.dumps({
         "tokens": {
@@ -257,32 +254,32 @@ def test_cli_import_copy_mode_creates_oauth_payload(tmp_path: Path):
         },
     }))
     cfg = CliImportConfig(
-        source_id="codex_cli",
+        source_id="qwen_cli",
         store_path=str(store),
         access_path=["tokens", "access_token"],
         refresh_path=["tokens", "refresh_token"],
         expires_path=["tokens", "expires_at"],
         expires_unit="ms",
         mode="copy",
-        client_id_hint="app_EMoamEEZ73f0CkXaXp7hrann",
+        client_id_hint="client_example",
     )
-    m = CliImportMethod("openai-codex", cfg)
+    m = CliImportMethod("qwen", cfg)
     cred = asyncio.run(m.run(FakeUi()))
     assert cred.kind == "oauth"
     assert cred.payload.kind == "oauth"
     assert cred.payload.auth_value == "A"
     assert cred.payload.data["refresh_token"] == "R"
-    assert cred.payload.data["client_id"] == "app_EMoamEEZ73f0CkXaXp7hrann"
+    assert cred.payload.data["client_id"] == "client_example"
     assert cred.read_only is False
 
 
 def test_cli_import_missing_file_raises(tmp_path: Path):
     cfg = CliImportConfig(
-        source_id="codex_cli",
+        source_id="qwen_cli",
         store_path=str(tmp_path / "nope.json"),
         access_path=["tokens", "access_token"],
     )
-    m = CliImportMethod("openai-codex", cfg)
+    m = CliImportMethod("qwen", cfg)
     with pytest.raises(FileNotFoundError):
         asyncio.run(m.run(FakeUi()))
 

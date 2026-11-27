@@ -1,5 +1,21 @@
 Provider brand SVGs from @lobehub/icons-static-svg 1.95.1.
 Source: https://github.com/lobehub/lobe-icons
 Copyright (c) 2023 LobeHub. MIT license: LICENSE in this directory.
+Outside-agent logos (vscode, zoo-code, zed, cursor, antigravity-color, dim-color, kun,
+nowledge-mem, hanako, alma, shelley-color, miniq-color, avibe, cindy, aionui,
+cherrystudio-color, lody) from yetone/magpie internal/gui/assets/icons, MIT License,
+Copyright (c) yetone.
 Brand names and logos belong to their respective owners.
 The provider mapping is in components/settings/providers/icons/provider-icons.json.
+The T3 Code (t3code.svg), OpenMausBot (openmausbot-color.svg) and ZCode (zcode.png) marks come from
+yetone/magpie (internal/gui/assets/icons), MIT License, Copyright (c) yetone.
+The Air (air.svg), DevEco Code (deveco-color.svg), MiMo Code (mimocode.svg), OpenBot (openbot.png) and
+OpenChamber (openchamber.svg) marks come from yetone/magpie (internal/gui/assets/icons), MIT License,
+Copyright (c) yetone.
+The Pi (pi.svg), OmO (omo.svg), omp (omp.svg), mu (mu.svg), Aside (aside.svg), MothX (mothx.png),
+Prime Agent (prime-agent.svg), LiveAgent (liveagent-color.svg) and Craft Agents (craft-agents-color.svg)
+marks come from yetone/magpie (internal/gui/assets/icons), MIT License, Copyright (c) yetone.
+The AtomCode (atomcode.png), Crush (crush.png), Goose (goose.svg), Hermes (hermes.svg), jcode (jcode.svg),
+Kigi (kigi.svg), Mister Morph (mistermorph-color.svg), PenguinHarness (penguin-color.svg), Raycast
+(raycast.svg) and Reasonix (reasonix-color.svg) marks come from yetone/magpie (internal/gui/assets/icons),
+MIT License, Copyright (c) yetone.

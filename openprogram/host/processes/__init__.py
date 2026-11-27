@@ -63,7 +63,7 @@ def start(command, cwd=None, *, store=None, tty=False, run_command=None):
     ``run_command`` is what the shell actually runs when it differs from the
     command shown and recorded (a workdir prefix, for instance).
     """
-    from openprogram.host.backend import get_active_backend
+    from openprogram.host.machines import get_active_backend
     from openprogram.host.backend.base import spawned_on
     session_id, execution_id, tool_call_id = current_owner()
     if not isinstance(command, str) or not command.strip():

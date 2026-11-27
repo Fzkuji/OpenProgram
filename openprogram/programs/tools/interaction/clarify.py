@@ -22,6 +22,7 @@ from __future__ import annotations
 from typing import Any
 
 from openprogram.programs._host.runtime import ToolReturn, function
+from openprogram.runtime.permissions import tool_profiles
 
 
 NAME = "ask_user_question"
@@ -141,6 +142,12 @@ def interaction_manifest(args: dict) -> dict | None:
                             "on_decline": "continue", "on_timeout": "fail"},
         "timeout": 300.0,
     }
+
+
+# An allowed call shows its questions as a card instead of running unseen.
+tool_profiles.register(NAME, tool_profiles.ToolProfile(
+    interaction_manifest=lambda args: interaction_manifest(args),
+))
 
 
 @function(

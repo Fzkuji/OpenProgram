@@ -18,7 +18,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Function</th><th scope="col">Answers</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">selection.with_credential(model, opts, attempt)</code></th><td>Every model request: chooses, prepares and switches credentials (<a href="unified-account-management.html">Provider keys and failover</a>)</td></tr>
+<tr><th scope="row"><code translate="no">credential_failover.with_credential(model, opts, attempt)</code></th><td>Every model request: chooses, prepares and switches credentials (<a href="unified-account-management.html">Provider keys and failover</a>)</td></tr>
 <tr><th scope="row"><code translate="no">resolve_provider_key(provider)</code></th><td>A key-shaped credential (a key, an environment variable, a helper command) or the sentinel, else <code translate="no">None</code>. Sign-in tokens are left out, since these callers send <code translate="no">x-api-key</code> or Bearer and an access token would 401.</td></tr>
 <tr><th scope="row"><code translate="no">is_configured(provider_id)</code></th><td>A key, or a satisfied cloud chain</td></tr>
 <tr><th scope="row"><code translate="no">resolve_api_key_with_auth_store(provider_id)</code></th><td>Model listing and probes: the bearer of any kind a request would use now, through <code translate="no">resolve_api_key_sync</code></td></tr>
@@ -26,7 +26,7 @@
 <tr><th scope="row"><code translate="no">provider_id_for_env_var(env_var)</code></th><td>Reverse, the first listed owner; <code translate="no">None</code> for non-LLM keys</td></tr>
 </tbody>
 </table>
-<p class="note">The names live in one table, <code translate="no">auth/login/login_method_registry.py</code>, beside each provider's ways to connect. <code translate="no">openprogram/models/providers/settings/env_api_keys.py</code> answers from it, so runtime and server import it without a cycle.</p>
+<p class="note">The names live in one table, <code translate="no">auth/login/login_method_registry.py</code>, beside each provider's ways to connect. <code translate="no">openprogram/models/auth/env_api_keys.py</code> answers from it, so runtime and server import it without a cycle.</p>
 
 <details>
 <summary>Order inside <code translate="no">resolve_api_key_sync</code></summary>

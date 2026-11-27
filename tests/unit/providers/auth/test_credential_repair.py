@@ -104,7 +104,7 @@ def test_a_stored_key_a_variable_also_holds_is_listed_once_and_outlives_it(tmp_p
 
 
 def test_adding_a_key_a_variable_holds_stores_it(tmp_path, monkeypatch):
-    from openprogram.models.auth import manage
+    from openprogram.models.listing import manage
     from openprogram.models.auth.store import set_store_for_testing
 
     monkeypatch.setenv("OPENAI_API_KEY", ENV_VALUE)
@@ -147,11 +147,11 @@ def test_a_spent_balance_with_no_time_is_carried_ready_and_402_counts_only_as_a_
 def test_a_sign_in_takes_its_plan_from_its_own_id_token(tmp_path):
     auth = tmp_path / "auth"
     token = _jwt({"email": "a@example.com", "https://api.openai.com/auth": {"chatgpt_plan_type": "prolite"}})
-    _write(auth / "openai-codex" / "default.json", {"provider_id": "openai-codex", "account_id": "default", "credentials": [
+    _write(auth / "qwen" / "default.json", {"provider_id": "qwen", "account_id": "default", "credentials": [
         {"credential_id": "o1", "kind": "oauth", "source": "web", "metadata": {"email": "a@example.com"},
          "payload": {"kind": "oauth", "auth_value": "AT", "data": {"id_token": token}}}]})
     co.carry_over(auth, state_root=tmp_path)
-    assert _rows(auth, "openai-codex")[0]["identity"] == {"email": "a@example.com", "plan": "prolite"}
+    assert _rows(auth, "qwen")[0]["identity"] == {"email": "a@example.com", "plan": "prolite"}
 
 
 def test_a_spent_balance_answered_with_401_carries_over_as_out_of_quota(tmp_path):
@@ -167,15 +167,15 @@ def test_a_spent_balance_answered_with_401_carries_over_as_out_of_quota(tmp_path
 
 
 def test_an_imported_sign_in_names_its_account_from_the_id_token(tmp_path):
-    store = tmp_path / "codex" / "auth.json"
+    store = tmp_path / "qwen" / "oauth_creds.json"
     _write(store, {"tokens": {"id_token": _jwt({"email": "a@example.com",
                                                 "https://api.openai.com/auth": {"chatgpt_plan_type": "plus"}})}})
     auth = tmp_path / "auth"
-    _write(auth / "openai-codex" / "default.json", {"provider_id": "openai-codex", "account_id": "default", "credentials": [
-        {"credential_id": "c1", "kind": "cli_delegated", "source": "codex_cli", "read_only": True,
+    _write(auth / "qwen" / "default.json", {"provider_id": "qwen", "account_id": "default", "credentials": [
+        {"credential_id": "c1", "kind": "cli_delegated", "source": "qwen_cli", "read_only": True,
          "payload": {"kind": "cli_delegated", "data": {"store_path": str(store)}}}]})
     co.carry_over(auth, state_root=tmp_path)
-    assert _rows(auth, "openai-codex")[0]["identity"] == {"email": "a@example.com", "plan": "plus"}
+    assert _rows(auth, "qwen")[0]["identity"] == {"email": "a@example.com", "plan": "plus"}
 
 
 def _carried(tmp_path: Path, rows: list[dict], provider: str = "openai") -> Path:
@@ -258,7 +258,7 @@ def test_repair_marks_itself_done_when_folders_cannot_be_tightened(tmp_path, mon
 def test_a_lock_another_process_holds_is_not_removed(tmp_path):
     import fcntl
 
-    from openprogram.models.auth.credentials.io import _private_file_lock, drop_unused_lock
+    from openprogram.state.private_files import _private_file_lock, drop_unused_lock
 
     lock = tmp_path / "p" / "credentials.json.lock"
     lock.parent.mkdir()
@@ -333,8 +333,8 @@ def test_a_row_is_named_by_its_label_email_variable_tail_or_sign_in():
     assert name(source="env", metadata={"env_var": "OPENAI_API_KEY"},
                 payload=CredentialData(kind="api_key", auth_value="")) == "$OPENAI_API_KEY"
     assert name() == "Key ····wxyz"
-    assert name(provider="openai-codex", kind="oauth",
-                payload=CredentialData(kind="oauth", auth_value="A", data={})) == "ChatGPT sign-in"
+    assert name(provider="claude-code", kind="oauth",
+                payload=CredentialData(kind="oauth", auth_value="A", data={})) == "Claude Code sign-in"
 
 
 def test_an_id_token_names_the_account_and_plan(tmp_path):
@@ -350,7 +350,7 @@ def test_an_id_token_names_the_account_and_plan(tmp_path):
 
 def test_a_sign_in_is_not_held_to_a_base_address_and_a_missing_file_says_so(tmp_path):
     from openprogram.models.auth import Credential, CredentialData
-    from openprogram.models.auth.manage import credential_row
+    from openprogram.models.listing.manage import credential_row
 
     def imported(path):
         return Credential(provider_id="google-gemini-cli", kind="import", source="import", read_only=True,

@@ -166,7 +166,7 @@ def _inject_mention(text: str, name: str, dest, count, oversize: bool,
     carrying the exact same lexicon.
     """
     import re
-    from openprogram.state import attachments as _att
+    from openprogram.state import attachment_markers as _att
     marker_name = _att.safe_marker_text(name)
     pat = re.compile(
         r"\[attachment:\s*" + re.escape(marker_name)

@@ -1,9 +1,8 @@
 """Provider alias table — short names users type on the CLI.
 
-The canonical provider id matches OpenAI's official naming where one
-exists (``openai-codex``, ``gemini-subscription``, ``github-copilot``);
-on the CLI people type spoken-word shortcuts (``codex``, ``claude``,
-``gemini``, ``copilot``). This module resolves those shortcuts.
+The canonical provider id matches the catalogue's naming (``anthropic``,
+``amazon-bedrock``); on the CLI people type spoken-word shortcuts
+(``claude``, ``gemini``, ``bedrock``). This module resolves those shortcuts.
 
 Design:
 
@@ -22,22 +21,10 @@ from __future__ import annotations
 
 _ALIASES: dict[str, str] = {
     # Spoken-word shortcuts
-    "codex": "openai-codex",
     "claude": "anthropic",
-    "gemini": "gemini-subscription",
-    "copilot": "github-copilot",
+    "gemini": "google",
     "bedrock": "amazon-bedrock",
-    # Common typos / dropped hyphens
-    "openai-codex-cli": "openai-codex",
-    # Back-compat: ``chatgpt-subscription`` was the canonical id for the
-    # OpenAI Codex provider before the rename. Any older agent.json,
-    # session record, env override, or external script that still
-    # references it keeps resolving to the same runtime / credentials.
-    "chatgpt-subscription": "openai-codex",
     "claude-max": "claude-code",
-    "grok-subscription": "xai-subscription",
-    "gemini-cli": "gemini-subscription",
-    "github-copilot-cli": "github-copilot",
     # Back-compat: this provider (Alibaba's token-plan.cn OpenAI-compatible
     # endpoint) was called ``bailian`` before it was renamed to match
     # models.dev's ``alibaba-token-plan-cn``. Old agent.json / session /

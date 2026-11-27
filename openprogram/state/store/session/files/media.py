@@ -6,7 +6,8 @@ block's bytes once, named by their content, in the conversation's
 ``media/<sha256>.<ext>`` (written to a temporary file, then put in place,
 as ``tool_results/`` is), and the node records where each one sat in the
 message (``metadata.media``: ``[{"sha", "mime", "index", "path"}]``).
-Rendering puts the blocks back where they were, so the next turn's request
+Rendering (``runtime.context.session_dag.media_content``) puts the blocks
+back where they were, so the next turn's request
 starts with the bytes the turn sent (Codex and Claude Code keep images in
 history the same way; compaction leaves them out of what it summarizes).
 """
@@ -30,6 +31,11 @@ _EXTENSIONS = {"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif",
 
 def _extension(mime: str) -> str:
     return _EXTENSIONS.get(mime) or mimetypes.guess_extension(mime or "") or ".bin"
+
+
+def kept_path(record: dict, session_dir: str | os.PathLike) -> Path:
+    """Where a kept block's bytes live in ``session_dir``."""
+    return Path(session_dir) / DIRNAME / f"{record['sha']}{_extension(str(record.get('mime') or ''))}"
 
 
 def save(session_dir: str | os.PathLike | None, data_b64: str, mime: str) -> dict | None:
@@ -117,8 +123,7 @@ def load(record: dict, session_dir: Any = None) -> str | None:
         return None
     candidates = []
     if session_dir:
-        candidates.append(Path(session_dir) / DIRNAME
-                          / f"{record['sha']}{_extension(str(record.get('mime') or ''))}")
+        candidates.append(kept_path(record, session_dir))
     if isinstance(record.get("path"), str):
         candidates.append(Path(record["path"]))
     for path in candidates:
@@ -129,60 +134,5 @@ def load(record: dict, session_dir: Any = None) -> str | None:
     return None
 
 
-def block(record: dict, data: str) -> Any:
-    """The content block a kept record renders as."""
-    from openprogram.models.providers.types import AudioContent, ImageContent, VideoContent
-
-    mime = str(record.get("mime") or "")
-    if mime.startswith("audio/"):
-        return AudioContent(data=data, mime_type=mime)
-    if mime.startswith("video/"):
-        return VideoContent(data=data, mime_type=mime)
-    return ImageContent(data=data, mime_type=mime)
-
-
-def as_references(text_blocks: list[Any], records: Any, session_dir: Any = None) -> list[Any]:
-    """A message's content with its media named, not attached: an earlier
-    message's pictures, once a later message carries its own (Hermes sends
-    only the latest; each picture otherwise rides on every request). The note
-    gives each file's path so the model can look again."""
-    if not isinstance(records, list) or not records:
-        return text_blocks
-    from openprogram.models.providers.types import TextContent
-    names = []
-    for record in records:
-        if not isinstance(record, dict) or not isinstance(record.get("sha"), str):
-            continue
-        mime = str(record.get("mime") or "")
-        path = (Path(session_dir) / DIRNAME / f"{record['sha']}{_extension(mime)}"
-                if session_dir else record.get("path"))
-        names.append(f"{mime or 'file'} {path}")
-    if not names:
-        return text_blocks
-    note = ("[Attachments of this earlier message, no longer attached to save context; "
-            "open them with image_analyze if they are needed again: " + "; ".join(names) + "]")
-    return [*text_blocks, TextContent(type="text", text=note)]
-
-
-def with_media(text_blocks: list[Any], records: Any, session_dir: Any = None) -> list[Any]:
-    """A message's content: ``text_blocks`` with the kept media put back at
-    the indexes they had. A block whose file is gone is left out."""
-    if not isinstance(records, list) or not records:
-        return text_blocks
-    placed: dict[int, Any] = {}
-    for record in records:
-        if not isinstance(record, dict) or not isinstance(record.get("index"), int):
-            continue
-        data = load(record, session_dir)
-        if data is not None:
-            placed[record["index"]] = block(record, data)
-    if not placed:
-        return text_blocks
-    content = list(text_blocks)
-    for index in sorted(placed):
-        content.insert(min(index, len(content)), placed[index])
-    return content
-
-__all__ = ["DIRNAME", "as_references", "attachments_from_records", "block", "load", "records_for_attachments",
-           "records_for_blocks",
-           "save", "with_media"]
+__all__ = ["DIRNAME", "attachments_from_records", "kept_path", "load", "records_for_attachments",
+           "records_for_blocks", "save"]

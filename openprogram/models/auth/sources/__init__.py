@@ -24,12 +24,10 @@ separable — you can preview what a source would import without committing.
 """
 from __future__ import annotations
 
-from .codex_cli import CodexCliSource
 from .gh_cli import GhCliSource
 from .qwen_cli import QwenCliSource
 
 __all__ = [
-    "CodexCliSource",
     "GhCliSource",
     "QwenCliSource",
 ]

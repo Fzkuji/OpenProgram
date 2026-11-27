@@ -102,7 +102,8 @@ def capture_original_owner_input(request: Any) -> Optional[OriginalOwnerInput]:
     from openprogram.runtime.execution.run_control import get_current_execution_id
     from openprogram.runtime.context.session_db import default_db
     from openprogram.runtime.execution import default_store
-    from openprogram.programs._authoring.reports.sources import original_owner
+    from openprogram.runtime import program_host
+    original_owner = program_host.host().original_owner
     from openprogram.state.store.session.reading.transcript import MAX_TEXT_CHARS
 
     authority = normalize_authority(request)

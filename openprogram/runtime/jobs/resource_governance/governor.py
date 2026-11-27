@@ -225,12 +225,9 @@ class ResourceGovernor(TablesAccess, DispatchOperations, BorrowedOperations, Fin
         ).effective_limits()
         spawn_depth_limit = spawn_fanout_limit = 0
         if creates_agent:
-            from openprogram.programs.tools.agents.agent.agent.agent import (
-                max_spawn_depth,
-                max_spawn_fanout,
-            )
-            spawn_depth_limit = max_spawn_depth()
-            spawn_fanout_limit = max_spawn_fanout()
+            from openprogram.runtime.jobs import chain_budgets
+            spawn_depth_limit = chain_budgets.max_spawn_depth()
+            spawn_fanout_limit = chain_budgets.max_spawn_fanout()
 
         with self._write() as tables:
             resolved = self._with_ancestor_limits(

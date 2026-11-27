@@ -7,11 +7,11 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">部分</th><th scope="col">位置</th></tr></thead>
 <tbody>
-<tr><th scope="row">公司和它的接入方式</th><td><code translate="no">openprogram/models/auth/login/login_method_registry.py</code> 里的 <code translate="no">COMPANIES</code>，由 <code translate="no">openprogram/models/usage/provider_status.py</code> 作为 <code translate="no">family</code>、<code translate="no">family_label</code> 和 <code translate="no">way_label</code> 发出</td></tr>
+<tr><th scope="row">公司和它的接入方式</th><td><code translate="no">openprogram/models/auth/login/login_method_registry.py</code> 里的 <code translate="no">COMPANIES</code>，由 <code translate="no">openprogram/models/listing/provider_status.py</code> 作为 <code translate="no">family</code>、<code translate="no">family_label</code> 和 <code translate="no">way_label</code> 发出</td></tr>
 <tr><th scope="row">常用供应商、密钥页和账单页</th><td><code translate="no">openprogram/models/providers/catalog/consoles.py</code></td></tr>
 <tr><th scope="row">环境里的密钥、本地服务</th><td><code translate="no">openprogram/models/listing/detected.py</code></td></tr>
 <tr><th scope="row">密钥检查、连接</th><td><code translate="no">openprogram/models/listing/key_check.py</code></td></tr>
-<tr><th scope="row">选择器状态、用量、替代模型</th><td><code translate="no">openprogram/models/usage/provider_views.py</code></td></tr>
+<tr><th scope="row">选择器状态、用量、替代模型</th><td><code translate="no">openprogram/models/listing/provider_views.py</code></td></tr>
 <tr><th scope="row">模型选择器状态、额度用尽卡片</th><td><code translate="no">apps/web/lib/models/provider-state.ts</code>, <code translate="no">apps/web/lib/models/fallback.ts</code>, <code translate="no">apps/web/components/chat/top-bar/menus/agent-selector.tsx</code>, <code translate="no">apps/web/components/chat/messages/bubbles/quota-reply-card.tsx</code></td></tr>
 <tr><th scope="row">设置页面</th><td><code translate="no">apps/web/components/settings/providers/</code>（<code translate="no">status/</code> 列表、<code translate="no">add/</code> 对话框、<code translate="no">detail/</code> 面板）、<code translate="no">apps/web/lib/prefs/providers-view.ts</code>、<code translate="no">apps/web/components/settings/token-usage/</code></td></tr>
 <tr><th scope="row">线上类型</th><td>由 <code translate="no">scripts/generators/generate_provider_status_types.py</code> 生成到 <code translate="no">apps/web/lib/settings/provider-status.generated.ts</code></td></tr>
@@ -35,7 +35,7 @@
 <li>紧凑行列宽固定：每个单元格在自己的列里以省略号结尾，悬停看完整文字，所以再长的状态、额度文字或模型 id 在 640 px 及以上的窗格里也不会让表格横向滚动；窄于 1040 px 时先隐藏 Tokens 和 Cache。</li>
 <li>美元余额在有三天花费后显示可用时长（"≈ 26 weeks at this pace"）。</li>
 <li>已登出或已停止的供应商数字变淡；超过 15 分钟的快照在两种视图里都变淡，悬停显示"Updated 3 h ago"，不单独占一行。</li>
-<li>供应商只报告有这个限额而不给数字时（Codex 不限量的 credits、Copilot 不限量的高级请求）写"Unlimited"。额度端点读取失败时写"Couldn't read the quota"，原因放在悬停提示里。</li>
+<li>供应商只报告有这个限额而不给数字时写"Unlimited"。额度端点读取失败时写"Couldn't read the quota"，原因放在悬停提示里。</li>
 <li>计费标签写 API key、Local 或 Subscription。知道套餐的订阅在这个标签里写套餐名（“Plus”“Pro”）；紧凑行在原本写 Included 的位置显示同一个标签，悬停显示“Included in the Plus plan”和按 API 价的金额。不知道套餐时不变。</li>
 <li>页头有 Providers | Routing、最近更新时间、刷新、卡片 | 列表切换和添加供应商。没有说明段落。</li>
 <li>刷新按顺序重新读取每个供应商：先读登录所在的位置，再读额度端点；健康状态由两者得出。结果替换卡片之前，按钮上的图标一直转，更新时间也算上这次读取。</li>
@@ -48,7 +48,7 @@
 <tr><th scope="row">只接入一种方式</th><td>普通卡片；没接入的方式从不显示</td></tr>
 <tr><th scope="row">分组</th><td>一张表 <code translate="no">COMPANIES</code>，带每种方式的中英文名字。状态数据把一家公司的方式排在一起，放在它第一种方式原来的位置，按表里的顺序</td></tr>
 <tr><th scope="row">布局</th><td>两列（窄于 720 px 时一列）；每张卡片保持自己的高度，下一张按列表顺序放进最短的那一列，在上一张下方 12 px。高度靠测量，测量前用估计值，所以不会跳动；Tab 按列表顺序</td></tr>
-<tr><th scope="row">行</th><td>公司一行，所有方式都不能用时带标签；它的方式缩进列在下面，用短名（"ChatGPT"、"API"、"Go"），悬停显示标题</td></tr>
+<tr><th scope="row">行</th><td>公司一行，所有方式都不能用时带标签；它的方式缩进列在下面，用短名（"API"、"Go"），悬停显示标题</td></tr>
 <tr><th scope="row"><code translate="no">openprogram providers status</code></th><td>先是公司和它最好的状态，每种方式按标题缩进列在下面；<code translate="no">--json</code> 带上 <code translate="no">family</code>、<code translate="no">family_label</code>、<code translate="no">way_label</code>；<code translate="no">login</code>、<code translate="no">keys</code>、<code translate="no">logout</code> 接收目录 id</td></tr>
 </tbody>
 </table>
@@ -70,7 +70,7 @@
 <p>什么都没连接时，页面直接显示添加供应商里的同样选项，没有说明文字：</p>
 <ol>
 <li><strong>环境里的密钥</strong>排在最前，每个带 Use。变量按供应商的密钥名（先静态表，再 models.dev 的 <code translate="no">env</code>）匹配目录。页面只拿到变量名和打码的尾部；Use 让 Worker 自己读取并保存，密钥不经过网络传给页面。OAuth 令牌变量从不提供。</li>
-<li><strong>常用</strong>：八个一格，点一下进入第 2 步：OpenAI（ChatGPT 登录，旁边有 API 密钥）、Anthropic（只用 API 密钥）、Google Gemini、xAI、DeepSeek、OpenRouter、Kimi / Moonshot（附 Kimi Coding 和中国站）、Z.ai（附编程套餐和智谱）。</li>
+<li><strong>常用</strong>：八个一格，点一下进入第 2 步：OpenAI、Anthropic（只用 API 密钥）、Google Gemini、xAI、DeepSeek、OpenRouter、Kimi / Moonshot（附 Kimi Coding 和中国站）、Z.ai（附编程套餐和智谱）。</li>
 <li><strong>本机</strong>：Ollama、LM Studio、vLLM 和 llama.cpp，在回环地址上半秒内应答不带密钥的 <code translate="no">GET /models</code> 时显示。打开模型选择器、服务商页或添加服务商时再探测一次，期间先显示保留的结果；其他读取沿用 30 秒内的探测结果。</li>
 <li><strong>全部供应商</strong>：在整个目录里搜索。</li>
 <li>常用供应商在设置打开时读取；到达之前格子的位置留空，读取失败时安静重试（<a href="../ui/page-loading-performance.zh.html#no-waiting-text">等待不配文字</a>）。</li>
@@ -90,7 +90,7 @@
 </table>
 <p>保存的密钥通过该供应商已验证的额度读取器读一次余额。</p>
 <p>一个供应商第一个 <code translate="no">works</code>、<code translate="no">no_credit</code> 的密钥，或供应商以 HTTP 200 接受的 <code translate="no">unverified</code> 密钥，会启用这个供应商（5xx 或没有应答说明不了密钥，什么都不启用），第一次登录也一样；没有单独的启用步骤。它的模型一个都没开启时，开启三个推荐模型。</p>
-<p>第 2 步把同一家公司的几种接入方式做成标签页（ChatGPT 登录旁边是 OpenAI API 密钥），即公司表里标为提供的那些方式；Advanced 收起 Base URL。正在运行的本地服务一个按钮就能接入，没运行的显示如何启动。Custom 打开自定义供应商表单。</p>
+<p>第 2 步把同一家公司的几种接入方式做成标签页（Kimi Coding 套餐旁边是 Moonshot API 密钥），即公司表里标为提供的那些方式；Advanced 收起 Base URL。正在运行的本地服务一个按钮就能接入，没运行的显示如何启动。Custom 打开自定义供应商表单。</p>
 <p>登录列出供应商的接入方式：</p>
 <ul>
 <li>每行有图标、标题、一行说明和箭头；导入还用小号等宽字显示它读取的文件。</li>
@@ -120,7 +120,7 @@
 <thead><tr><th scope="col">部分</th><th scope="col">显示</th></tr></thead>
 <tbody>
 <tr><th scope="row">标题行</th><td>有两个以上密钥时是分段选择：按顺序、平均、最少使用。按供应商的登录方式列出入口：收密钥的有添加密钥，有登录方式的有登录（已有账号后是登录另一个账号）</td></tr>
-<tr><th scope="row">行</th><td>至少 56 px 高：拖动把手（键盘也能拿起的按钮）、名称（自己起的名字，没有就是登录账号的邮箱，再没有就是“环境变量密钥”“API 密钥”或“ChatGPT 登录”；新对话会用的那个旁边标“使用中”）、打码尾部或 <code translate="no">$VAR</code> 或套餐（“Pro Lite”），然后是失败原因，或“已用 ChatGPT 登录”和今天的花费和请求数。登录账号自己的额度窗口画成两条小进度条</td></tr>
+<tr><th scope="row">行</th><td>至少 56 px 高：拖动把手（键盘也能拿起的按钮）、名称（自己起的名字，没有就是登录账号的邮箱，再没有就是“环境变量密钥”“API 密钥”或“登录”；新对话会用的那个旁边标“使用中”）、打码尾部或 <code translate="no">$VAR</code> 或套餐（“Pro Lite”），然后是失败原因，或“已用 Qwen 登录”和今天的花费和请求数。登录账号自己的额度窗口画成两条小进度条</td></tr>
 <tr><th scope="row">状态</th><td>带圆点的徽章：可用、14:32 恢复、额度用完（只有窗口报了重置时间才写；余额用完没有重置时间）、密钥无效、需要重新登录、暂不使用、服务商未设置（已删除的自定义服务商的密钥）、找不到登录文件（导入的文件不在了）；等待时间过了自动显示可用。行内的修复：更换、重新登录或充值</td></tr>
 <tr><th scope="row">行菜单 ⋯</th><td>重命名（就地）、立即检查、更换密钥或重新登录、暂不使用 / 恢复使用、上移、下移、删除…。只有删除需要确认；环境变量里的密钥没有重命名和删除</td></tr>
 <tr><th scope="row">顺序</th><td>按住把手拖动，或按空格拿起、每按一次方向键移一行（读屏会念出每行的名称和位置），或选上移 / 下移；多于一行时列表下方有一行说明</td></tr>
@@ -163,7 +163,7 @@
 <table class="stack fixed">
 <thead><tr><th scope="col">供应商行</th><th scope="col">显示</th><th scope="col">点击</th></tr></thead>
 <tbody>
-<tr><th scope="row">名称</th><td>供应商的名称；用多种方式接入的公司里的一种方式写"公司 · 方式"（"OpenAI · ChatGPT"、"OpenAI · API"、"OpenCode · Go"、"Perplexity · Agent"），每个目录 id 仍是一行</td><td>&mdash;</td></tr>
+<tr><th scope="row">名称</th><td>供应商的名称；用多种方式接入的公司里的一种方式写"公司 · 方式"（"OpenAI · API"、"OpenCode · Go"、"Perplexity · Agent"），每个目录 id 仍是一行</td><td>&mdash;</td></tr>
 <tr><th scope="row">正常，用量不到一半</th><td>当前模型名，或模型数</td><td>打开它的模型</td></tr>
 <tr><th scope="row">窗口或密钥限额用到一半</th><td>16 px 的剩余环；提示写“5h · 剩 8% · 14:30 重置”</td><td>打开它的模型</td></tr>
 <tr><th scope="row">限流</th><td>警告色的“限流中 · 14:02”</td><td>打开它的模型</td></tr>
@@ -192,7 +192,7 @@
 </tbody>
 </table>
 <p>状态随模型一起送达（<code translate="no">GET /api/models/enabled</code>）；打开菜单时读状态路由取额度行，状态路由会在后台读取超过十分钟的接口。每个 <code translate="no">provider_quota</code> 帧更新这两份数据，并作为窗口事件 <code translate="no">op:provider-quota</code> 转发。</p>
-<p>回复因额度用尽而失败时（<code translate="no">errorCause.cause</code> 是 <code translate="no">quota_exhausted</code>），回复卡片写“OpenAI Codex 5h 额度已用完”，下面是“14:30 重置 · Week 剩 71%”。余额用尽（402，或供应商状态是没有余额）写“Kimi 没有余额了”，下面是余额。原始错误留在折叠的详情里。</p>
+<p>回复因额度用尽而失败时（<code translate="no">errorCause.cause</code> 是 <code translate="no">quota_exhausted</code>），回复卡片写“Kimi Coding 5h 额度已用完”，下面是“14:30 重置 · Week 剩 71%”。余额用尽（402，或供应商状态是没有余额）写“Kimi 没有余额了”，下面是余额。原始错误留在折叠的详情里。</p>
 <table class="stack fixed">
 <thead><tr><th scope="col">按钮</th><th scope="col">作用</th></tr></thead>
 <tbody>
@@ -209,7 +209,7 @@
 <tbody>
 <tr><th scope="row">拆分</th><td>花费按计费方式拆开：已计费（按 token 计费的供应商、有价格的调用）、已包含（订阅调用按标价计，只在提示里显示），以及按 token 计费却没有价格的调用数。一个没有价格的调用不再让总数消失</td></tr>
 <tr><th scope="row">花费卡片</th><td>花费卡片显示已计费的总数，标签旁写"N calls unpriced"，悬停显示订阅按 API 价覆盖了多少。By model 里订阅的行写 Included，悬停显示标价；By source 和 By function 的行也这样拆分花费，调用全由订阅覆盖时写 Included</td></tr>
-<tr><th scope="row">订阅</th><td>套餐供应商（OpenAI Codex、SuperGrok、OpenCode Go、Kimi Coding、GitHub Copilot、Gemini 订阅）或 id 写明编程套餐、token 套餐的供应商算作订阅</td></tr>
+<tr><th scope="row">订阅</th><td>套餐供应商（OpenCode Go、Kimi Coding、阿里云 Token Plan）或 id 写明编程套餐、token 套餐的供应商算作订阅</td></tr>
 <tr><th scope="row">Token 总数</th><td>所有 token 总数都含缓存 token：存下的总数漏掉缓存的旧行按各部分之和读取</td></tr>
 </tbody>
 </table>
@@ -263,9 +263,7 @@
 <tr><th scope="row">登录方式做成带说明的列表，默认方式标为推荐</th><td>所有者的修改</td><td>几个一样的空按钮没有选择的理由；注册表的第一种本来就是各端预选的默认方式</td></tr>
 <tr><th scope="row">对话框后面不做背景模糊</th><td>所有者的修改</td><td>模糊后的页面让人看不出自己在哪；浅色遮罩让它留在视线里</td></tr>
 <tr><th scope="row">Anthropic 只用 API 密钥</th><td>项目规则</td><td>Anthropic 只通过官方 API 和 API 密钥使用</td></tr>
-<tr><th scope="row">套餐名取自已有的数据</th><td>Codex CLI</td><td>回复的限额帧里写的套餐，否则是登录 token 的 <code translate="no">chatgpt_plan_type</code> 声明。不为一个标签发请求，用现有的计费标签显示</td></tr>
 <tr><th scope="row">刷新先读登录</th><td>所有者的修改</td><td>供应商注册 <code translate="no">reread_login</code>：快过期的 token 先刷新，刷新不了的标记出来，重新登录过的恢复使用。读取器关闭的供应商只读额度时什么都不会变</td></tr>
-<tr><th scope="row">用完的委托登录按 refresh token 标记</th><td>已存登录的规则</td><td>被拒的 token 的摘要记在凭据上。Codex CLI 的文件里还是这个 token 时不再请求；文件里换了登录就清除标记。网络失败不标记</td></tr>
 </tbody>
 </table>
 
@@ -274,7 +272,7 @@
 <thead><tr><th scope="col">部分</th><th scope="col">现状</th></tr></thead>
 <tbody>
 <tr><th scope="row">模型选择器</th><td>Add provider 和未配置的行打开供应商页面和该供应商的页面，还不直接打开添加供应商对话框</td></tr>
-<tr><th scope="row">套餐名</th><td>只读 OpenAI Codex 的；其他订阅写 Subscription</td></tr>
+<tr><th scope="row">套餐名</th><td>不读取；订阅写 Subscription</td></tr>
 <tr><th scope="row">环境密钥</th><td>只看 Worker 自己的环境；只在没有启动 Worker 的 shell 里设置的密钥看不到</td></tr>
 <tr><th scope="row">地区或套餐拒绝</th><td>只从正文写明它的 403 识别</td></tr>
 <tr><th scope="row">密钥页和账单页</th><td>列了 15 个供应商；其他供应商不带链接</td></tr>

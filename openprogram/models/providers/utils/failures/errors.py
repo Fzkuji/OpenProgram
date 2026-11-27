@@ -280,9 +280,8 @@ _TRANSPORT_EXC_NAMES = frozenset({
     # openai / anthropic SDK wrappers around the httpx failures above
     "APIConnectionError",
     "APITimeoutError",
-    # SSE-layer (openai-codex)
+    # SSE-layer
     "StreamIdleTimeout",
-    "StreamTotalTimeout",
     # Python builtins
     "ConnectionError",
     "ConnectionResetError",
@@ -446,7 +445,6 @@ def taxonomy_fields(exc: BaseException) -> tuple[str | None, bool | None, float 
 #: ``transport``; a benchmark counts only the first as the environment's fault).
 _KINDS = {
     "StreamIdleTimeout": "stream_idle",
-    "StreamTotalTimeout": "stream_total",
     "MemoryPolicyError": "memory_unavailable",
     "ModelUnavailableError": "model_unavailable",
 }
@@ -598,7 +596,7 @@ def failure_cause(exc: BaseException, *, now: Optional[float] = None) -> Optiona
         others: list[dict] = []
         if provider:
             try:
-                from openprogram.models.usage.quota import exhausted_report
+                from openprogram.models.providers.usage_port import exhausted_report
                 spent = exhausted_report(provider)
             except Exception:
                 spent = None

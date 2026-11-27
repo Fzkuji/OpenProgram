@@ -8,13 +8,9 @@
 <tr><th scope="row"><code translate="no">anthropic</code></th><td>Anthropic Messages</td><td><code translate="no">ANTHROPIC_API_KEY</code></td><td>Explicit caching, <code translate="no">cache_control</code>, 1h TTL supported</td></tr>
 <tr><th scope="row"><code translate="no">openai</code></th><td>OpenAI Responses</td><td><code translate="no">OPENAI_API_KEY</code></td><td>Automatic caching, <code translate="no">prompt_cache_key</code></td></tr>
 <tr><th scope="row"><code translate="no">openai_responses</code> <code translate="no">openai_completions</code></th><td>Responses, Chat Completions</td><td>Shared implementations</td><td>Reused by many providers</td></tr>
-<tr><th scope="row"><code translate="no">openai_codex</code></th><td>ChatGPT backend</td><td>OAuth (ChatGPT subscription), or import a <code translate="no">codex</code> login</td><td>Live model list</td></tr>
 <tr><th scope="row"><code translate="no">azure_openai_responses</code></th><td>Azure OpenAI Responses</td><td><code translate="no">AZURE_OPENAI_API_KEY</code> and your base URL</td><td></td></tr>
 <tr><th scope="row"><code translate="no">google</code></th><td>Google Generative AI</td><td><code translate="no">GEMINI_API_KEY</code>, <code translate="no">GOOGLE_API_KEY</code></td><td>Thinking by token budget</td></tr>
-<tr><th scope="row"><code translate="no">google_gemini_cli</code></th><td>Cloud Code Assist</td><td>CLI credentials: reads <code translate="no">~/.gemini/oauth_creds.json</code>; the Gemini CLI refreshes</td><td></td></tr>
-<tr><th scope="row"><code translate="no">gemini_subscription</code></th><td>Cloud Code Assist</td><td>CLI credentials: imports the same file</td><td>Aliases <code translate="no">gemini</code>, <code translate="no">gemini-cli</code></td></tr>
 <tr><th scope="row"><code translate="no">amazon_bedrock</code></th><td>Bedrock Converse Stream</td><td>Cloud credential chain, detected at runtime</td><td>Explicit caching, <code translate="no">cachePoint</code></td></tr>
-<tr><th scope="row"><code translate="no">github_copilot</code></th><td>OpenAI Responses and others</td><td><a href="auth.html">GitHub device code or token import</a></td><td>No thinking effort</td></tr>
 <tr><th scope="row"><code translate="no">deepseek</code></th><td>OpenAI Completions</td><td><code translate="no">DEEPSEEK_API_KEY</code></td><td>Reasoner effort not adjustable</td></tr>
 <tr><th scope="row"><code translate="no">openrouter</code></th><td>OpenAI Completions</td><td><code translate="no">OPENROUTER_API_KEY</code></td><td>Gateway</td></tr>
 <tr><th scope="row"><code translate="no">vercel_ai_gateway</code></th><td>Anthropic Messages</td><td><code translate="no">AI_GATEWAY_API_KEY</code></td><td>Gateway</td></tr>
@@ -22,7 +18,6 @@
 <tr><th scope="row"><code translate="no">cerebras</code></th><td>OpenAI Completions</td><td><code translate="no">CEREBRAS_API_KEY</code></td><td></td></tr>
 <tr><th scope="row"><code translate="no">mistral</code></th><td>OpenAI Completions</td><td><code translate="no">MISTRAL_API_KEY</code></td><td></td></tr>
 <tr><th scope="row"><code translate="no">xai</code></th><td>OpenAI Completions</td><td><code translate="no">XAI_API_KEY</code></td><td></td></tr>
-<tr><th scope="row"><code translate="no">xai_subscription</code></th><td>OpenAI Responses</td><td>OAuth (SuperGrok, X Premium+), browser PKCE</td><td>Same models as <code translate="no">xai</code>, via <code translate="no">cli-chat-proxy.grok.com</code>. Keeps the selected model ID: <code translate="no">grok-4.6</code> is not replaced by <code translate="no">grok-build</code>.</td></tr>
 <tr><th scope="row"><code translate="no">zai</code></th><td>OpenAI Completions</td><td><code translate="no">ZAI_API_KEY</code></td><td></td></tr>
 <tr><th scope="row"><code translate="no">huggingface</code></th><td>OpenAI Completions</td><td><code translate="no">HF_TOKEN</code></td><td></td></tr>
 <tr><th scope="row"><code translate="no">minimax</code> <code translate="no">minimax_cn</code></th><td>Anthropic Messages</td><td><code translate="no">MINIMAX_API_KEY</code>, <code translate="no">MINIMAX_CN_API_KEY</code></td><td>International, China</td></tr>
@@ -35,7 +30,7 @@
 <tr><th scope="row"><code translate="no">ollama</code> <code translate="no">lmstudio</code> <code translate="no">vllm</code> <code translate="no">llamacpp</code> <code translate="no">local</code></th><td>OpenAI Completions</td><td>Optional key</td><td><a href="local-models.html">Local models</a></td></tr>
 </tbody>
 </table>
-<p class="note">API keys are imported into the credential store: <a href="auth.html">Authentication</a>. Every provider streams. Multimodal input is per model; trust the UI. Prompt caching is verified in code only where noted.</p>
+<p class="note">API keys are imported into the credential store: <a href="auth.html">Authentication</a>. Every provider streams. Multimodal input is per model; trust the UI. Prompt caching is verified in code only where noted. A subscription plan runs through the vendor's own program: <a href="third-party-harnesses.html">Third-Party Harnesses</a>.</p>
 <h2>Custom providers</h2>
 <p>Settings → Model Services: a display name and base URL are required; an id is derived from the name if omitted. <code translate="no">https://api.example.com</code> resolves to <code translate="no">/v1</code>; an explicit path such as <code translate="no">/compatible-mode/v1</code> is kept. <strong>Fetch models</strong> browses the endpoint's <code translate="no">/models</code>. Stored as <code translate="no">providers.&lt;id&gt;</code> with <code translate="no">source: "custom"</code>.</p>
 <h2>Which session uses which model</h2>
@@ -83,7 +78,5 @@ openprogram config set model_fallback.models '["anthropic/claude-sonnet-5-5", "o
 runtime = create_runtime()                                        # first available provider
 runtime = create_runtime(provider="anthropic", model="claude-sonnet-4-6")  # Anthropic API key
 runtime = create_runtime(provider="openai", model="gpt-4.1")               # OpenAI Responses
-runtime = create_runtime(provider="gemini", model="gemini-2.5-flash")      # Google Generative AI
-runtime = create_runtime(provider="openai-codex")                          # ChatGPT subscription
-runtime = create_runtime(provider="gemini-cli")                            # Gemini CLI login</code></pre>
-<p class="note">Those five have bespoke behavior. Every other provider routes by the model's protocol, as in chat.</p>
+runtime = create_runtime(provider="gemini", model="gemini-2.5-flash")      # Google Generative AI</code></pre>
+<p class="note">Those three have bespoke behavior. Every other provider routes by the model's protocol, as in chat.</p>

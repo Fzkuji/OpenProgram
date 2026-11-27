@@ -23,7 +23,7 @@ from openprogram.runtime.execution.recovery.effects import EffectClassification,
 from openprogram.runtime.execution.model import ExecutionStatus
 from openprogram.runtime.execution.recovery.state_blobs import ExecutionStateBlobStore
 from openprogram.runtime.execution.store import MAX_AGENT_STATE_BLOB_BYTES
-from openprogram.programs import ToolReturn
+from openprogram.programs._host.runtime import ToolReturn
 
 _log = logging.getLogger(__name__)
 

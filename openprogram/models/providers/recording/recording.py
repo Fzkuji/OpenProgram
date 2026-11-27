@@ -30,6 +30,7 @@ import secrets
 
 from openprogram.host._platform import locking
 from openprogram.host._platform.filesystem import restrict_to_user
+from openprogram.state.secret_removal import remove_secret_values
 
 from ..types import (
     AssistantMessageEvent,
@@ -44,79 +45,7 @@ from ..types import (
 RECORDING_FORMAT_VERSION = 2
 REDACTION_VERSION = 1
 
-PLACEHOLDER = "[secret removed]"
 _RUNTIME_ONLY_OPTION_FIELDS = frozenset({"signal", "on_payload"})
-
-# Field names whose value is a secret wherever it appears — request options,
-# model headers, nested provider-specific dicts.
-SECRET_FIELD_NAMES = frozenset({
-    "api_key",
-    "apikey",
-    "access_token",
-    "refresh_token",
-    "id_token",
-    "token",
-    "cookie",
-    "set-cookie",
-    "authorization",
-    "proxy-authorization",
-    "x-api-key",
-    "x-goog-api-key",
-    "api-key",
-    "secret",
-    "client_secret",
-    "password",
-    "session_key",
-})
-_SECRET_FIELD_SUFFIX = re.compile(r"(?:^|[-_])(?:token|key|secret|password)$", re.IGNORECASE)
-
-# Secret-looking values that survive field-name matching, e.g. a bearer token
-# pasted into a free-form string field or a URL query parameter.
-_SECRET_VALUE_PATTERNS = (
-    re.compile(r"(?i)\b(?:bearer|basic|bot|token|key)\s+[\w.:\-~+/]+=*"),
-    re.compile(r"\bsk-[A-Za-z0-9_\-]{8,}"),
-    re.compile(r"(?i)([?&](?:api[_-]?key|access[_-]?token|token)=)[^&\s]+"),
-    re.compile(r"(?i)(https?://)[^/@\s:]*:[^/@\s]+@"),
-)
-
-
-def remove_secret_values(value: Any) -> Any:
-    """Return ``value`` with every secret field and secret-looking string replaced.
-
-    Recurses through dicts and lists. Dict keys are matched case-insensitively
-    against :data:`SECRET_FIELD_NAMES`; matching keys lose their whole value.
-    Remaining strings are scanned for bearer tokens, ``sk-`` keys and secrets
-    carried in URL query parameters.
-    """
-    if isinstance(value, dict):
-        return {
-            key: PLACEHOLDER if _is_secret_field_name(key)
-            else remove_secret_values(item)
-            for key, item in value.items()
-        }
-    if isinstance(value, (list, tuple)):
-        return [remove_secret_values(item) for item in value]
-    if isinstance(value, str):
-        cleaned = value
-        for pattern in _SECRET_VALUE_PATTERNS:
-            cleaned = pattern.sub(
-                lambda match: (
-                    match.group(1) + PLACEHOLDER + "@"
-                    if match.groups() and match.group(1).lower().startswith("http")
-                    else match.group(1) + PLACEHOLDER
-                    if match.groups()
-                    else PLACEHOLDER
-                ),
-                cleaned,
-            )
-        return cleaned
-    return value
-
-
-def _is_secret_field_name(value: Any) -> bool:
-    name = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "-", str(value)).lower()
-    return name in SECRET_FIELD_NAMES or _SECRET_FIELD_SUFFIX.search(name) is not None
-
 
 def _dump(model_or_none: Any) -> Any:
     if model_or_none is None:

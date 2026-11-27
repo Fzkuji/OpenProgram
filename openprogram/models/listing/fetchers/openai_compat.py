@@ -16,7 +16,7 @@ def _fetch_openai_compat(provider_id: str, timeout: float) -> Any:
     from openprogram.host.security import safe_http
     from openprogram.host.security.url_policy import OwnerURLException, normalize_origin
     from openprogram.models.providers.catalog.metadata import env_var_for
-    from openprogram.models.providers.settings.env_api_keys import resolve_api_key_with_auth_store
+    from openprogram.models.auth.env_api_keys import resolve_api_key_with_auth_store
     from openprogram.models.providers.settings.storage import _resolve_base_url
 
     api_key = resolve_api_key_with_auth_store(provider_id)

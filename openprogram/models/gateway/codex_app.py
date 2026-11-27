@@ -22,6 +22,15 @@ same ``CODEX_HOME`` as the CLI, so "Also in the terminal" reaches it through
 * It lists only the threads saved on the provider it uses now: the
   person's threads move to the gateway's provider with the switch, and
   back when it is turned off (``move_history``).
+* A signed-in app (26.1021 on) can't always take the app-server that was
+  ended: its own AppServerManager finds the account it cached cleared,
+  logs ``fatal_error_broadcasted`` and shows "ChatGPT hit a snag" over the
+  whole window till it is quit and opened again. For a minute after the end
+  its logs are read for that line (:func:`app_crashed`); when it shows the
+  page and no Codex turn ran since, the app is quit as its own Quit does and
+  opened again, never forced (after magpie ``codex_app_crash.go`` and
+  ``provider/codex_app_crash.go``). The switch the user turned is the ask
+  for it: the page has no composer, and only a quit and open clears it.
 """
 from __future__ import annotations
 
@@ -36,8 +45,6 @@ import threading
 import time
 from pathlib import Path
 from typing import Any, Optional
-
-from openprogram.host._platform.filesystem import replace_file
 
 _log = logging.getLogger(__name__)
 
@@ -136,32 +143,20 @@ def _entry(slug: str, name: str, window: Optional[int], priority: int, instructi
     }
 
 
-def write_catalog(codex_home: Path, chosen: str, versions: list[str]) -> Optional[Path]:
-    """The enabled models as Codex's catalog, ``chosen`` first; ``None`` without instructions."""
-    from .conversion import enabled_model_refs
+def catalog_text(chosen: str, versions: list[str], rows: list[dict[str, Any]]) -> Optional[str]:
+    """The enabled models (``rows``) as Codex's catalog, ``chosen`` first;
+    ``None`` without instructions. The agent registry writes it beside
+    ``config.toml`` and removes it on disconnect (``agents/codex.py``)."""
     instructions = base_instructions(versions)
     if not instructions:
         return None
-    rows = enabled_model_refs()
-    rows.sort(key=lambda row: row["id"] != chosen)
+    rows = sorted(rows, key=lambda row: row["id"] != chosen)
     if chosen not in {row["id"] for row in rows}:
         rows.insert(0, {"id": chosen, "name": chosen, "context_window": None})
     models = [_entry(row["id"], str(row.get("name") or row["id"]), row.get("context_window"), index, instructions,
                      row.get("thinking_levels"), row.get("default_thinking_level"))
               for index, row in enumerate(rows)]
-    path = catalog_path(codex_home)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(".json.tmp")
-    temporary.write_text(json.dumps({"models": models}, indent=1), encoding="utf-8")
-    replace_file(temporary, path)
-    return path
-
-
-def remove_catalog(codex_home: Path) -> None:
-    try:
-        catalog_path(codex_home).unlink()
-    except OSError:
-        pass
+    return json.dumps({"models": models}, indent=1)
 
 
 def move_history(codex_home: Path, to_provider: str, from_provider: str) -> int:
@@ -269,6 +264,7 @@ def restart_app(codex_home: Path) -> None:
                         except OSError:
                             pass
                     _log.info("Codex app's app-server ended so it reads the new config: %s", pids)
+                    watch_crash(codex_home, time.time())
                     return
                 time.sleep(10)
             _log.info("Codex stayed busy; the Codex app takes the new config at its next launch")
@@ -277,3 +273,165 @@ def restart_app(codex_home: Path) -> None:
                 _restart_pending = False
 
     threading.Thread(target=run, daemon=True, name="codex-app-restart").start()
+
+
+# The app's error page after its app-server ended (magpie codex_app_crash.go)
+
+#: How long after an end the app's logs are read for its error page.
+CRASH_WAIT = 60.0
+CRASH_POLL = 5.0
+#: How many of a log root's newest day folders are read.
+LOG_DAYS = 7
+#: How much of the end of a log file is read.
+LOG_TAIL = 512 << 10
+#: What the app's AppServerConnection logs as it shows the page.
+FATAL_LINE = " [AppServerConnection] fatal_error_broadcasted"
+APP_BUNDLE_ID = "com.openai.codex"
+
+
+def log_roots() -> list[Path]:
+    """The folders the Codex app writes its logs in here (its file logger:
+    macOS ``~/Library/Logs/<bundle id>``, Windows ``%LOCALAPPDATA%\\Codex\\Logs``
+    and the Store package's, Linux ``$XDG_STATE_HOME/codex/logs``)."""
+    user = Path(os.environ.get("HOME") or Path.home())
+    if sys.platform == "darwin":
+        return [user / "Library" / "Logs" / APP_BUNDLE_ID]
+    if sys.platform == "win32":
+        local = Path(os.environ.get("LOCALAPPDATA") or user / "AppData" / "Local")
+        return [local / "Codex" / "Logs",
+                local / "Packages" / "OpenAI.Codex_2p2nqsd0c76g0" / "LocalCache" / "Local" / "Codex" / "Logs"]
+    state = Path(os.environ.get("XDG_STATE_HOME") or user / ".local" / "state")
+    return [state / "codex" / "logs"]
+
+
+def _digit_dirs(folder: Path) -> list[Path]:
+    try:
+        return [Path(e.path) for e in os.scandir(folder) if e.is_dir() and e.name.isdigit()]
+    except OSError:
+        return []
+
+
+def _log_files(root: Path, since: float) -> tuple[list[Path], bool]:
+    """The ``.log`` files under ``root``'s newest day folders written to at or
+    after ``since``; ``False`` when ``root`` can't be read. A file's own time
+    counts, never its folder's (Windows stamps a file only as it is closed)."""
+    try:
+        os.listdir(root)
+    except FileNotFoundError:
+        return [], True
+    except OSError:
+        return [], False
+    days = sorted(str(d) for y in _digit_dirs(root) for m in _digit_dirs(y) for d in _digit_dirs(m))[-LOG_DAYS:]
+    files = []
+    for day in days:
+        try:
+            entries = list(os.scandir(day))
+        except OSError:
+            continue
+        for entry in entries:
+            if entry.is_file() and entry.name.endswith(".log"):
+                try:
+                    if os.lstat(entry.path).st_mtime >= since:
+                        files.append(Path(entry.path))
+                except OSError:
+                    continue
+    return files, True
+
+
+def _stamp(text: str) -> Optional[float]:
+    from datetime import datetime
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
+
+
+def _fatal_in(path: Path, since: float) -> Optional[float]:
+    """The time of the first page logged in ``path`` at or after ``since``, in
+    its last :data:`LOG_TAIL` bytes; a line still being written is left out."""
+    try:
+        with open(path, "rb") as handle:
+            size = handle.seek(0, os.SEEK_END)
+            offset = max(size - LOG_TAIL, 0)
+            handle.seek(offset)
+            data = handle.read()
+    except OSError:
+        return None
+    if offset > 0:
+        cut = data.find(b"\n")
+        if cut < 0:
+            return None
+        data = data[cut + 1:]
+    end = data.rfind(b"\n")
+    if end < 0:
+        return None
+    for line in data[:end + 1].decode("utf-8", "replace").splitlines():
+        if FATAL_LINE not in line:
+            continue
+        at = _stamp(line.split(" ", 1)[0])
+        if at is not None and at >= since:
+            return at
+    return None
+
+
+def app_crashed(since: float) -> tuple[Optional[float], bool]:
+    """When the Codex app first logged its error page at or after ``since``
+    (less a second for the clock's grain), and whether its logs could be read
+    (magpie ``codexAppCrashed``)."""
+    since -= 1
+    first: Optional[float] = None
+    known = False
+    for root in log_roots():
+        files, readable = _log_files(root, since)
+        known = known or readable
+        for path in files:
+            at = _fatal_in(path, since)
+            if at is not None and (first is None or at < first):
+                first = at
+    return first, known
+
+
+def _newest_session(codex_home: Path) -> float:
+    newest = 0.0
+    for folder, _dirs, files in os.walk(codex_home / "sessions"):
+        for name in files:
+            if name.endswith(".jsonl"):
+                try:
+                    newest = max(newest, os.path.getmtime(os.path.join(folder, name)))
+                except OSError:
+                    continue
+    return newest
+
+
+def relaunch_app() -> str:
+    """Quit the Codex app as its own Quit does and open it again (macOS);
+    ``""`` when it did, else why not."""
+    from types import SimpleNamespace
+    from .agents.codex import CODEX_APP
+    from .agents.running import restart_app as reopen
+    app = SimpleNamespace(id="codex-app", name="The Codex app", app=CODEX_APP)
+    return reopen(app, time.time() + 2)
+
+
+def watch_crash(codex_home: Path, since: float, wait: float = CRASH_WAIT, poll: float = CRASH_POLL) -> bool:
+    """Read the app's logs for its error page for ``wait`` seconds after an
+    end at ``since``; reopen the app that shows it while no turn ran since.
+    Whether it was reopened."""
+    if sys.platform != "darwin":
+        return False  # OpenProgram reopens the macOS app only
+    deadline = time.monotonic() + wait
+    while True:
+        at, _known = app_crashed(since)
+        if at is not None:
+            if _newest_session(codex_home) > at:
+                _log.info("the Codex app showed its error page after its app-server ended, and a turn ran since")
+                return False
+            problem = relaunch_app()
+            if problem:
+                _log.info("the Codex app showed its error page after its app-server ended: %s", problem)
+                return False
+            _log.info("the Codex app showed its error page after its app-server ended; quit it and opened it again")
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(poll)

@@ -207,10 +207,7 @@ def _load_cursor_for_account(account_id: str) -> str:
 
 def _save_cursor_for_account(account_id: str, cursor: str) -> None:
     from openprogram.interfaces.channels.accounts import account_dir
-    from openprogram.models.auth.credentials import (
-        PrivateAtomicWriteError,
-        _private_atomic_write,
-    )
+    from openprogram.state.private_files import PrivateAtomicWriteError, _private_atomic_write
     from openprogram.state.paths import get_state_dir
 
     payload = json.dumps({"get_updates_buf": cursor}).encode("utf-8")

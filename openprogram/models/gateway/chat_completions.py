@@ -55,7 +55,7 @@ def parse_request(body: Any) -> tuple[Model, Context, SimpleStreamOptions, bool,
     """``(model, context, options, stream, include_usage)``."""
     if not isinstance(body, dict) or not isinstance(body.get("messages"), list):
         raise GatewayError(400, "invalid_request", "messages must be a list")
-    model = cv.resolve_model(body.get("model"))
+    model, asked = cv.resolve_model_at(body.get("model"))
     system: list[str] = []
     messages: list[Any] = []
     names: dict[str, str] = {}
@@ -99,7 +99,7 @@ def parse_request(body: Any) -> tuple[Model, Context, SimpleStreamOptions, bool,
     elif choice not in {"auto", "required", "none"}:
         choice = None
     max_tokens = body.get("max_completion_tokens") or body.get("max_tokens")
-    effort = body.get("reasoning_effort")
+    effort = asked or body.get("reasoning_effort")
     options = SimpleStreamOptions(
         max_tokens=max_tokens if isinstance(max_tokens, int) else None,
         temperature=body.get("temperature") if isinstance(body.get("temperature"), (int, float)) else None,

@@ -95,5 +95,5 @@ def test_claude_code_launch_env(state_dir, monkeypatch) -> None:
     assert env["ANTHROPIC_AUTH_TOKEN"].startswith("opgw-")
     assert env["ANTHROPIC_DEFAULT_OPUS_MODEL"] == env["ANTHROPIC_DEFAULT_SONNET_MODEL"] == "zai/glm-5"
     assert env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] == env["ANTHROPIC_SMALL_FAST_MODEL"] == "deepseek/deepseek-chat"
-    assert env["CLAUDE_CODE_SUBAGENT_MODEL"] == "zai/glm-5"
+    assert "CLAUDE_CODE_SUBAGENT_MODEL" not in env  # subagents follow the session until one is picked
     assert env["CLAUDE_CODE_USE_BEDROCK"] == "0" and "ANTHROPIC_MODEL" not in env

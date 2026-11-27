@@ -132,8 +132,8 @@ class ActivationOperations:
             from openprogram.host.system_access import _desktop_operation
             desktop_wait = isinstance(tool_input, shared.Mapping) and _desktop_operation(
                 tool_name, dict(tool_input)) is not None
-            from openprogram.programs._host.runtime import get
-            tool = get(tool_name)
+            from openprogram.runtime import program_host
+            tool = program_host.host().get(tool_name)
             if tool is not None and getattr(tool, "_resumable", False):
                 return CapabilitySet(pause=True, safe_point_kinds=(
                     ("function.step.after", "agent.wait.before_tool") if desktop_wait else ("function.step.after",)
@@ -153,8 +153,8 @@ class ActivationOperations:
             or text.startswith(("/forced_tool", "/spawn", "/merge"))
         ):
             return CapabilitySet()
-        from openprogram.runtime.harnesses import is_harness_provider, turn_provider
-        if is_harness_provider(turn_provider(request)):
+        from openprogram.runtime.harness_link import runs_in_harness
+        if runs_in_harness(request):
             # An outside agent has no safe point to pause, step or fork at;
             # steering goes to it while it runs.
             return CapabilitySet(steer=True)

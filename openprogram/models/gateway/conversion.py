@@ -65,13 +65,67 @@ def model_ref(model: Model) -> str:
     return f"{model.provider}/{model.id}"
 
 
+#: The levels a model id may carry after its last colon, after magpie
+#: ``provider.MemberEfforts``.
+MEMBER_EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
+
+
+def asked_at(ref: str) -> tuple[str, str]:
+    """``ref`` split into the model and the reasoning level asked of it,
+    ``"<model>:<level>"``, ``""`` for none. After magpie ``gateway.askedAt``
+    and ``provider.MemberEffort`` (MIT License, Copyright (c) yetone): only a
+    level's name after the last colon is one (``":free"`` and ``":7b"`` are
+    the model's own), ``":off"`` is ``none``, and several levels joined by
+    ``+`` are no one level asked. A model that has the whole id is taken
+    whole by :func:`resolve_model_at`."""
+    i = ref.rfind(":")
+    if i <= 0:
+        return ref, ""
+    level = ref[i + 1:].lower()
+    if level == "off":
+        level = "none"
+    if level not in MEMBER_EFFORTS:
+        return ref, ""
+    return ref[:i], level
+
+
+def resolve_model_at(ref: Any) -> tuple[Model, str]:
+    """The registered Model ``ref`` names and the level asked in it
+    (``"<model>:<level>"``, :func:`asked_at`), ``""`` for none; a model
+    registered by the whole id is that model, at no level."""
+    try:
+        return lookup_model(ref), ""
+    except GatewayError:
+        bare, level = asked_at(ref.strip()) if isinstance(ref, str) else (ref, "")
+        if not level:
+            raise
+    return lookup_model(bare), level
+
+
+def level_in(ref: Any) -> bool:
+    """Whether ``ref`` asks its model at a level (``<model>:<level>``): the
+    pick of the moment, ahead of an effort picked for the agent
+    (``agent_effort``)."""
+    try:
+        return bool(resolve_model_at(ref)[1])
+    except GatewayError:
+        return False
+
+
 def resolve_model(ref: Any) -> Model:
-    """The registered Model ``ref`` names, or ``GatewayError`` 404."""
+    """The registered Model ``ref`` names, a level after it taken off
+    (:func:`resolve_model_at`), or ``GatewayError`` 404."""
+    return resolve_model_at(ref)[0]
+
+
+def lookup_model(ref: Any) -> Model:
+    """The registered Model ``ref`` names as it is, or ``GatewayError`` 404."""
     if not isinstance(ref, str) or not ref.strip():
         raise GatewayError(400, "invalid_request", "model is required")
     value = ref.strip()
     if value.startswith(REF_PREFIX):
         value = value[len(REF_PREFIX):]
+    value = unflat(value) or value
     from openprogram.models.providers.catalog.models import get_model, split_model_ref
     provider, model_id = split_model_ref(value)
     if not provider or not model_id:
@@ -95,18 +149,80 @@ def resolve_model(ref: Any) -> Model:
     return model
 
 
+def searches(model: Model) -> bool:
+    """The API ``model`` goes to runs a web search itself when a request asks
+    (``supports_web_search``; the request option ``web_search=True``), with
+    OpenProgram's own key for it. On ``/v1/messages`` the gateway searches
+    for a model that can't, with OpenProgram's own web search (magpie
+    ``gateway/search.go``, :mod:`.web_search`)."""
+    try:
+        from openprogram.models.providers.catalog.api_registry import resolve_api_provider_snapshot
+        return bool(getattr(resolve_api_provider_snapshot(model), "supports_web_search", False))
+    except Exception:  # noqa: BLE001 - an API not known here searches nothing
+        return False
+
+
+def ref_searches(ref: str) -> bool:
+    """:func:`searches` for the model ``ref`` names; False for one not set up."""
+    try:
+        return searches(resolve_model(ref))
+    except GatewayError:
+        return False
+
+
+#: Stands for each slash of a model ref in its flat spelling (magpie
+#: ``provider.FlatSep``): MiniMax Code takes a model under a custom provider
+#: only with one slash in the whole, so ``deepseek/deepseek-chat`` is written
+#: there as ``deepseek~deepseek-chat`` and taken back here.
+FLAT_SEP = "~"
+
+
+def flat_id(ref: str) -> str:
+    """``ref`` with no slash in it (magpie ``FlatID``)."""
+    return ref.replace("/", FLAT_SEP)
+
+
+def unflat(value: str) -> str:
+    """The enabled model whose flat spelling is ``value``, when exactly one
+    has it; ``""`` for any other (magpie ``Unflat``). An id with a slash, or
+    with no tilde, is never a flat one."""
+    if FLAT_SEP not in value or "/" in value:
+        return ""
+    try:
+        found = {row["id"] for row in enabled_model_refs() if flat_id(row["id"]) == value}
+    except Exception:  # noqa: BLE001 - no catalog: read as written
+        return ""
+    return found.pop() if len(found) == 1 else ""
+
+
 def enabled_model_refs() -> list[dict[str, Any]]:
     """The user's enabled models as ``{"id": "provider/model", ...}`` rows."""
     from openprogram.models import listing
+    from openprogram.models.providers.catalog.enabled_models import ENABLED_MODELS
     rows = []
     for row in listing.list_enabled_models():
         provider, model_id = row.get("provider") or "", row.get("id") or ""
         if provider and model_id:
+            model = ENABLED_MODELS.get(f"{provider}/{model_id}")
+            cost = getattr(model, "cost", None)
+            price = None
+            if cost is not None and cost.input is not None and cost.output is not None:
+                # USD per million tokens, as the catalog has it; an agent that
+                # counts a session's cost (OpenCode) counted 0 without it
+                price = {"input": cost.input, "output": cost.output,
+                         "cache_read": cost.cache_read or 0, "cache_write": cost.cache_write or 0}
             rows.append({"id": f"{provider}/{model_id}", "provider": provider,
-                         "name": row.get("name") or model_id,
+                         "price": price, "input": list(getattr(model, "input", None) or []),
+                         "name": row.get("name") or model_id, "api": row.get("api") or "",
                          "context_window": row.get("context_window"),
+                         "max_tokens": row.get("max_tokens"),
+                         "vision": bool(row.get("vision")),
+                         "reasoning": bool(row.get("reasoning")),
                          "thinking_levels": row.get("thinking_levels") or [],
-                         "default_thinking_level": row.get("default_thinking_level")})
+                         "default_thinking_level": row.get("default_thinking_level"),
+                         # the API the provider speaks it on: anthropic-messages,
+                         # openai-responses, openai-completions, … (magpie Model.APIs)
+                         "api": row.get("api") or ""})
     return rows
 
 

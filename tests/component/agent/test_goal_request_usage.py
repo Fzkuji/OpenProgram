@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from contextlib import contextmanager
 from types import SimpleNamespace
 
@@ -366,7 +365,7 @@ def test_canonical_turn_freezes_actual_execution_and_mid_turn_goal(runtime, tmp_
     assert tuple(row) == (saved["goal_id"], admission.execution_id)
 
 
-@pytest.mark.parametrize("adapter", ["responses", "google", "bedrock", "gemini_cli"])
+@pytest.mark.parametrize("adapter", ["responses", "google", "bedrock"])
 @pytest.mark.parametrize("reported", [False, True, "components"])
 def test_real_adapter_zero_and_missing_usage_remain_distinct(runtime, monkeypatch, adapter, reported):
     goals, chat, meter, goal = runtime
@@ -415,28 +414,6 @@ def test_real_adapter_zero_and_missing_usage_remain_distinct(runtime, monkeypatc
                 monkeypatch.setattr(genai, "Client", lambda **kw: SimpleNamespace(aio=SimpleNamespace(models=Models())))
                 from openprogram.models.providers.types import SimpleStreamOptions
                 async for event in google.stream_simple(m, context, SimpleStreamOptions(api_key="test")):
-                    yield event
-            else:
-                from openprogram.models.providers.adapters.google_gemini_cli import google_gemini_cli as cli
-                class Response:
-                    status_code = 200
-                    async def __aenter__(self):
-                        return self
-                    async def __aexit__(self, *args):
-                        return None
-                    async def aiter_lines(self):
-                        chunk = {"candidates": []}
-                        if reported:
-                            chunk["usageMetadata"] = {"promptTokenCount": 0, "candidatesTokenCount": 0, "totalTokenCount": 0}
-                            if components:
-                                chunk["usageMetadata"] = {"promptTokenCount": 30, "candidatesTokenCount": 20, "totalTokenCount": 90,
-                                                          "thoughtsTokenCount": 40, "cachedContentTokenCount": 10}
-                        yield "data: " + json.dumps(chunk)
-                class Client(Response):
-                    def stream(self, *args, **kwargs):
-                        return Response()
-                monkeypatch.setattr(cli, "build_async_client", lambda **kwargs: Client())
-                async for event in cli.stream_google_gemini_cli(m, context, {"api_key": "test", "project_id": "test"}):
                     yield event
 
     with bound(chat, goal):

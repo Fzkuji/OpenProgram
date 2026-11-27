@@ -24,7 +24,7 @@ from dataclasses import asdict, dataclass
 from typing import Any, Optional
 import logging
 
-from .probe_log import KIND_CREDENTIAL, probe
+from openprogram.models.usage.probe_log import KIND_CREDENTIAL, probe
 
 _log = logging.getLogger(__name__)
 
@@ -183,7 +183,7 @@ def _provider_message(body: str, limit: int = 160, secret: str | None = None) ->
         found = found or data.get("message") or data.get("detail") or ""
     if not isinstance(found, str):
         return ""
-    from openprogram.models.providers.utils.redaction import remove_secrets
+    from openprogram.state.secret_removal import remove_secrets
     key = (secret if secret is not None else _KEY_IN_CHECK.get()) or ""
     for value in {key, key.strip()}:
         if len(value) >= 4:
@@ -274,7 +274,7 @@ def _keep_openrouter_limit(provider_id: str, api_key: str, res: tuple[int, str, 
 
 def _is_environment_key(provider_id: str, api_key: str) -> bool:
     try:
-        from openprogram.models.providers.settings.env_api_keys import resolve_provider_key
+        from openprogram.models.auth.env_api_keys import resolve_provider_key
         return resolve_provider_key(provider_id) == api_key
     except Exception:
         return False
@@ -569,27 +569,6 @@ def _oauth_token(cred) -> str:
     )
 
 
-def _xai_subscription_probe(provider_id: str, kind: str, token: str) -> CredentialResult:
-    """Live auth check against the Grok CLI chat proxy (not api.x.ai)."""
-    from openprogram.models.providers.adapters.xai_subscription.headers import (
-        CLI_CHAT_PROXY_BASE_URL,
-        grok_cli_headers,
-    )
-    url = CLI_CHAT_PROXY_BASE_URL.rstrip("/") + "/models"
-    headers = {
-        "Authorization": f"Bearer {token}",
-        **grok_cli_headers("grok-4.5"),
-    }
-    res = _http_get(
-        url,
-        headers=headers,
-        configured_url=CLI_CHAT_PROXY_BASE_URL,
-    )
-    return _interpret(
-        provider_id, kind, res, via="GET /models", require_json=True,
-    )
-
-
 def _oauth_check(provider_id: str, kind: str, cred=None) -> CredentialResult:
     """A sign-in carries no key to probe: read its stored state (``cred``, else
     the one a request would use now), refreshing it when near expiry."""
@@ -610,12 +589,6 @@ def _oauth_check(provider_id: str, kind: str, cred=None) -> CredentialResult:
     if not token:
         return _result(provider_id, UNKNOWN, kind=kind, via="CredentialProvider",
                        detail="Sign-in state unknown.")
-    if provider_id == "xai-subscription":
-        live = _xai_subscription_probe(provider_id, kind, token)
-        # Transport failure: still treat the stored login as valid so Check
-        # does not bounce back to "unknown" after a flaky proxy hop.
-        if live.http_status is not None or live.status != UNKNOWN:
-            return live
     return _result(provider_id, VALID, kind=kind, via="CredentialProvider", detail="Signed in.")
 
 
@@ -810,7 +783,7 @@ def validate_credential(
 
     # Resolve the key if the caller didn't hand one in (save-verify passes it).
     if api_key is None:
-        from openprogram.models.providers.settings.env_api_keys import resolve_api_key_with_auth_store
+        from openprogram.models.auth.env_api_keys import resolve_api_key_with_auth_store
         api_key = resolve_api_key_with_auth_store(provider_id)
     from openprogram.models.providers.catalog.local import is_local_provider
     if not api_key and is_local_provider(provider_id):
@@ -868,7 +841,7 @@ def provider_id_for_env_var(env_var: str) -> str | None:
     """Reverse of the env-var → provider mapping, for the save-key verify path
     which only knows the env var name. Re-exports the canonical reverse map in
     ``providers.env_api_keys`` (one source of truth for provider ↔ env-var)."""
-    from openprogram.models.providers.settings.env_api_keys import provider_id_for_env_var as _canon
+    from openprogram.models.auth.env_api_keys import provider_id_for_env_var as _canon
     return _canon(env_var)
 
 

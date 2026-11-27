@@ -260,7 +260,7 @@ def test_existing_unknown_node_errors(parent_turn):
 # --- C6: robustness ---
 
 def test_message_budget_refuses(parent_turn, monkeypatch):
-    from openprogram.programs.tools.agents.send_message.send_message.depth import (
+    from openprogram.runtime.jobs.chain_budgets import (
         set_chain_messages, _chain_messages,
     )
     from openprogram.runtime.permissions.refusal import Refused
@@ -283,7 +283,7 @@ def test_self_target_refused(parent_turn):
 
 
 def test_delivery_inherits_chain_messages(parent_turn):
-    from openprogram.programs.tools.agents.send_message.send_message.depth import (
+    from openprogram.runtime.jobs.chain_budgets import (
         set_chain_messages, _chain_messages,
     )
     tok = set_chain_messages(2)
@@ -356,13 +356,13 @@ def test_an_agent_head_left_behind_by_a_running_message_keeps_its_name(parent_tu
     auto-namer's branch name."""
     from openprogram.runtime.jobs.store import save_job
     from openprogram.runtime.jobs.types import Job, JobStatus
-    from openprogram.programs.tools.agents.send_message.send_message import delivery
+    from openprogram.runtime.conversation.peer_agents import delivery
     save_job("p1", Job(id="j1", parent_session_id="p1", prompt="2+3?", agent_id="main",
                        status=JobStatus.COMPLETED, head_id="a0", label="scout", creates_agent=True))
     parent_turn.set_branch_name("p1", "a0", "2加3的计算结果", auto_named=True)
     import importlib
     addressing = importlib.import_module(
-        "openprogram.programs.tools.agents.send_message.send_message.addressing")
+        "openprogram.runtime.conversation.peer_agents.addressing")
     monkeypatch.setattr(addressing, "agent_tips", lambda session_id: [("scout", "a0_running")])
     assert delivery.branch_name("p1", "a0", "p1") == "scout"
 

@@ -6,17 +6,32 @@
  * page stays short however many chats there are. A project
  * (/chats?project=<id>): its chats, newest first, a chat waiting on the
  * user first and saying so. Searching on Projects finds chats in every
- * project. The box at the bottom starts a new chat, in the open project
- * when there is one. Projects come from the same registry as the desktop
- * sidebar's project groups (lib/projects/).
+ * project. A project's bottom bar starts a new chat in it. Projects come
+ * from the same registry as the desktop sidebar's project groups
+ * (lib/projects/).
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Archive, ChevronRight, Link, Mic, Pencil, Pin, PinOff, Search, Settings, SlidersHorizontal, Trash2, type LucideIcon } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { Mic, Pin, Settings, SlidersHorizontal } from "lucide-react";
+import {
+  Actions,
+  ActionsButton,
+  ActionsGroup,
+  Block,
+  BlockTitle,
+  Link,
+  List,
+  ListItem,
+  Navbar,
+  Page,
+  Preloader,
+  Searchbar,
+  SwipeoutActions,
+  SwipeoutButton,
+  Toolbar,
+} from "framework7-react";
 
 import { useSessionActions } from "@/components/chat/pane/session-actions-menu";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { MENU_ITEM_STATES, MENU_PANEL, itemCls } from "@/components/ui/menu/menu-styles";
 
 import { AgentMark } from "@/components/chat/top-bar/chips/model-mark";
 import { activityState, type ActivityState } from "@/components/sidebar/sessions/activity";
@@ -29,17 +44,24 @@ import { navigate } from "@/lib/nav/navigate";
 import { listSessionProjects } from "@/lib/projects/list-projects";
 import { projectGroups, type ProjectGroupSource } from "@/lib/projects/project-groups";
 import { useSessionStore } from "@/lib/session-store";
-import { openNewChat } from "@/lib/tabs/navigation/open-session";
-import { cn } from "@/lib/utils";
+import { openNewChat, prepareNewChat } from "@/lib/tabs/navigation/open-session";
+import { SessionScopeProvider } from "@/lib/session-store/session-scope";
+import { PhoneNewChatSettings } from "@/components/chat/composer/controls/phone-composer-bar";
 
 import { PhoneComputerSwitcher, useLinkedComputers, useShownMachine } from "./phone-computer-switcher";
-import { PhoneNavBar } from "./phone-nav-bar";
 import { openSessionWhenReady, pushUrl } from "./phone-nav";
+import { askDelete, askRename } from "./phone-dialogs";
+import { PhonePortal } from "./phone-portal";
+import { PhoneProjectMenu } from "./phone-project-menu";
+import { backTo } from "./phone-router";
+import { pinnedProjectIds, useRecentsView } from "@/lib/prefs/recents-view";
+import { cachedProjects, cacheProjects } from "@/lib/mobile/session-list-cache";
+import { preloadSession, sessionHeld } from "@/lib/tabs/navigation/preload-session";
 
 type Row = { conv: LegacyConv; state: ActivityState | null };
 /** `registered`: `id` is a registry project's id, not a name from the
  *  chats before the registry answered. */
-type Group = { id: string; name: string; rows: Row[]; waiting: number; latest: number; registered: boolean; machine: string };
+type Group = { id: string; name: string; rows: Row[]; waiting: number; latest: number; registered: boolean; machine: string; pinned: boolean };
 
 const time = (conv: LegacyConv) => conv.updated_at || conv.created_at || 0;
 
@@ -50,20 +72,36 @@ function when(ts: number | undefined, locale: string): string {
   const now = new Date();
   const days = Math.floor((new Date(now.toDateString()).getTime() - new Date(date.toDateString()).getTime()) / 86_400_000);
   const lang = locale === "zh" ? "zh-CN" : undefined;
-  if (days <= 0) return date.toLocaleTimeString(lang, { hour: "2-digit", minute: "2-digit" });
+  if (days <= 0) return date.toLocaleTimeString(lang, { hour: "numeric", minute: "2-digit" });
   if (days < 7) return date.toLocaleDateString(lang, { weekday: "short" });
   return date.toLocaleDateString(lang, { month: "numeric", day: "numeric" });
 }
 
+/** The project registry as last read. It outlives a page: going back to
+ *  Projects remounts it, and starting from nothing regrouped the chats
+ *  under their folder names until the registry answered again, so every
+ *  return looked like a reload. The app also keeps it across starts. */
+let knownProjects: ProjectGroupSource[] | null = null;
+
 /** The project registry, read again when chats come or go, a binding
  *  changes (`project-changed`) or the connection opens. */
 function useProjects(): ProjectGroupSource[] {
-  const [projects, setProjects] = useState<ProjectGroupSource[]>([]);
+  const [projects, setProjects] = useState<ProjectGroupSource[]>(() => {
+    knownProjects ??= cachedProjects<ProjectGroupSource>();
+    return knownProjects ?? [];
+  });
   const ids = useSessionStore((s) => Object.keys(s.conversations).sort().join(","));
   const open = useSessionStore((s) => s.wsStatus === "open");
   const read = useCallback(() => {
     void listSessionProjects<{ projects: ProjectGroupSource[]; session_id?: string | null }>("")
-      .then((data) => { if (data?.projects) setProjects(data.projects); });
+      .then((data) => {
+        const next = data?.projects;
+        if (!next) return;
+        const same = (list: ProjectGroupSource[] | null) => !!list && JSON.stringify(list) === JSON.stringify(next);
+        if (!same(knownProjects)) { knownProjects = next; cacheProjects(next); }
+        // The same registry again changes nothing on screen.
+        setProjects((shown) => same(shown) ? shown : next);
+      });
   }, []);
   useEffect(() => { if (open) read(); }, [open, ids, read]);
   useEffect(() => {
@@ -78,7 +116,11 @@ function useGroups(): Group[] {
   const conversations = useSessionStore((s) => s.conversations);
   const runningTasks = useSessionStore((s) => s.runningTasks);
   const projects = useProjects();
+  const view = useRecentsView();
   return useMemo(() => {
+    // Pinned as in the sidebar; the default project, where a chat with no
+    // project goes, is pinned until unpinned there.
+    const pinned = new Set(pinnedProjectIds(view, projects.find((project) => project.is_default)?.id));
     const convs = (Object.values(conversations) as LegacyConv[]).filter((conv) => !conv.archived);
     const rank = (row: Row) => row.state === "needs_input" ? 0 : row.conv.pinned ? 1 : 2;
     const toGroup = (id: string, name: string, items: LegacyConv[], registered: boolean, machine = LOCAL_ID): Group => {
@@ -92,6 +134,7 @@ function useGroups(): Group[] {
         latest: Math.max(0, ...items.map(time)),
         registered,
         machine,
+        pinned: registered && pinned.has(id),
       };
     };
     let groups: Group[];
@@ -105,8 +148,8 @@ function useGroups(): Group[] {
       for (const conv of convs) byName.set(conv.project || "", [...(byName.get(conv.project || "") ?? []), conv]);
       groups = [...byName.entries()].map(([name, items]) => toGroup(name, name, items, false));
     }
-    return groups.sort((a, b) => Number(b.waiting > 0) - Number(a.waiting > 0) || b.latest - a.latest);
-  }, [conversations, runningTasks, projects]);
+    return groups.sort((a, b) => Number(b.waiting > 0) - Number(a.waiting > 0) || Number(b.pinned) - Number(a.pinned) || b.latest - a.latest);
+  }, [conversations, runningTasks, projects, view]);
 }
 
 function stateWord(state: ActivityState | null, text: (en: string, zh: string) => string): string | null {
@@ -117,75 +160,49 @@ function stateWord(state: ActivityState | null, text: (en: string, zh: string) =
   return null;
 }
 
-/** Archive a chat from its row, as the sidebar's menu does: the store at
- *  once, then the server. */
-function archiveChat(id: string) {
+/** Archive or pin a chat from its row, as the sidebar's menu does: the
+ *  store at once, then the server. */
+function setChatFlags(id: string, flags: { archived?: boolean; pinned?: boolean }) {
   const store = useSessionStore.getState();
   const prev = store.conversations[id];
-  if (prev) store.upsertConversation({ ...prev, archived: true, id });
-  wsSend({ action: "update_session_flags", session_id: id, archived: true });
+  if (prev) store.upsertConversation({ ...prev, ...flags, id });
+  wsSend({ action: "update_session_flags", session_id: id, ...flags });
 }
 
-const ACTION_W = 84; // the revealed Archive button
 const HOLD_MS = 450;
-/** The one row whose Archive is showing; opening another closes it. */
-let closeOpenRow: (() => void) | null = null;
 
-/** A chat's row. Its state sits where the time is and keeps that slot's
- *  width, so the title does not move when it changes (Happy's corner):
- *  "Waiting" while it waits for the person, a pulsing dot while it runs,
- *  a dot for a result not seen yet. A swipe to the left shows Archive,
- *  which takes a tap (Happy: no full swipe); a long press opens the
- *  chat's menu (Paseo, 450ms). */
-type RowAction = "p" | "r" | "c" | "a" | "d";
-
-function ChatRow({ row, onMenu }: { row: Row; onMenu: (id: string, run?: RowAction) => void }) {
-  const { t, text, locale } = useTranslation();
-  const { conv, state } = row;
-  const slide = useRef<HTMLDivElement>(null);
-  const button = useRef<HTMLButtonElement>(null);
-  const shown = useRef(0);
-  const swallowClick = useRef(false);
-
+/** A long press on a row opens its chat's menu (Paseo, 450ms): iOS's own
+ *  in the phone app, Framework7's action sheet in a browser. A swipe on
+ *  the row is Framework7's swipeout. Returns whether the click that ends
+ *  the press is the press's own. */
+function useLongPress(row: RefObject<{ el: HTMLElement | null } | null>, conv: LegacyConv, onMenu: (id: string, run?: RowAction) => void) {
+  const { t } = useTranslation();
+  const swallow = useRef(false);
+  const flags = useRef(conv);
+  flags.current = conv;
   useEffect(() => {
-    const el = button.current;
-    const track = slide.current;
-    if (!el || !track) return;
+    const el = row.current?.el;
+    if (!el) return;
+    let timer = 0;
     let x0 = 0;
     let y0 = 0;
-    let base = 0;
-    let axis: "x" | "y" | null = null;
-    let timer = 0;
-    const row = track.parentElement!;
-    const reveal = (on: boolean) => { if (on) row.setAttribute("data-swiped", ""); else row.removeAttribute("data-swiped"); };
-    const place = (offset: number, animate: boolean) => {
-      if (offset) reveal(true);
-      else if (animate) track.addEventListener("transitionend", () => { if (!shown.current) reveal(false); }, { once: true });
-      else reveal(false);
-      track.style.transition = animate ? "transform 260ms cubic-bezier(0.32, 0.72, 0, 1)" : "none";
-      track.style.transform = offset ? `translateX(${offset}px)` : "";
-      shown.current = offset;
-      if (offset && closeOpenRow !== close) { closeOpenRow?.(); closeOpenRow = close; }
-      if (!offset && closeOpenRow === close) closeOpenRow = null;
-    };
-    const close = () => place(0, true);
+    const cancel = () => { window.clearTimeout(timer); timer = 0; };
     const onStart = (event: TouchEvent) => {
       if (event.touches.length !== 1) return;
       x0 = event.touches[0].clientX;
       y0 = event.touches[0].clientY;
-      base = shown.current;
-      axis = null;
-      swallowClick.current = false;
-      window.clearTimeout(timer);
-      // In the phone app iOS runs the long press and draws its menu.
+      swallow.current = false;
+      cancel();
+      // Read the chat while the finger is down: most are here by the tap.
+      if (!sessionHeld(conv.id)) preloadSession(conv.id);
       if (nativeMenus()) {
         const run = (action: RowAction) => () => onMenu(conv.id, action);
-        armNativePress(track, [
+        armNativePress(el, [
           { title: "", inline: true, children: [
-            { title: conv.pinned ? t("sidebar.unpin") : t("sidebar.pin"), icon: conv.pinned ? "pin.slash" : "pin", run: run("p") },
+            { title: flags.current.pinned ? t("sidebar.unpin") : t("sidebar.pin"), icon: flags.current.pinned ? "pin.slash" : "pin", run: run("p") },
             { title: t("sidebar.rename"), icon: "pencil", run: run("r") },
             { title: t("sidebar.copy_link"), icon: "link", run: run("c") },
-            { title: conv.archived ? t("sidebar.unarchive") : t("sidebar.archive"), icon: "archivebox", run: run("a") },
+            { title: flags.current.archived ? t("sidebar.unarchive") : t("sidebar.archive"), icon: "archivebox", run: run("a") },
           ] },
           { title: t("sidebar.delete"), icon: "trash", destructive: true, run: run("d") },
         ]);
@@ -193,141 +210,126 @@ function ChatRow({ row, onMenu }: { row: Row; onMenu: (id: string, run?: RowActi
       }
       timer = window.setTimeout(() => {
         timer = 0;
-        swallowClick.current = true;
+        swallow.current = true;
         haptic("medium");
         onMenu(conv.id);
       }, HOLD_MS);
     };
     const onMove = (event: TouchEvent) => {
-      const dx = event.touches[0].clientX - x0;
-      const dy = event.touches[0].clientY - y0;
-      if (!axis && Math.hypot(dx, dy) > 8) {
-        window.clearTimeout(timer);
-        timer = 0;
-        axis = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
-        if (nativeMenus()) armNativePress(null);
-      }
-      if (axis !== "x") return;
-      event.preventDefault();
-      const offset = Math.min(0, Math.max(-ACTION_W * 1.25, base + dx));
-      reveal(true);
-      track.style.transition = "none";
-      track.style.transform = `translateX(${offset}px)`;
-      shown.current = offset;
+      if (Math.hypot(event.touches[0].clientX - x0, event.touches[0].clientY - y0) <= 8) return;
+      cancel();
+      if (nativeMenus()) armNativePress(null);
     };
     const onEnd = () => {
-      window.clearTimeout(timer);
-      timer = 0;
+      cancel();
       if (nativeMenus()) armNativePress(null);
-      if (axis === "x") {
-        swallowClick.current = true;
-        const open = shown.current < -ACTION_W / 2;
-        if (open && !base) haptic("light");
-        place(open ? -ACTION_W : 0, true);
-      }
-      axis = null;
     };
     el.addEventListener("touchstart", onStart, { passive: true });
-    el.addEventListener("touchmove", onMove, { passive: false });
+    el.addEventListener("touchmove", onMove, { passive: true });
     el.addEventListener("touchend", onEnd);
     el.addEventListener("touchcancel", onEnd);
     return () => {
-      window.clearTimeout(timer);
-      if (closeOpenRow === close) closeOpenRow = null;
+      cancel();
       el.removeEventListener("touchstart", onStart);
       el.removeEventListener("touchmove", onMove);
       el.removeEventListener("touchend", onEnd);
       el.removeEventListener("touchcancel", onEnd);
     };
-  }, [conv.id, conv.pinned, conv.archived, onMenu, t]);
+  }, [row, conv.id, onMenu, t]);
+  return swallow;
+}
 
+/** A chat's actions (Pin, Rename, Copy link, Archive, Delete). */
+type RowAction = "p" | "r" | "c" | "a" | "d";
+
+/** A chat's row: Framework7's media-list row, its title and time, its
+ *  state and the latest message under it. A swipe right shows Pin, a
+ *  swipe left Archive, as Mail and Telegram do. */
+function ChatRow({ row, onMenu }: { row: Row; onMenu: (id: string, run?: RowAction) => void }) {
+  const { t, text, locale } = useTranslation();
+  const { conv, state } = row;
+  // Framework7 hands its components' elements as `el`.
+  const li = useRef<{ el: HTMLElement | null } | null>(null);
+  const swallow = useLongPress(li, conv, onMenu);
   const word = stateWord(state, text);
+  const preview = conv.preview?.replace(/\[image\]\s*(?=\S)/g, `${text("Image", "图片")} · `).replace(/\[image\]/g, text("Image", "图片"));
   return (
-    <div className="phone-chat-row" data-state={state ?? undefined}>
-      <button
-        type="button"
-        className="phone-chat-row-archive"
-        tabIndex={-1}
-        onClick={() => { haptic("success"); archiveChat(conv.id); }}
-      >
-        {text("Archive", "归档")}
-      </button>
-      <div className="phone-chat-row-track" ref={slide}>
-        <button
-          ref={button}
-          type="button"
-          className="phone-home-row"
-          onClick={() => {
-            if (swallowClick.current) { swallowClick.current = false; return; }
-            if (shown.current) { closeOpenRow?.(); return; }
-            closeOpenRow?.();
-            openSessionWhenReady(conv.id);
-          }}
-          onContextMenu={(event) => { event.preventDefault(); onMenu(conv.id); }}
-        >
-          <span className="phone-home-text">
-            <span className="phone-home-line">
-              <span className="phone-home-title">{conv.pinned ? <Pin size={12} className="phone-home-pin" aria-hidden="true" /> : null}{displayTitle(conv)}</span>
-              {conv.harness ? <AgentMark harness={conv.harness} size={13} fit="contain" className="shrink-0 self-center" /> : null}
-              <span className="phone-home-slot">
-                {state === "needs_input" ? <span className="phone-home-badge">{text("Waiting", "等你")}</span>
-                  : state ? <span className="phone-home-state" data-state={state} aria-label={word ?? undefined} />
-                  : <span className="phone-home-time">{when(time(conv), locale)}</span>}
-              </span>
-            </span>
-            <span className="phone-home-preview">
-              {word ? <b data-state={state ?? undefined}>{word}</b> : null}
-              {word && conv.preview ? " · " : null}
-              {conv.preview}
-            </span>
-          </span>
-        </button>
-      </div>
-    </div>
+    <ListItem
+      ref={li as never}
+      link="#"
+      swipeout
+      noChevron
+      title={displayTitle(conv)}
+      after={state === "working" || state === "needs_input" ? undefined : when(time(conv), locale)}
+      badge={state === "needs_input" ? text("Waiting", "等你") : undefined}
+      badgeColor="orange"
+      text={[word, preview].filter(Boolean).join(" · ")}
+      onClick={() => {
+        if (swallow.current) { swallow.current = false; return; }
+        openSessionWhenReady(conv.id);
+      }}
+    >
+      {conv.pinned ? <span slot="before-title"><Pin size={12} aria-hidden="true" /> </span> : null}
+      {conv.harness ? <span slot="after-start" data-not-f7><AgentMark harness={conv.harness} size={13} fit="contain" /></span> : null}
+      {state === "working" ? <span slot="after"><Preloader size={14} /></span> : null}
+      <SwipeoutActions left>
+        <SwipeoutButton color="orange" close onClick={() => { haptic("success"); setChatFlags(conv.id, { pinned: !conv.pinned }); }}>
+          {conv.pinned ? t("sidebar.unpin") : t("sidebar.pin")}
+        </SwipeoutButton>
+      </SwipeoutActions>
+      <SwipeoutActions right>
+        <SwipeoutButton color="blue" close onClick={() => { haptic("success"); setChatFlags(conv.id, { archived: true }); }}>
+          {text("Archive", "归档")}
+        </SwipeoutButton>
+      </SwipeoutActions>
+    </ListItem>
   );
 }
 
+// Framework7's List puts its rows in its <ul> by their component's name.
+ChatRow.displayName = "f7-list-item-chat";
+
 /** A chat's menu from its row's long press: the same actions as the
- *  details page, for this chat (chat/pane/session-actions-menu.tsx). */
+ *  details page, for this chat (chat/pane/session-actions-menu.tsx), as
+ *  Framework7's action sheet. */
 function ChatRowMenu({ id, run }: { id: string; run?: RowAction }) {
-  const { t } = useTranslation();
+  const { t, text } = useTranslation();
   const [open, setOpen] = useState(!run);
   const here = typeof window === "undefined" ? "" : window.location.pathname + window.location.search;
-  const { conv, actions, dialogs } = useSessionActions(() => {
+  const { conv, title, actions, rename, remove } = useSessionActions(() => {
     // Deleting it must not leave the list for another chat.
     setTimeout(() => { if (window.location.pathname + window.location.search !== here) window.history.replaceState(null, "", here); }, 0);
   }, id);
-  // Picked from iOS's menu: run it here, where its dialogs live.
+  const runs: Record<RowAction, () => void> = {
+    ...actions,
+    r: () => askRename(text, title, rename),
+    d: () => askDelete(text, title, remove),
+  };
+  // Picked from iOS's menu: run it here.
   const ran = useRef(false);
   useEffect(() => {
     if (!run || ran.current) return;
     ran.current = true;
-    actions[run]();
-  }, [run, actions]);
-  const row = (label: string, Icon: LucideIcon, run: () => void, danger?: boolean) => (
-    <DropdownMenuItem className={cn(itemCls(false), MENU_ITEM_STATES, danger && "text-[var(--accent-red)]")}
-      onSelect={() => window.setTimeout(run, 0)}>
-      <span className="phone-sheet-icon" aria-hidden="true"><Icon size={18} /></span>
-      {label}
-    </DropdownMenuItem>
+    runs[run]();
+  });
+  const button = (label: string, action: RowAction, color?: string) => (
+    <ActionsButton color={color} onClick={runs[action]}>{label}</ActionsButton>
   );
   return (
-    <>
-      {/* Stays mounted after the menu closes: Rename and Delete open their
-          dialogs from here. */}
-      <DropdownMenu open={open} onOpenChange={setOpen}>
-        <DropdownMenuTrigger asChild><span className="phone-message-menu-anchor" aria-hidden="true" /></DropdownMenuTrigger>
-        <DropdownMenuContent className={MENU_PANEL} onCloseAutoFocus={(event) => event.preventDefault()}>
-          {row(conv?.pinned ? t("sidebar.unpin") : t("sidebar.pin"), conv?.pinned ? PinOff : Pin, actions.p)}
-          {row(t("sidebar.rename"), Pencil, actions.r)}
-          {row(t("sidebar.copy_link"), Link, actions.c)}
-          {row(conv?.archived ? t("sidebar.unarchive") : t("sidebar.archive"), Archive, actions.a)}
-          <DropdownMenuSeparator />
-          {row(t("sidebar.delete"), Trash2, actions.d, true)}
-        </DropdownMenuContent>
-      </DropdownMenu>
-      {dialogs}
-    </>
+    <PhonePortal>
+      <Actions opened={open} onActionsClosed={() => setOpen(false)}>
+        <ActionsGroup>
+          {button(conv?.pinned ? t("sidebar.unpin") : t("sidebar.pin"), "p")}
+          {button(t("sidebar.rename"), "r")}
+          {button(t("sidebar.copy_link"), "c")}
+          {button(conv?.archived ? t("sidebar.unarchive") : t("sidebar.archive"), "a")}
+          {button(t("sidebar.delete"), "d", "red")}
+        </ActionsGroup>
+        <ActionsGroup>
+          <ActionsButton strong>{text("Cancel", "取消")}</ActionsButton>
+        </ActionsGroup>
+      </Actions>
+    </PhonePortal>
   );
 }
 
@@ -340,14 +342,14 @@ function ChatRows({ rows, sections }: { rows: Row[]; sections?: boolean }) {
   const live = sections ? rows.filter((row) => row.state === "needs_input" || row.state === "working") : [];
   const rest = live.length ? rows.filter((row) => !live.includes(row)) : rows;
   const list = (items: Row[]) => (
-    <div className="phone-app-list">
+    <List strong inset dividersIos mediaList>
       {items.map((row) => <ChatRow key={row.conv.id} row={row} onMenu={onMenu} />)}
-    </div>
+    </List>
   );
   return (
     <>
-      {live.length ? <><h2 className="phone-app-section-title">{text("In progress", "进行中")}</h2>{list(live)}</> : null}
-      {live.length && rest.length ? <h2 className="phone-app-section-title">{text("Earlier", "更早")}</h2> : null}
+      {live.length ? <><BlockTitle>{text("In progress", "进行中")}</BlockTitle>{list(live)}</> : null}
+      {live.length && rest.length ? <BlockTitle>{text("Earlier", "更早")}</BlockTitle> : null}
       {rest.length ? list(rest) : null}
       {menu ? <ChatRowMenu key={menu.n} id={menu.id} run={menu.run} /> : null}
     </>
@@ -363,75 +365,92 @@ function projectTone(name: string): string {
   return PROJECT_TONES[hash % PROJECT_TONES.length];
 }
 
-function SearchField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+/** Framework7's searchbar, in the page under the bar. */
+function SearchField({ onChange }: { onChange: (value: string) => void }) {
   const { text } = useTranslation();
   return (
-    <label className="phone-app-search">
-      <Search size={16} aria-hidden="true" />
-      <input
-        type="search"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={text("Search chats", "搜索对话")}
-        enterKeyHint="search"
-      />
-    </label>
+    <Searchbar
+      customSearch
+      disableButton={false}
+      placeholder={text("Search chats", "搜索对话")}
+      onSearchbarSearch={(_bar: unknown, query: string) => onChange(query)}
+      onSearchbarClear={() => onChange("")}
+    />
   );
 }
 
-function NewChatDock({ projectId, name }: { projectId?: string; name?: string }) {
+/** The bottom bar: the new chat's settings, the new chat, and voice, as
+ *  Framework7's toolbar. */
+function NewChatDock({ projectId, name }: { projectId?: string; name?: string; slot?: string }) {
   const { text } = useTranslation();
-  function newChat() {
-    // In a project: a fresh draft bound to it until its first message, as
-    // the sidebar's ＋ on a project does (sessions-list.tsx).
-    const bind = (draftId: string, id: string) => {
+  // The draft the settings button set up: the next new chat opens it.
+  const [prepared, setPrepared] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  // In a project: a fresh draft bound to it until its first message, as
+  // the sidebar's ＋ on a project does (sessions-list.tsx).
+  function bindProject(draftId: string) {
+    const bind = (id: string) => {
       useSessionStore.getState().setPendingProject(draftId, id);
       window.dispatchEvent(new Event("project-changed"));
     };
-    const draftId = openNewChat(projectId || name ? { fresh: true } : undefined);
-    if (projectId) bind(draftId, projectId);
+    if (projectId) bind(projectId);
     else if (name) {
       // The registry had not answered when the page drew (it groups by
       // name until then): the project is found by its name now.
       void listSessionProjects<{ projects: ProjectGroupSource[]; session_id?: string | null }>("").then((data) => {
         const found = data?.projects?.find((project) => project.name === name);
-        if (found) bind(draftId, found.id);
+        if (found) bind(found.id);
       });
     }
+  }
+  function newChat() {
+    const draftId = openNewChat({ fresh: !!(projectId || name), draft: prepared });
+    if (draftId !== prepared) bindProject(draftId);
+    setPrepared(null);
     pushUrl("/chat");
   }
-  // Its settings and voice: the new chat's own settings button or mic,
-  // pressed once its page is up.
-  function newChatThen(selector: string) {
+  // The settings open here, over the list, for the chat the bar starts.
+  function openSettings() {
+    const draftId = prepareNewChat(prepared);
+    if (draftId !== prepared) {
+      bindProject(draftId);
+      setPrepared(draftId);
+    }
+    setSettingsOpen(true);
+  }
+  // Voice: the new chat's own mic, pressed once its page is up.
+  function newChatByVoice() {
     newChat();
     const started = performance.now();
     const press = () => {
-      const button = document.querySelector<HTMLButtonElement>(`.phone-conversation ${selector}`);
-      if (button) {
-        // A menu trigger opens on the press, not on the click.
-        button.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true, button: 0, pointerType: "mouse" }));
-        button.click();
-      }
+      const button = document.querySelector<HTMLButtonElement>(".phone-conversation [data-composer-mic]");
+      if (button) button.click();
       else if (performance.now() - started < 2000) window.requestAnimationFrame(press);
     };
     window.requestAnimationFrame(press);
   }
-  // One capsule at the bottom, its ends round like the screen's corners:
-  // the new chat's settings (model, effort), its field, and voice.
   return (
-    <div className="phone-home-dock">
-      <div className="phone-home-capsule">
-        <button type="button" className="phone-home-dock-button" aria-label={text("New chat settings", "新对话设置")} onClick={() => newChatThen(".phone-composer-settings")}>
-          <SlidersHorizontal size={20} strokeWidth={1.8} aria-hidden="true" />
-        </button>
-        <button type="button" className="phone-home-new" onClick={newChat}>
-          {name ? text(`New chat in ${name}…`, `在 ${name} 里开新对话…`) : text("Start a new chat…", "开一个新对话…")}
-        </button>
-        <button type="button" className="phone-home-dock-button" aria-label={text("New chat by voice", "语音开新对话")} onClick={() => newChatThen("[data-composer-mic]")}>
-          <Mic size={21} strokeWidth={1.8} aria-hidden="true" />
-        </button>
+    <Toolbar bottom>
+      {/* Framework7 draws its toolbar's left, pane and right on glass. */}
+      <div className="left">
+        <Link iconOnly aria-label={text("New chat settings", "新对话设置")} onClick={openSettings}>
+          <SlidersHorizontal size={22} aria-hidden="true" />
+        </Link>
       </div>
-    </div>
+      <div className="toolbar-pane phone-new-chat-pane">
+        <Link className="phone-new-chat" onClick={newChat}>
+          <span>{name ? text(`New chat in ${name}`, `在 ${name} 里开新对话`) : text("New chat", "新对话")}</span>
+        </Link>
+      </div>
+      <div className="right">
+        <Link iconOnly aria-label={text("New chat by voice", "语音开新对话")} onClick={newChatByVoice}>
+          <Mic size={22} aria-hidden="true" />
+        </Link>
+      </div>
+      <SessionScopeProvider sid={prepared ?? "__new__"}>
+        <PhoneNewChatSettings open={settingsOpen} setOpen={setSettingsOpen} />
+      </SessionScopeProvider>
+    </Toolbar>
   );
 }
 
@@ -458,66 +477,71 @@ function PhoneProjects() {
       .sort((a, b) => time(b.conv) - time(a.conv))
     : [], [groups, q]);
 
+  const projectRow = (group: (typeof groups)[number]) => {
+    const name = group.name || text("Other", "其他");
+    return (
+      <ListItem
+        key={group.id}
+        link="#"
+        onClick={() => pushUrl(`/chats?project=${encodeURIComponent(group.id)}`)}
+        title={name}
+        after={group.waiting ? undefined : when(group.latest, locale)}
+        badge={group.waiting || undefined}
+        badgeColor="red"
+        footer={`${text(`${group.rows.length} ${group.rows.length === 1 ? "chat" : "chats"}`, `${group.rows.length} 个对话`)}${group.rows[0] ? ` · ${displayTitle(group.rows[0].conv)}` : ""}`}
+      >
+        <span slot="media" className="phone-project-icon" style={{ background: projectTone(name) }} aria-hidden="true">
+          {[...name.trim()][0]?.toUpperCase() ?? "?"}
+        </span>
+      </ListItem>
+    );
+  };
+  const pinned = groups.filter((group) => group.pinned);
+  const rest = groups.filter((group) => !group.pinned);
+
+  // Grouped as Settings and Reminders are: a pinned card, then the rest.
   return (
-    <div className="phone-app-page phone-home">
-      <header className="phone-app-nav">
-        <div className="phone-home-computer" data-state={socket}>
-          <span className="phone-home-dot" aria-hidden="true" />
+    <Page className="phone-home">
+      {/* The title sits centred in the bar, between the computer and
+          settings; a new chat starts inside a project. */}
+      <Navbar title={text("Projects", "项目")}>
+        {/* Framework7 places a bar's sides by their slot. */}
           <PhoneComputerSwitcher
+            slot="left"
+            online={socket === "open"}
             status={computer
               ? `${computer.name} · ${socket === "open"
                 ? computer.via === "lan" ? text("Same Wi-Fi", "同一 Wi-Fi") : text("Anywhere", "远程")
                 : text("Connecting…", "正在连接…")}`
               : socket === "open" ? text("Connected", "已连接") : text("Connecting…", "正在连接…")}
           />
-        </div>
-        <button type="button" className="phone-app-circle" aria-label={text("Settings", "设置")} onClick={() => navigate("/settings")}>
-          <Settings size={19} strokeWidth={1.8} aria-hidden="true" />
-        </button>
-      </header>
-      <div className="phone-app-scroll">
-        <h1 className="phone-app-large-title">{text("Projects", "项目")}</h1>
-        <SearchField value={query} onChange={setQuery} />
-        {q ? (
-          found.length ? <ChatRows rows={found} /> : <p className="phone-app-empty">{text("No matching chats", "没有匹配的对话")}</p>
-        ) : (
-          <div className="phone-app-list">
-            {groups.map((group) => {
-              const name = group.name || text("Other", "其他");
-              return (
-                <button
-                  key={group.id}
-                  type="button"
-                  className="phone-home-row phone-project-row"
-                  onClick={() => pushUrl(`/chats?project=${encodeURIComponent(group.id)}`)}
-                >
-                  <span className="phone-project-icon" style={{ background: projectTone(name) }} aria-hidden="true">
-                    {[...name.trim()][0]?.toUpperCase() ?? "?"}
-                  </span>
-                  <span className="phone-home-text">
-                    <span className="phone-home-line">
-                      <span className="phone-home-title">{name}</span>
-                      {group.waiting
-                        ? <span className="phone-home-badge">{text(`${group.waiting} waiting`, `${group.waiting} 个等你`)}</span>
-                        : <span className="phone-home-time">{when(group.latest, locale)}</span>}
-                    </span>
-                    <span className="phone-home-preview">
-                      {text(`${group.rows.length} ${group.rows.length === 1 ? "chat" : "chats"}`, `${group.rows.length} 个对话`)}
-                      {group.rows[0] ? ` · ${displayTitle(group.rows[0].conv)}` : ""}
-                    </span>
-                  </span>
-                  <ChevronRight size={18} className="phone-app-row-chevron phone-project-chevron" aria-hidden="true" />
-                </button>
-              );
-            })}
-          </div>
-        )}
-        {groups.length === 0 && socket === "open" && !q ? (
-          <p className="phone-app-empty">{text("No chats yet", "还没有对话")}</p>
-        ) : null}
-      </div>
-      <NewChatDock />
-    </div>
+          <Link slot="right" iconOnly aria-label={text("Settings", "设置")} onClick={() => navigate("/settings")}>
+            <Settings size={22} aria-hidden="true" />
+          </Link>
+      </Navbar>
+      <SearchField onChange={setQuery} />
+      {q ? (
+        found.length ? <ChatRows rows={found} /> : <Block>{text("No matching chats", "没有匹配的对话")}</Block>
+      ) : (
+        <>
+          {pinned.length ? (
+            <>
+              <BlockTitle>{text("Pinned", "置顶")}</BlockTitle>
+              <List strong inset dividersIos>{pinned.map(projectRow)}</List>
+            </>
+          ) : null}
+          {rest.length ? (
+            <>
+              {pinned.length ? <BlockTitle>{text("Projects", "项目")}</BlockTitle> : null}
+              <List strong inset dividersIos>{rest.map(projectRow)}</List>
+            </>
+          ) : null}
+        </>
+      )}
+      {groups.length === 0 && socket === "open" && !q ? (
+        <Block>{text("No chats yet", "还没有对话")}</Block>
+      ) : null}
+    </Page>
   );
 }
 
@@ -529,18 +553,18 @@ function PhoneProject({ projectId }: { projectId: string }) {
   const q = query.trim().toLowerCase();
   const rows = (group?.rows ?? []).filter((row) => !q || displayTitle(row.conv).toLowerCase().includes(q));
   const name = group?.name || text("Other", "其他");
+  const project = useProjects().find((source) => group?.registered && source.id === group.id);
 
   return (
-    <div className="phone-app-page phone-home phone-project">
-      <PhoneNavBar back={text("Projects", "项目")} />
-      <div className="phone-app-scroll">
-        <h1 className="phone-app-large-title">{name}</h1>
-        <SearchField value={query} onChange={setQuery} />
-        {rows.length ? <ChatRows rows={rows} sections={!q} /> : group ? (
-          <p className="phone-app-empty">{q ? text("No matching chats", "没有匹配的对话") : text("No chats yet", "还没有对话")}</p>
-        ) : null}
-      </div>
-      <NewChatDock projectId={group?.registered ? group.id : undefined} name={group?.name} />
-    </div>
+    <Page className="phone-home phone-project">
+      <Navbar title={name} {...backTo(text("Projects", "项目"))}>
+        {project ? <PhoneProjectMenu slot="right" project={project} /> : null}
+      </Navbar>
+      <NewChatDock slot="fixed" projectId={group?.registered ? group.id : undefined} name={group?.name} />
+      <SearchField onChange={setQuery} />
+      {rows.length ? <ChatRows rows={rows} sections={!q} /> : group ? (
+        <Block>{q ? text("No matching chats", "没有匹配的对话") : text("No chats yet", "还没有对话")}</Block>
+      ) : null}
+    </Page>
   );
 }

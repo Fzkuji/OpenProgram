@@ -118,7 +118,7 @@ def _service(runner, execution_id):
 
 def prepare_shutdown(runner) -> None:
     """Request cooperative pause before the worker's bounded process teardown."""
-    from openprogram.operations.self_update.control.maintenance import maintenance_blocks
+    from openprogram.runtime import maintenance
 
     runner._restart_shutdown = True
     shutdown_event = getattr(runner, "_shutdown_event", None)
@@ -126,7 +126,7 @@ def prepare_shutdown(runner) -> None:
         shutdown_event.set()
         runner._dispatch_wake.set()
     seconds = window_seconds()
-    if seconds == 0 or maintenance_blocks("worker_restart"):
+    if seconds == 0 or maintenance.blocks("worker_restart"):
         return
     store = runner._execution_store
     for execution in store.list_nonterminal():
@@ -428,9 +428,9 @@ def _end_stranded_runs(runner) -> None:
 
 def reconcile(runner) -> None:
     """Resume the exact restart-owned pause, honoring any explicit deadline."""
-    from openprogram.operations.self_update.control.maintenance import maintenance_blocks
+    from openprogram.runtime import maintenance
 
-    if getattr(runner, "_restart_shutdown", False) or maintenance_blocks(
+    if getattr(runner, "_restart_shutdown", False) or maintenance.blocks(
         "worker_restart"
     ):
         return

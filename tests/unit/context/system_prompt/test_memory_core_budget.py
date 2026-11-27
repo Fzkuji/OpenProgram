@@ -15,6 +15,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from openprogram.state.memory.management import MemoryConfig, MemoryWorkspace
 from openprogram.state.memory.runtime.derived_views import (
     promote_legacy_core,
@@ -32,10 +34,23 @@ def _paragraph(index: int, text: str) -> str:
     )
 
 
+_OPEN: list[MemoryWorkspace] = []
+
+
+@pytest.fixture(autouse=True)
+def _close_workspaces():
+    """Each workspace stages a copy of memory in the temp directory; close it."""
+    yield
+    while _OPEN:
+        _OPEN.pop().close()
+
+
 def _workspace(tmp_path: Path, *, limit: int) -> MemoryWorkspace:
     root = tmp_path / "memory"
     (root / "topics").mkdir(parents=True)
-    return MemoryWorkspace(root, config=MemoryConfig(core_max_tokens=limit))
+    workspace = MemoryWorkspace(root, config=MemoryConfig(core_max_tokens=limit))
+    _OPEN.append(workspace)
+    return workspace
 
 
 def _master(space: MemoryWorkspace, paragraphs: int) -> None:

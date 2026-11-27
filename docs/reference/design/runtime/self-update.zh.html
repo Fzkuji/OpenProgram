@@ -114,6 +114,7 @@
 <tr><th scope="row"><code translate="no">trial</code></th><td><code translate="no">aborted</code></td><td>任一检查失败或超时</td></tr>
 <tr><th scope="row"><code translate="no">ready</code></th><td><code translate="no">building</code></td><td><code translate="no">local</code> 移动；rebase，<code translate="no">rebases &lt;= 3</code></td></tr>
 <tr><th scope="row"><code translate="no">ready</code></th><td><code translate="no">aborted</code></td><td>rebase 冲突或次数过多</td></tr>
+<tr><th scope="row"><code translate="no">ready</code></th><td><code translate="no">aborted</code></td><td>已准备好、等“重启以更新”的官方更新给另一个更新让路；之后会再准备一次</td></tr>
 <tr><th scope="row"><code translate="no">ready</code></th><td><code translate="no">quiescing</code></td><td><code translate="no">local</code> 等于 <code translate="no">base_sha</code></td></tr>
 <tr><th scope="row"><code translate="no">quiescing</code></th><td><code translate="no">activating</code></td><td>任务空闲或已做检查点</td></tr>
 <tr><th scope="row"><code translate="no">quiescing</code></th><td><code translate="no">aborted</code></td><td>取消，或 30 分钟</td></tr>
@@ -244,7 +245,7 @@ writer=controller</pre>
 <tbody>
 <tr><th scope="row">进程</th><td><code translate="no">trial/instance.py</code>。签名 launcher 加 <code translate="no">--root trials/&lt;update&gt;/fake-root</code>，<code translate="no">HOME</code> 和 <code translate="no">USERPROFILE</code> = <code translate="no">trials/&lt;update&gt;/home</code>，<code translate="no">OPENPROGRAM_WEB_PORT</code> = 空闲回环端口，<code translate="no">OPENPROGRAM_TRIAL=1</code></td></tr>
 <tr><th scope="row">启动</th><td>Web 服务、运行时、工具、任务执行器、净化副本上的启动恢复</td></tr>
-<tr><th scope="row">不启动</th><td>调度器、cron、常驻 ticker、频道、MCP 服务端和客户端、发行版检查、服务安装、更新巡检、空闲会话监视、夜间整理、配置钩子、订阅目录刷新、Programs 监视。由 <code translate="no">runner.py:trial_mode()</code> 决定</td></tr>
+<tr><th scope="row">不启动</th><td>调度器、cron、常驻 ticker、频道、MCP 服务端和客户端、发行版检查、服务安装、更新巡检、空闲会话监视、夜间整理、配置钩子、Programs 监视。由 <code translate="no">runner.py:trial_mode()</code> 决定</td></tr>
 <tr><th scope="row">macOS</th><td><code translate="no">sandbox.sb</code>：只写试运行目录；拒绝读取实时状态，除了 <code translate="no">versions/&lt;id&gt;</code>、<code translate="no">bases/&lt;base&gt;</code>、<code translate="no">trials/&lt;update&gt;</code> 及祖先元数据；网络只到试运行的 worker 端口和假模型端口</td></tr>
 <tr><th scope="row">Linux</th><td>可用时用 bubblewrap，规则相同</td></tr>
 <tr><th scope="row">Windows</th><td>没有系统沙箱：隔离只有临时数据、单独端口和净化副本。试运行期间的进度行和结果都说明这次测试可以碰到电脑上的其他文件。<code translate="no">PATH</code> 是 base 的 Python 加 Windows 系统目录。“launcher 跟随移动后的指针”这项检查跳过。</td></tr>
@@ -427,15 +428,15 @@ writer=controller</pre>
 </table>
 
 <h2 id="official">官方更新</h2>
-<p class="note">发现仍在 <code translate="no">update-service.js</code>。资产：<code translate="no">version-&lt;platform&gt;.tar.zst</code>、<code translate="no">repo.bundle</code>、<code translate="no">SHA256SUMS</code>、签名清单，变化时加 <code translate="no">base-</code> 和 <code translate="no">toolchain-</code>。</p>
+<p class="note">发现仍在 <code translate="no">update-service.js</code>。更新是滚动发行版 <code translate="no">updates</code> 上的签名指针和按内容寻址的层；只下载缺少的文件（<a href="../distribution/automatic-updates.zh.html">自动更新</a>）。</p>
 <ol>
-<li><code translate="no">official/replay.py</code> 校验资产，把 bundle 取到 <code translate="no">refs/heads/release</code>。</li>
-<li>没有用户提交：解开预构建版本，进入试运行。</li>
+<li><code translate="no">official/assemble.py</code> 在发布了新 base 时写出它，并把源码树导入为 <code translate="no">refs/heads/release</code> 的下一个提交，与发布的 tree id 核对。</li>
+<li>没有用户提交：用预构建的前端构建这个提交，进入试运行。</li>
 <li>有用户提交：在 <code translate="no">work/official-&lt;version&gt;</code> 中从旧到新 cherry-pick <code translate="no">old_release..local</code>。冲突时保存 <code translate="no">unreplayable/&lt;release&gt;/&lt;sha&gt;.patch</code> 并继续。</li>
 <li>构建、试运行、激活，<code translate="no">kind = official</code>，每个候选一条记录，由 <code translate="no">control/official_update.py</code> 执行。没有独立验收。旧 tip 存入 <code translate="no">undone</code>。</li>
 <li>干净重放失败时从新到旧丢弃用户提交重试，最多 5 次，最终到未修改的发行版。</li>
 </ol>
-<p class="note">需要超出 shell 范围的 <code translate="no">shell_compat</code> 的发行版，等待 DMG 或 EXE 的 shell 更新。</p>
+<p class="note">需要超出 shell 范围的 <code translate="no">shell_compat</code> 的发行版，等待下一个功能版本的安装包。</p>
 
 <h2 id="development-instance">开发版（<code translate="no">dev_deploy</code>）</h2>
 <p class="note">在开发版里做的改动就是 <code translate="no">dev</code> 上的一个提交，部署它就是这次更新。稳定版是正式版 App，只由它自己的更新器改动，所以这里不等它。见<a href="../distribution/dev-instance.zh.html">开发实例</a>。分离的控制器从私有副本（<code translate="no">delivery/controller_bundle.py</code>）运行，环境里既没有会话也没有 profile。</p>
@@ -472,7 +473,7 @@ writer=controller</pre>
 <tbody>
 <tr><th scope="row">已实现</th><td>状态机和 schema 2、队列、各平台切换控制器和 launcher、控制器退出监视、watchdog、保存的对话、subsystems、巡检、全部 <code translate="no">self_update</code> 动作、版本存储、指针、launcher、保留、试运行引擎、通过 <code translate="no">openprogram upgrade</code> 的发行版获取和重放、thin shell 加载器、种子、恢复页、握手、重启、CLI 种子安装器</td></tr>
 <tr><th scope="row">未验证</th><td>Windows：版本存储的任何部分都没在那里运行过。它的分支通过替身和交叉编译的 launcher 测试。<code translate="no">windows-desktop</code> 在 Windows 上跑 shell 检查；<code translate="no">windows-core</code> 只跑 launcher 测试。</td></tr>
-<tr><th scope="row">未完成</th><td>没有发布过 Windows App 和 Windows 更新文件：唯一一次构建它们的 Release 运行在这一步失败。Linux 的 thin App 和已签名更新文件已发布；还没有在已安装的副本上观察到切换。macOS App 仍内嵌运行时，除非设置 <code translate="no">OPENPROGRAM_RELEASE_MAC_THIN</code>。macOS 隐私授权门需要人工点击。</td></tr>
+<tr><th scope="row">未完成</th><td>没有发布过 Windows App 和 Windows 更新文件：唯一一次构建它们的 Release 运行在这一步失败。Linux 的 thin App 和已签名更新文件已发布；还没有在已安装的副本上观察到切换。发行版已签名且有更新密钥时 macOS App 就是薄壳；<code translate="no">OPENPROGRAM_RELEASE_MAC_THIN=false</code> 让它保持完整。macOS 隐私授权门需要人工点击。</td></tr>
 <tr><th scope="row">暂时保留</th><td><code translate="no">legacy_app</code>、<code translate="no">delivery/bootstrap.py</code>、<code translate="no">control/supervisor.py</code> 的 App 路径、<code translate="no">repair/owner_repair.py</code>、<code translate="no">owner_terminal.py</code>，直到已发布的 App 都是 thin。<code translate="no">package_protocol.py</code> 留到 <code translate="no">native_checks.py</code> 和 <code translate="no">ui_checks.py</code> 不再读取。</td></tr>
 </tbody>
 </table>

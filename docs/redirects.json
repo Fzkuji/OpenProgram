@@ -548,8 +548,8 @@
   "reference/design/providers/json-schema-structured-output.zh.html": "reference/design/providers/requests/json-schema-structured-output.zh.html",
   "reference/design/providers/web-search.html": "reference/design/providers/requests/web-search.html",
   "reference/design/providers/web-search.zh.html": "reference/design/providers/requests/web-search.zh.html",
-  "reference/design/providers/codex-transport.html": "reference/design/providers/requests/codex-transport.html",
-  "reference/design/providers/codex-transport.zh.html": "reference/design/providers/requests/codex-transport.zh.html",
+  "reference/design/providers/codex-transport.html": "reference/design/providers/auth/subscription-policy.html",
+  "reference/design/providers/codex-transport.zh.html": "reference/design/providers/auth/subscription-policy.zh.html",
   "reference/design/providers/network-proxy.html": "reference/design/providers/requests/network-proxy.html",
   "reference/design/providers/network-proxy.zh.html": "reference/design/providers/requests/network-proxy.zh.html",
   "reference/design/providers/record-replay.html": "reference/design/providers/requests/record-replay.html",
@@ -569,5 +569,7 @@
   "reference/design/ui/chat/transcript-model-limits.html": "reference/design/ui/transcript-model/limits.html",
   "reference/design/ui/chat/transcript-model-limits.zh.html": "reference/design/ui/transcript-model/limits.zh.html",
   "reference/design/integrations/computer-use/screen-providers.html": "reference/design/integrations/computer-use/machines-and-targets.html",
-  "reference/design/integrations/computer-use/screen-providers.zh.html": "reference/design/integrations/computer-use/machines-and-targets.zh.html"
+  "reference/design/integrations/computer-use/screen-providers.zh.html": "reference/design/integrations/computer-use/machines-and-targets.zh.html",
+  "reference/design/providers/requests/codex-transport.html": "reference/design/providers/auth/subscription-policy.html",
+  "reference/design/providers/requests/codex-transport.zh.html": "reference/design/providers/auth/subscription-policy.zh.html"
 }

@@ -22,9 +22,8 @@
 <tr><th scope="row"><code translate="no">Runtime.exec</code></th><td>在 ContextVar（<code translate="no">utils/http_transport/deadline.py</code>）里设一个绝对期限；每次尝试和等待前检查</td><td><code translate="no">max_retries</code> 3（<code translate="no">OPENPROGRAM_MAX_RETRIES</code>），<code translate="no">1.5·2^n</code> 秒，±25%</td></tr>
 <tr><th scope="row"><code translate="no">Runtime._call</code> → <code translate="no">_run_async</code></th><td>无运行中的循环：在当前线程 <code translate="no">asyncio.run</code>。有循环（Web、worker）：放到线程池，转发期限</td><td>无</td></tr>
 <tr><th scope="row"><code translate="no">AgentSession._run_with_retry</code></th><td>消耗本次调用的传输额度</td><td>2、4、8 秒</td></tr>
-<tr><th scope="row"><code translate="no">retry_stream</code>（Codex）、重试循环（completions）</th><td>每次尝试和等待前读期限</td><td>5 次，基数 2 秒，上限 30 秒</td></tr>
+<tr><th scope="row">重试循环（completions）</th><td>每次尝试和等待前读期限</td><td>5 次，基数 2 秒，上限 30 秒</td></tr>
 <tr><th scope="row">共享 httpx 客户端</th><td>连接、写、连接池 30 秒；keepalive 约 60 秒；强制 IPv4；代理</td><td>无</td></tr>
-<tr><th scope="row"><code translate="no">_parse_sse_stream</code>、Codex WebSocket</th><td><code translate="no">wait = min(idle, stall, total, deadline)</code></td><td>无</td></tr>
 <tr><th scope="row"><code translate="no">streaming/stream._delivered</code></th><td>所有提供商的流都经过这里。消耗本次调用的传输额度；在 Goal 或作业预留之下只发一次</td><td><a href="#resend">重发</a>传输失败的请求：5 次，基数 2 秒，上限 30 秒</td></tr>
 <tr><th scope="row"><code translate="no">streaming/stream._metered</code></th><td>给没有自带空闲上限的提供商加<a href="#idle-bound">空闲上限</a></td><td>无</td></tr>
 </tbody>
@@ -36,7 +35,7 @@
 <tbody>
 <tr><th scope="row">连接、写、连接池</th><td>30 秒</td><td><code translate="no">OPENPROGRAM_HTTPX_{CONNECT,WRITE,POOL}_TIMEOUT_S</code></td></tr>
 <tr><th scope="row">TCP 死连接检测</th><td>约 60 秒（30 + 10 × 3）</td><td><code translate="no">OPENPROGRAM_TCP_KEEPALIVE</code></td></tr>
-<tr><th scope="row">没有事件（<a href="#idle-bound">空闲上限</a>）</th><td>300 秒</td><td><code translate="no">OPENPROGRAM_STREAM_IDLE_TIMEOUT_S</code>（0 关闭）；Codex 另有 <code translate="no">OPENPROGRAM_SSE_DATA_STALL_TIMEOUT_S</code></td></tr>
+<tr><th scope="row">没有事件（<a href="#idle-bound">空闲上限</a>）</th><td>300 秒</td><td><code translate="no">OPENPROGRAM_STREAM_IDLE_TIMEOUT_S</code>（0 关闭）</td></tr>
 <tr><th scope="row">完全没有字节</th><td>600 秒</td><td><code translate="no">OPENPROGRAM_SSE_IDLE_TIMEOUT_S</code></td></tr>
 <tr><th scope="row">单条流总时长</th><td>无（0）</td><td><code translate="no">OPENPROGRAM_SSE_TOTAL_TIMEOUT_S</code></td></tr>
 <tr><th scope="row">httpx 读兜底</th><td>idle + 60 秒</td><td><code translate="no">OPENPROGRAM_HTTPX_READ_TIMEOUT_S</code></td></tr>
@@ -56,9 +55,7 @@
 <table class="stack">
 <thead><tr><th scope="col">传输</th><th scope="col">在哪里限制</th><th scope="col">谁来重试</th></tr></thead>
 <tbody>
-<tr><th scope="row">Codex 订阅，WebSocket 和 HTTP</th><td><code translate="no">read_budget.ReadBudget</code>，每一帧或每一行数据</td><td><code translate="no">retry_stream</code></td></tr>
 <tr><th scope="row">Chat Completions（DeepSeek、xAI、OpenAI 兼容）</th><td>提供商自己的请求和分块循环</td><td>它自己的重试循环</td></tr>
-<tr><th scope="row">Gemini 订阅</th><td>每次尝试的请求和数据行；它自己在两次尝试之间的等待不算静默</td><td><code translate="no">stream._delivered</code></td></tr>
 <tr><th scope="row">OpenAI 与 Azure Responses、Anthropic、Google、Bedrock、插件提供商</th><td><code translate="no">stream._metered</code>，每个事件</td><td><code translate="no">stream._delivered</code></td></tr>
 </tbody>
 </table>
@@ -69,13 +66,12 @@
 <li>关闭流会关掉它的套接字。botocore 自己 60 秒的读超时也作用于每次读取。</li>
 <li>在它的网络路径纳入管理之前，产品里禁用 Bedrock SDK 传输。</li>
 </ul>
-<p>服务器要求的等待超过 <code translate="no">OPENPROGRAM_RETRY_AFTER_CAP_S</code> 时不会睡过去：Gemini 订阅立刻以限流错误失败，与 <code translate="no">retry_stream</code> 一致。</p>
 <h2 id="resend">重发失败的回复</h2>
 <p>回复卡住，或者连接在最终事件之前断开，说明不了请求本身有问题，所以 <code translate="no">stream._delivered</code> 把同一个请求再发一次。对话轮次路径、<code translate="no">AgentSession</code> 和一次性调用都走这里。</p>
 <table class="stack">
 <thead><tr><th scope="col">情况</th><th scope="col">处理</th></tr></thead>
 <tbody>
-<tr><th scope="row">还没有任何内容就失败</th><td>先发一个 <code translate="no">retry</code> 事件，再重发。Codex 和 Chat Completions 先在自己的循环里重发；它们用尽次数的失败带着标记到达，不再重发</td></tr>
+<tr><th scope="row">还没有任何内容就失败</th><td>先发一个 <code translate="no">retry</code> 事件，再重发。Chat Completions 先在自己的循环里重发；它用尽次数的失败带着标记到达，不再重发</td></tr>
 <tr><th scope="row">已有推理、文字或工具调用后失败</th><td>整个请求重发，已收到的部分作废，与 Codex CLI 和 Claude Code 一致。<code translate="no">retry</code> 事件带 <code translate="no">restart</code>；回复所在的行和循环里的部分消息都去掉失败那次的文字和推理，等待期间到达的引导不会把它提交进去。Codex 则保留部分回复（<code translate="no">stop_reason="length"</code>），本轮从它接着走</td></tr>
 <tr><th scope="row">工具</th><td>不会执行两次：工具只在一次回复的最终事件之后执行，失败的回复没有最终事件</td></tr>
 <tr><th scope="row">正发往频道的回复</th><td>已发出的段落收不回来。失败那次还没发的文字丢弃；重发的回复开头与已发内容逐字相同时跳过这段。重发的回复措辞不同时，在已发内容之后整段发出</td></tr>
@@ -132,7 +128,7 @@
 </table>
 <p class="note"><code translate="no">LLMError</code> 带 <code translate="no">reason</code>、<code translate="no">retryable</code>、<code translate="no">http_status</code>、<code translate="no">retry_after_s</code>、<code translate="no">attempts</code>、<code translate="no">elapsed_s</code>、<code translate="no">had_image</code>、<code translate="no">provider</code>、<code translate="no">model</code>、<code translate="no">last_error_type</code>、<code translate="no">cause</code>。期限到达是 <code translate="no">TIMEOUT</code>，不可重试。可重试错误用尽预算后仍标可重试：意思是换新预算再试，不是立刻重试。</p>
 <p class="note">没有裁定的异常可能显示为 <code translate="no">UNKNOWN</code>、不可重试；<code translate="no">error_retryable_inferred</code> 标记这种情况，只有这类消息保留 Runtime 的有界兜底。显式裁定、已知原因或用尽的传输预算都以其为准。</p>
-<p class="note"><code translate="no">error_kind</code> 在原因之外给出更细的稳定类别，在异常本身或它包着的异常上找：流卡住和连接被重置都是 <code translate="no">TRANSPORT</code>，只有前者是 <code translate="no">stream_idle</code>。其余是 <code translate="no">stream_total</code>、<code translate="no">memory_unavailable</code>、<code translate="no">model_unavailable</code> 和 <code translate="no">auth</code>。</p>
+<p class="note"><code translate="no">error_kind</code> 在原因之外给出更细的稳定类别，在异常本身或它包着的异常上找：流卡住和连接被重置都是 <code translate="no">TRANSPORT</code>，只有前者是 <code translate="no">stream_idle</code>。其余是 <code translate="no">memory_unavailable</code>、<code translate="no">model_unavailable</code> 和 <code translate="no">auth</code>。</p>
 
 <h2 id="transport-allowance">恢复额度</h2>
 <table class="stack">
@@ -154,14 +150,11 @@
 <tr><th scope="row">其他失败</th><td>可重试：新预算。不可重试：抛出。</td></tr>
 <tr><th scope="row">结束</th><td>到 <code translate="no">OPENPROGRAM_NETWORK_WAIT_MAX_S</code>（1800 秒，0 关闭）或期限，标记 <code translate="no">transport_exhausted</code>；取消时立即结束</td></tr>
 <tr><th scope="row">从不用于</th><td>5xx、429、已提交的输出、单次尝试策略、恢复额度为 0</td></tr>
-<tr><th scope="row">位置</th><td><code translate="no">retry_stream</code>（Codex）、openai-completions。Anthropic 依赖其 SDK，不等待。</td></tr>
+<tr><th scope="row">位置</th><td>openai-completions。Anthropic 依赖其 SDK，不等待。</td></tr>
 </tbody>
 </table>
 
 <h2 id="dns-failures">策略边界上的 DNS</h2>
 <p><code translate="no">socket.gaierror</code> 造成的 <code translate="no">DNS_ERROR</code> 以 <code translate="no">httpx.ConnectError</code> 抛出，提交前可走有界传输恢复。每次尝试仍解析、校验并固定地址。空或格式错误的答案、被拒的 origin 仍是策略失败。不加 DNS 回退、私有地址例外或无界重试。</p>
-
-<h2 id="nested-codex-auth">嵌套 Codex 认证</h2>
-<p>Codex Runtime 默认用提供商的活跃账号，与直接对话一致；显式 profile 固定自己的账号。刷新以 <code translate="no">CredentialProvider</code> 为准。同步和异步调用经 <code translate="no">AgentSession</code> 保留最终原因、裁定和 Retry-After。OAuth token 被拒或任何显式不可重试的失败，只发一次提供商请求。</p>
 
 <p class="next"><a href="llm-fault-tolerance.zh.html">容错策略与对比</a></p>

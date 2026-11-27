@@ -49,7 +49,7 @@ def runtime_identity(app: Path, *, expected_revision=None) -> dict:
 
 def version_identity(version_dir: Path, *, expected_revision=None) -> dict:
     """The same receipt for a sealed version: identity comes from ``version.json``."""
-    from ..versions import layout as paths
+    from openprogram.host._platform import runtime_layout as paths
 
     try:
         manifest_path = version_dir / "version.json"
@@ -94,21 +94,23 @@ def admit_plan(plan, request) -> None:
 
 
 def candidate_identity(request, check, *, frozen=None) -> dict:
-    from openprogram.programs.tools.system import self_update as tool
+    from openprogram.state.worktree import manager
     from openprogram.state.worktree.types import WorktreeStatus
 
-    worktree = tool.get_manager().get_worktree(request.worktree_id)
+    from ..candidate_source import git, recorded_path, validate_candidate_snapshot, validate_registered_worktree
+
+    worktree = manager.get_manager().get_worktree(request.worktree_id)
     if (worktree is None or worktree.status is not WorktreeStatus.ACTIVE
             or worktree.source_repo != request.repo):
         raise ValueError("candidate test worktree ownership changed")
-    source = tool._recorded_path(request.repo, "source repo")
-    candidate = tool._recorded_path(worktree.worktree_path, "candidate worktree")
+    source = recorded_path(request.repo, "source repo")
+    candidate = recorded_path(worktree.worktree_path, "candidate worktree")
     if frozen is not None and (str(candidate) != frozen["candidate_path"] or worktree.branch_name != frozen["branch_name"]):
         raise ValueError("candidate test no longer matches its frozen worktree")
-    tool._validate_registered_worktree(source, candidate, request.candidate_sha, worktree.branch_name)
-    tool._validate_candidate_snapshot(candidate, request.candidate_sha)
+    validate_registered_worktree(source, candidate, request.candidate_sha, worktree.branch_name)
+    validate_candidate_snapshot(candidate, request.candidate_sha)
     script = _file(candidate, check["argv"][0])
-    tool._git(candidate, "ls-files", "--error-unmatch", "--", check["argv"][0])
+    git(candidate, "ls-files", "--error-unmatch", "--", check["argv"][0])
     return dict(path=str(candidate), branch=worktree.branch_name, revision=request.candidate_sha,
                 script=check["argv"][0], script_sha256=_read_or_hash(script, limit=1_048_576))
 

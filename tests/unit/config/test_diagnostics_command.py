@@ -77,6 +77,7 @@ def _bundle_texts(zip_path):
         return {n: zf.read(n).decode("utf-8", "replace") for n in zf.namelist()}
 
 
+@pytest.mark.slow
 def test_no_secret_survives_into_the_bundle(isolated_home, tmp_path):
     """No planted credential appears verbatim anywhere in the zip."""
     from openprogram.interfaces.cli.commands.maintenance.diagnostics import build_bundle
@@ -125,6 +126,7 @@ def test_credential_files_are_not_collected(isolated_home, tmp_path):
     assert report["providers"] == ["anthropic"]
 
 
+@pytest.mark.slow
 def test_bundle_has_expected_files_and_manifest(isolated_home, tmp_path):
     from openprogram.interfaces.cli.commands.maintenance.diagnostics import build_bundle
 
@@ -148,12 +150,13 @@ def test_bundle_has_expected_files_and_manifest(isolated_home, tmp_path):
 
 
 def test_redact_text_leaves_ordinary_text_alone():
-    from openprogram.operations.diagnostics.redaction import redact_text
+    from openprogram.models.auth.redaction import redact_text
 
     line = "Traceback: FileNotFoundError: /Users/me/projects/app/main.py line 42"
     assert redact_text(line) == line
 
 
+@pytest.mark.slow
 def test_command_prints_contents_and_review_warning(isolated_home, tmp_path, capsys):
     from openprogram.interfaces.cli.commands.maintenance.diagnostics import _cmd_diagnostics
 

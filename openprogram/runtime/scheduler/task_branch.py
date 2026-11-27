@@ -94,7 +94,7 @@ def _last_round(message: dict[str, Any]) -> str:
 
 def last_result(session_id: str, tip: str | None, db: Any = None) -> str:
     """The latest reply on the branch that said something."""
-    from openprogram.state.attachments import find_markers
+    from openprogram.state.attachment_markers import find_markers
 
     if not tip:
         return ""

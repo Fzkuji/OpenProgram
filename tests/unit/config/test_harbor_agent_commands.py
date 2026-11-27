@@ -412,14 +412,12 @@ def test_the_bundle_is_only_used_where_it_can_run():
 @pytest.mark.parametrize("usage, stalled", [
     ({"ended": "failed", "error": "no openai stream event for 300s"}, True),
     ({"ended": "failed", "error": "no anthropic stream response for 300s"}, True),
-    # Providers that bound their own stream (Chat Completions, Codex, Gemini
-    # CLI) name the stall in their own words; the turn reports it verbatim
+    # Providers that bound their own stream (Chat Completions, Codex) name the stall in their own words; the turn reports it verbatim
     # once its re-sends are spent.
     ({"ended": "failed", "error": "no deepseek chunk event for 300s"}, True),
     ({"ended": "failed", "error": "no openrouter response for 300s"}, True),
     ({"ended": "failed", "error": "no Codex WebSocket bytes for 600.0s"}, True),
     ({"ended": "failed", "error": "no SSE data event for 300.0s"}, True),
-    ({"ended": "failed", "error": "no gemini-subscription event event for 300s"}, True),
     ({"ended": "failed", "error": "upstream 500"}, False),
     ({"ended": "failed", "error": "no such file or directory"}, False),
     ({"ended": "completed", "error": None}, False),
@@ -605,7 +603,7 @@ def test_an_effort_harbor_does_not_name_is_refused(effort):
 
 @pytest.mark.parametrize("recorded, kind", [
     # A recorded category decides alone, whatever the reason and the words.
-    ({"error_kind": "stream_total", "error_reason": "unknown"}, "stalled"),
+    ({"error_kind": "stream_idle", "error_reason": "unknown"}, "stalled"),
     ({"error_kind": "auth", "error_reason": "unknown"}, "authentication"),
     ({"error_kind": "memory_unavailable", "error_reason": "rate_limit"}, None),
     # Reasons the table names as the agent's own failure.

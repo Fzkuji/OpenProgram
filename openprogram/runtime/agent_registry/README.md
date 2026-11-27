@@ -33,6 +33,7 @@ Layout on disk:
 
 - **`builtin_agents.py`** — The built-in Agents: the saved Agents every instance starts with
 - **`delegation.py`** — Which saved Agents other agents may start, and how
+- **`gating.py`** — Agent-profile gating
 - **`manager.py`** — Agent registry + on-disk storage
 - **`markdown_imports.py`** — Agents defined as Markdown files by other tools, read as read-only Agents
 - **`runtime_registry.py`** — Per-agent runtime cache

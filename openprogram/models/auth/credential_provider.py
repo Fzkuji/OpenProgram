@@ -133,7 +133,7 @@ def _load_provider_plugins() -> None:
         _provider_configs_staging = {}
 
     try:
-        from openprogram.models.providers.catalog.register import register_auth_adapters
+        from .provider_port import register_auth_adapters
 
         register_auth_adapters()
     except BaseException:

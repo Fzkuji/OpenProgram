@@ -433,7 +433,7 @@ def _poll_backend_identity(
     expected_revision: Optional[str] = None,
 ) -> tuple[bool, str]:
     """Wait for a token-HMAC listener proof and optional revision match."""
-    from openprogram.operations.worker.ports import backend_is_ours
+    from openprogram.host.worker.ports import backend_is_ours
 
     deadline = time.monotonic() + timeout
     last = "no response"
@@ -719,12 +719,21 @@ def run_status(*, channel: Optional[str] = None, as_json: bool = False) -> int:
     return 0
 
 
+# Information only: an old pointer is still the newest one this install can verify.
+STALE_POINTER_DAYS = 60
+
+
 def _print_store_status(status: dict, *, as_json: bool, dry_run: bool) -> int:
     if as_json:
         print(json.dumps({"ok": True, "dry_run": dry_run, **status}, indent=2))
         return 0
     print(f"  current        {status['current_version'] or 'unknown'}")
-    print(f"  latest         {status['latest_version']}")
+    latest = status["latest_version"]
+    if status.get("commit"):
+        latest = f"{latest} (build {status['commit']}, published {status['published_at']})"
+    print(f"  latest         {latest}")
+    if (status.get("published_days_ago") or 0) >= STALE_POINTER_DAYS:
+        print(f"  note           nothing has been published for {status['published_days_ago']} days")
     print("  update         " + ("available" if status["update_available"] else "up to date"))
     if status["update_available"] and status["can_apply"]:
         print(f"  download       {status['download_bytes'] / (1024 ** 2):.1f} MB")
@@ -737,34 +746,69 @@ def _print_store_status(status: dict, *, as_json: bool, dry_run: bool) -> int:
 
 def _upgrade_version_store(
     directory: Optional[str], *, as_json: bool, check_only: bool = False, dry_run: bool = False,
+    prepare: bool = False,
 ) -> int:
-    """An official release on a version-store install: fetched or from files, then through a switch."""
-    from openprogram.operations.self_update.control.official_update import apply_release
+    """An official update on a version-store install: fetched or from a local copy, then through a switch.
+
+    ``prepare`` downloads, builds and tries the update and holds it for a
+    restart; the next plain run switches to the held update.
+    """
+    from openprogram.operations.self_update.control import official_update
     from openprogram.operations.self_update.official import fetch
-    from openprogram.operations.self_update.official.assets import ReleaseError
-    from openprogram.operations.self_update.official.replay import ACTIVATED, UP_TO_DATE
+    from openprogram.operations.self_update.official.repository import ReleaseError
+    from openprogram.operations.self_update.official import shell as shells
+    from openprogram.operations.self_update.official.replay import ACTIVATED, UP_TO_DATE, WAITING_FOR_RUNTIME
+    from openprogram.operations.self_update.official.repository import current_platform
+
+    # Whether the App that runs this can swap in a new App shell itself; the
+    # App takes this answer instead of deciding again (update-service.js).
+    swap = shells.running_app(current_platform()) is not None
 
     def say(ok: bool, reason: str, detail: str, **extra: Any) -> int:
-        print(json.dumps({"ok": ok, "reason": reason, "detail": detail, **extra}) if as_json else detail)
+        print(json.dumps({"ok": ok, "reason": reason, "outcome": reason, "detail": detail, "shell_swap": swap,
+                          **extra}) if as_json else detail)
         return 0 if ok else 1
 
+    def held() -> Optional[dict]:
+        try:
+            record = official_update.held_update()
+        except Exception:  # noqa: BLE001 - an unreadable store just means none is reported.
+            return None
+        return official_update.describe_held(record) if record is not None else None
+
+    about: dict = {}
     try:
-        if directory:
-            result = apply_release(Path(directory).expanduser())
-        elif check_only or dry_run:
-            return _print_store_status(fetch.check(), as_json=as_json, dry_run=dry_run)
+        transport = fetch.from_directory(Path(directory).expanduser()) if directory else None
+        if check_only or dry_run:
+            status = {**fetch.check(transport=transport), "shell_swap": swap}
+            prepared = held()
+            if prepared is not None:
+                status["prepared"] = prepared
+            return _print_store_status(status, as_json=as_json, dry_run=dry_run)
+        elif prepare:
+            result, about = official_update.prepare_update(say=None if as_json else print, transport=transport)
         else:
-            result = fetch.update(say=None if as_json else print)
+            result, about = official_update.apply_update(say=None if as_json else print, transport=transport)
     except ReleaseError as exc:
-        return say(False, "release-refused", str(exc))
-    return say(result.outcome in (ACTIVATED, UP_TO_DATE), result.outcome, result.message, result=result.to_dict())
+        return say(False, "release-refused", str(exc), prepared=False, applied=False)
+    if prepare:
+        ok = result.outcome in (official_update.PREPARED, UP_TO_DATE, WAITING_FOR_RUNTIME)
+        return say(ok, result.outcome, result.message, prepared=result.outcome == official_update.PREPARED,
+                   applied=False, **about, result=result.to_dict())
+    # ``applied``: this installation now runs the newest code it may take. False
+    # while an update waits for its platform's runtime, which is no failure (``ok``),
+    # and while it waits for Restart to update to swap in the new App it needs (``prepared``).
+    staged = result.outcome == official_update.PREPARED
+    return say(result.outcome in (ACTIVATED, UP_TO_DATE, WAITING_FOR_RUNTIME) or staged, result.outcome,
+               result.message, applied=result.outcome in (ACTIVATED, UP_TO_DATE), prepared=staged, **about,
+               result=result.to_dict())
 
 
 def _cmd_upgrade(args) -> int:
     from openprogram.operations.self_update.github_release.detect import (
         UPDATE_GUIDANCE, InstallMethod, UpdateRoute, detect_install_method, update_route,
     )
-    from openprogram.operations.self_update.versions.layout import current_runtime
+    from openprogram.host._platform.runtime_layout import current_runtime
 
     channel = getattr(args, "channel", None)
     as_json = bool(getattr(args, "json", False))
@@ -776,6 +820,7 @@ def _cmd_upgrade(args) -> int:
         return _upgrade_version_store(
             getattr(args, "release_directory", None), as_json=as_json,
             check_only=check_only, dry_run=bool(getattr(args, "dry_run", False)),
+            prepare=bool(getattr(args, "prepare", False)),
         )
     if getattr(args, "release_directory", None):
         print(json.dumps({"ok": False, "reason": "not-version-store", "detail": "--from needs a version-store install"})

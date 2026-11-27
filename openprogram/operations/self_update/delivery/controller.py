@@ -13,7 +13,7 @@ import sys
 
 from ..store import SelfUpdateStore
 from ..types import _validate_update_id
-from ..versions import layout as paths
+from openprogram.host._platform import runtime_layout as paths
 
 MODULE = "openprogram.operations.self_update.control.supervisor"
 _PASSED = ("HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "SYSTEMROOT", "TMPDIR", "TEMP", "TMP",

@@ -51,7 +51,18 @@ def new_session_chat_model(agent_id: Optional[str] = None) -> tuple[Optional[str
 
 
 def read_session_chat_model(session_id: Optional[str]) -> tuple[Optional[str], Optional[str]]:
-    """Return the session pin, or (None, None). Does not consult agent.json."""
+    """Return the session pin, or (None, None). Does not consult agent.json.
+
+    A pin on a withdrawn provider reads as no pin: the turn falls back to
+    the Agent's model or the last used one, as for an unknown provider."""
+    provider, model = _session_pin(session_id)
+    from openprogram.models.auth.provider_policy import is_withdrawn
+    if is_withdrawn(provider or ""):
+        return None, None
+    return provider, model
+
+
+def _session_pin(session_id: Optional[str]) -> tuple[Optional[str], Optional[str]]:
     if not session_id:
         return None, None
     from openprogram.runtime.agent.turn_request import get_turn_request

@@ -365,7 +365,7 @@ def test_configured_service_never_allows_metadata_through_owner_exception():
 
 @pytest.mark.parametrize("address", ["169.254.1.2", "fe80::1234"])
 def test_configured_origin_exception_never_allows_link_local_dns(address):
-    from openprogram.state.settings import parse_outbound_url_settings
+    from openprogram.host.security.outbound_settings import parse_outbound_url_settings
 
     origin = "https://catalog.example.test"
     security = parse_outbound_url_settings(

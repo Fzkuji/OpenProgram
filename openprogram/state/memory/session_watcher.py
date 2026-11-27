@@ -147,11 +147,11 @@ def watcher_lock(*, timeout_s: float = 0.0):
 def _state_path() -> Path:
     # The personal memory's runtime directory, named directly: the
     # status of any memory, project ones included, reads it from here.
-    from openprogram.state.paths import get_memory_dir
+    from openprogram.state.store.project.layout import personal_memory_dir
 
     from .workspace_layout import ensure_runtime_dir
 
-    return ensure_runtime_dir(get_memory_dir()) / STATE_FILE
+    return ensure_runtime_dir(personal_memory_dir()) / STATE_FILE
 
 
 def _empty_state() -> dict[str, Any]:
@@ -335,9 +335,9 @@ def _same_dir(a: Path | str, b: Path | str) -> bool:
 
 def retries_for(memory_dir: Path | str) -> dict[str, dict[str, Any]]:
     """The entries of conversations that write to ``memory_dir``."""
-    from openprogram.state.paths import get_memory_dir
+    from openprogram.state.store.project.layout import personal_memory_dir
 
-    personal = get_memory_dir()
+    personal = personal_memory_dir()
     return {
         session_id: entry for session_id, entry in load_retries().items()
         if _same_dir(entry.get("workspace") or personal, memory_dir)

@@ -110,6 +110,8 @@ def _raise_turn_error(error: Optional[dict], model: Optional[str]) -> None:
         "httpConnectionFailed": ErrorReason.TRANSPORT, "responseStreamDisconnected": ErrorReason.TRANSPORT,
         "responseStreamConnectionFailed": ErrorReason.TRANSPORT,
     }.get(kind, ErrorReason.UNKNOWN)
+    if reason == ErrorReason.AUTHENTICATION:
+        message = f"Codex: {message}"  # names whose sign-in it is
     raise LLMError(message=message, reason=reason, provider=PROVIDER, model=model,
                    failure={"codex_error": kind} if kind else None)
 
@@ -342,7 +344,7 @@ class CodexTurn:
         if model.startswith(GATEWAY_PREFIX):
             provider, _, inner = model[len(GATEWAY_PREFIX):].partition("/")
             try:
-                from openprogram.interfaces.server.thinking_effort import get_thinking_config_for_model
+                from openprogram.runtime.harnesses.thinking_effort import get_thinking_config_for_model
                 default = get_thinking_config_for_model(provider, inner).get("default")
             except Exception:  # noqa: BLE001 - the gateway then uses the model's default
                 default = None
@@ -452,11 +454,10 @@ class CodexTurn:
 
     def _input(self, note: Optional[str]) -> list[dict]:
         text = self.req.user_text or ""
-        try:
-            from openprogram.runtime.permissions.authority import render_model_input_from
-            text = render_model_input_from(self.req, text)
-        except Exception:  # noqa: BLE001 - the person's own text still goes
-            pass
+        # Anyone but the local owner goes in the speaker envelope; a failure here must
+        # not send their words as the owner's, so it is not caught.
+        from openprogram.state.authority import render_outside_input
+        text = render_outside_input(self.req, text)
         entries: list[dict] = []
         if note:
             entries.append({"type": "text", "text": note})
@@ -472,6 +473,9 @@ class CodexTurn:
     def run(self) -> tuple[str, dict, list[dict]]:
         extra_args, env, model = self._launch()
         agent_args, agent_params = self._agent()
+        pool().wait_closed(self.pool_key, self.cancel_event)
+        if self.cancel_event.is_set():
+            return "", self.usage, self.tool_calls  # stopped before it started
         server, fresh = pool().acquire(self.pool_key, extra_args=[*extra_args, *agent_args], env=env)
         self.server = server
         unlisten = server.listen(self._listen)
@@ -884,7 +888,7 @@ def _image_file(attachment: Any, session_id: str) -> Optional[str]:
     import os
     from pathlib import Path
     try:
-        from openprogram.host._platform.filesystem import restrict_to_user
+        from openprogram.host._platform.filesystem import replace_file, restrict_to_user
         from openprogram.runtime.context.session_db import default_db
         raw = base64.b64decode(data)
         suffix = mimetypes.guess_extension(str(attachment.get("media_type") or "image/png").partition(";")[0]) or ".png"
@@ -896,7 +900,7 @@ def _image_file(attachment: Any, session_id: str) -> Optional[str]:
             partial = folder / f".{path.name}.{os.getpid()}.{id(raw)}"
             partial.write_bytes(raw)
             restrict_to_user(partial)
-            partial.replace(path)
+            replace_file(partial, path)
         return str(path)
     except Exception:  # noqa: BLE001 - an image that cannot be kept is skipped, the turn goes on
         _log.warning("attached image not kept for Codex", exc_info=True)
@@ -916,7 +920,7 @@ def _match_provider(thread_id: Optional[str], model: Optional[str]) -> None:
         return
     try:
         from openprogram.state.store.session.external_import import codex, codex_threads
-        from openprogram.models.gateway.harness_config import PROVIDER_ID
+        from openprogram.models.gateway.agents.codex import PROVIDER_ID
         home = codex.default_home()
         saved = codex_threads.saved_provider(home, thread_id)
         if saved is None:
@@ -976,5 +980,5 @@ def _configured_provider(home) -> str:
         value = tomllib.loads((home / "config.toml").read_text(encoding="utf-8")).get("model_provider")
     except Exception:  # noqa: BLE001
         value = None
-    from openprogram.models.gateway.harness_config import PROVIDER_ID
+    from openprogram.models.gateway.agents.codex import PROVIDER_ID
     return value if isinstance(value, str) and value and value != PROVIDER_ID else "openai"

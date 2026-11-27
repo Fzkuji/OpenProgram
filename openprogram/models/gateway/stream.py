@@ -77,9 +77,17 @@ class UpstreamCall:
 
     @classmethod
     async def open(cls, model: Model, context: Context, options: SimpleStreamOptions,
-                   *, harness: str) -> "UpstreamCall":
+                   *, harness: str, level_asked: bool = False) -> "UpstreamCall":
         from openprogram.models.providers import stream_simple
         from openprogram.models.usage import usage_scope
+        from .agent_effort import applied
+
+        # the effort picked in OpenProgram for an agent whose config can't carry one
+        effort = applied(harness, model, options.reasoning, level_asked=level_asked)
+        if effort != options.reasoning:
+            options = options.model_copy(update={"reasoning": effort}) if hasattr(options, "model_copy") else options
+            if options.reasoning != effort:
+                options.reasoning = effort
 
         queue: asyncio.Queue = asyncio.Queue()
 

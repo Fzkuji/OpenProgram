@@ -148,7 +148,7 @@ CREATE INDEX IF NOT EXISTS ix_route_events_ts ON route_events(ts);
 
 -- One row per request OpenProgram sent a provider on its own behalf (a
 -- connectivity test, a credential check, a failed model list): never
--- usage, so no total reads it. See models/listing/probe_log.py.
+-- usage, so no total reads it. See models/usage/probe_log.py.
 CREATE TABLE IF NOT EXISTS probe_events (
     event_id TEXT PRIMARY KEY,
     ts REAL NOT NULL,

@@ -6,7 +6,7 @@ is that file?". This collects what a maintainer would ask for into one
 zip: version + platform, a redacted config snapshot, the tail of each
 log, and the environment probes ``doctor`` already runs.
 
-Redaction is :mod:`openprogram.operations.diagnostics.redaction`, the same
+Redaction is :mod:`openprogram.models.auth.redaction`, the same
 scrubber credential-helper errors go through, so the two paths cannot
 disagree about what counts as a secret.
 
@@ -25,8 +25,8 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from openprogram.models.providers.recording.recording import PLACEHOLDER
-from openprogram.operations.diagnostics.redaction import redact_text, redact_value
+from openprogram.state.secret_removal import PLACEHOLDER
+from openprogram.models.auth.redaction import redact_text, redact_value
 
 def _version_info() -> dict[str, Any]:
     try:

@@ -42,7 +42,6 @@ def test_shipped_vanilla_sources_use_physical_purpose_directories() -> None:
             for child in (root / category).iterdir()
             if not child.name.startswith("_")
             and (child.is_dir() or child.suffix == ".py")
-            and child.name != "file_safety.py"
         }
         assert sources == expected
 

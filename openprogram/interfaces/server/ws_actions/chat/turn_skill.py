@@ -13,7 +13,7 @@ def _skill_gate_error(resolved, req: _ChatRequest) -> str | None:
     if resolved is not None:
         try:
             from openprogram.runtime.agent_registry import manager as _A
-            from openprogram.extensions.gating import gate as _gate
+            from openprogram.runtime.agent_registry.gating import gate as _gate
             from openprogram.runtime.conversation.session_settings.session_config import load_agent_session_binding
             session_id = req.session_id
             agent_invocation = req.agent_invocation

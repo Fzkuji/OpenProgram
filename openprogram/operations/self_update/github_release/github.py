@@ -18,9 +18,8 @@ versions already installed can still find releases if the repository moves::
     {"schema": 1, "repository": "Owner/Name", "hosts": ["github.com", "..."]}
 
 ``update-source.json.sig`` beside it is the hex Ed25519 signature of the
-file's exact bytes, by a key in ``official.assets.RELEASE_PUBLIC_KEYS``, the
-same form as ``update-manifest.json.sig``.
-``scripts/release/create-update-assets.py sign-file`` writes it.
+file's exact bytes, by a key in ``official.signing.RELEASE_PUBLIC_KEYS``, as
+``scripts/release/publish-updates.py sign-file`` writes it.
 
 ``hosts[0]`` is asked for ``https://<host>/<repository>/releases/latest`` and
 ``https://<host>/<repository>/releases/download/v<version>/<file>``, the layout
@@ -239,18 +238,19 @@ def _web_root(host: str) -> str:
 
 def update_source() -> Optional[UpdateSource]:
     """The verified update source, or ``None`` when there is no usable one."""
-    from openprogram.operations.self_update.official import assets
+    from openprogram.operations.self_update.official import signing
+    from openprogram.operations.self_update.official.repository import ReleaseError
 
-    if not assets.RELEASE_PUBLIC_KEYS:
+    if not signing.RELEASE_PUBLIC_KEYS:
         return None
     data = _curl_release_bytes(UPDATE_SOURCE_URL)
     signature = _curl_release_bytes(f"{UPDATE_SOURCE_URL}.sig") if data else None
     if not data or not signature:
         return None
     try:
-        assets.verify_signature(data, signature.decode("ascii"))
+        signing.verify_signature(data, signature.decode("ascii"))
         payload = json.loads(data)
-    except (assets.ReleaseError, ValueError):
+    except (ReleaseError, ValueError):
         return None
     if not isinstance(payload, dict) or payload.get("schema") != UPDATE_SOURCE_SCHEMA:
         return None
@@ -420,6 +420,38 @@ def _curl_release_bytes(initial_url: str) -> Optional[bytes]:
             continue
         return content if 200 <= status < 300 else None
     return None
+
+
+def release_file(initial_url: str) -> Optional[bytes]:
+    """A small Release file, or ``None`` only when the server answers 404.
+
+    Any other failure (no connection, a refused hop, another status) raises
+    :class:`DownloadFailed`, so a reader never mistakes an outage for a file
+    that is not there.
+    """
+    try:
+        current = _validated_release_url(initial_url)
+    except ValueError as exc:
+        raise DownloadFailed(f"{initial_url} is not a release address", permanent=True) from exc
+    for _ in range(6):
+        answer = _curl_once(current)
+        if answer is None:
+            raise DownloadFailed(f"{initial_url} could not be read")
+        status, location, content = answer
+        if status in _REDIRECTS:
+            if not location:
+                raise DownloadFailed(f"{initial_url} redirected nowhere")
+            try:
+                current = _validated_release_url(urljoin(current, location))
+            except ValueError as exc:
+                raise DownloadFailed(f"{initial_url} redirected to {location}", permanent=True) from exc
+            continue
+        if status == 404:
+            return None
+        if 200 <= status < 300:
+            return content
+        raise DownloadFailed(f"{initial_url} answered HTTP {status}")
+    raise DownloadFailed(f"{initial_url} redirected too many times")
 
 
 def release_manifest(

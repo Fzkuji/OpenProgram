@@ -204,7 +204,7 @@ def test_the_server_refuses_what_needs_the_app(tmp_path, data):
 # --------------------------------------------------------------------------- export
 
 def test_a_folder_export_carries_the_package_and_launchers_but_no_settings(tmp_path, monkeypatch):
-    from openprogram.interfaces.standalone import export
+    from openprogram.programs._host.ui import export
     package = write_package(tmp_path / "package")
     (package / "web").mkdir()
     (package / "web" / "build.mjs").write_text("", encoding="utf-8")
@@ -224,7 +224,7 @@ def test_a_folder_export_carries_the_package_and_launchers_but_no_settings(tmp_p
 
 @pytest.mark.skipif(sys.platform != "darwin", reason="an .app is made on macOS")
 def test_an_app_export_is_a_macos_bundle(tmp_path):
-    from openprogram.interfaces.standalone import export
+    from openprogram.programs._host.ui import export
     result = export.export(str(write_package(tmp_path / "package")), tmp_path, format="app", python="reference")
     contents = Path(result["path"]) / "Contents"
     info = plistlib.loads((contents / "Info.plist").read_bytes())
@@ -238,7 +238,7 @@ def test_an_app_export_is_a_macos_bundle(tmp_path):
 @pytest.mark.skipif(sys.platform != "darwin", reason="an .app is made on macOS")
 def test_an_app_export_takes_the_drawn_icon(tmp_path):
     import base64
-    from openprogram.interfaces.standalone import export
+    from openprogram.programs._host.ui import export
     # A 1x1 PNG: sips scales it to every size an .icns holds.
     png = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")
     package = write_package(tmp_path / "package")
@@ -267,7 +267,7 @@ def test_the_launcher_opens_a_native_window_on_macos(tmp_path, monkeypatch):
 
 
 def test_applications_that_need_the_app_are_not_exported(tmp_path):
-    from openprogram.interfaces.standalone import export
+    from openprogram.programs._host.ui import export
     with pytest.raises(ValueError, match="chat"):
         export.export(str(write_package(tmp_path / "a", capabilities=["chat"])), tmp_path, format="dir", python="reference")
     with pytest.raises(ValueError, match="project scope"):
@@ -278,7 +278,7 @@ def test_applications_that_need_the_app_are_not_exported(tmp_path):
 
 
 def test_a_bundled_python_leaves_out_what_one_application_never_uses(tmp_path, monkeypatch):
-    from openprogram.interfaces.standalone import export
+    from openprogram.programs._host.ui import export
     prefix = tmp_path / "cpython-3.12.0-test"
     site = prefix / "lib" / "python3.12" / "site-packages"
     for folder in (prefix / "bin", prefix / "include", prefix / "lib" / "python3.12" / "test",
@@ -299,7 +299,7 @@ def test_a_bundled_python_leaves_out_what_one_application_never_uses(tmp_path, m
 
 
 def test_the_copied_openprogram_has_only_the_exported_application_s_host(tmp_path):
-    from openprogram.interfaces.standalone import export
+    from openprogram.programs._host.ui import export
     source = tmp_path / "openprogram"
     for folder in ("programs/applications/meeting", "programs/applications/browser",
                    "interfaces/server/_frontend/docs", "interfaces/server/routes", "state"):
@@ -312,7 +312,7 @@ def test_the_copied_openprogram_has_only_the_exported_application_s_host(tmp_pat
 
 
 def test_a_second_export_beside_the_first_is_numbered(tmp_path):
-    from openprogram.interfaces.standalone import export
+    from openprogram.programs._host.ui import export
     package = write_package(tmp_path / "package")
     first = export.export(str(package), tmp_path, format="dir", python="reference", next_free=True)
     second = export.export(str(package), tmp_path, format="dir", python="reference", next_free=True)
@@ -324,7 +324,7 @@ def test_the_applications_page_exports_and_shows_only_its_own_exports(tmp_path, 
     from fastapi.testclient import TestClient
     from openprogram.interfaces.server.routes.catalog import applications
     from openprogram.interfaces.server.ws_actions.files import mutations
-    from openprogram.interfaces.standalone import export
+    from openprogram.programs._host.ui import export
     written: list[tuple] = []
 
     def fake_export(name, output, **options):

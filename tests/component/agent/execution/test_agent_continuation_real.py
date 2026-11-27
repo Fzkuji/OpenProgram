@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from openprogram.programs._host import runtime as program_runtime
+from openprogram.runtime.agent import call_state
 
 import asyncio
 import hashlib
@@ -1910,11 +1911,11 @@ def test_chat_function_continues_original_tool_call_with_selected_code(
             publish_pause=False,
             checkpoint_root=False,
         ):
-            token = program_runtime._current_tool_call_id.set(call_id)
+            token = call_state._current_tool_call_id.set(call_id)
             try:
                 result = latest["function"](str(tmp_path))
             finally:
-                program_runtime._current_tool_call_id.reset(token)
+                call_state._current_tool_call_id.reset(token)
         return AgentToolResult(content=[TextContent(text=result)])
 
     def factory(name):

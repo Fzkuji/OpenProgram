@@ -94,13 +94,17 @@ def _is_subagent(meta: dict[str, Any]) -> bool:
     return isinstance(source, dict) and "subagent" in source
 
 
-def _user_text(content: Any) -> tuple[str, bool]:
-    """(the user's own text, whether it was a slash command)."""
+def _user_text(content: Any) -> tuple[str, bool, list[tuple[str, str, Optional[str]]]]:
+    """(the user's own text, whether it was a slash command, the pictures in order:
+    base64 bytes, mime type and the label the text holds for it, None for a second
+    picture under one label)."""
     if isinstance(content, str):
         content = [{"type": "input_text", "text": content}]
     parts: list[str] = []
+    images: list[tuple[str, str, Optional[str]]] = []
     command = False
     in_image = False
+    label: Optional[str] = None  # the open label no picture has taken yet
     for block in content if isinstance(content, list) else []:
         if not isinstance(block, dict):
             continue
@@ -109,22 +113,32 @@ def _user_text(content: Any) -> tuple[str, bool]:
         if kind == "input_image":
             if not in_image:
                 parts.append("[image]")
+            images.append((*_data_url(block.get("image_url")), label if in_image else "[image]"))
+            label = None
             continue
         if kind != "input_text":
             continue
-        label = image_label(text)
-        if label:
-            parts.append(label)
-            in_image = True
+        opened = image_label(text)
+        if opened:
+            parts.append(opened)
+            in_image, label = True, opened
             continue
         if text.strip() == "</image>":
-            in_image = False
+            in_image, label = False, None
             continue
         cleaned = clean_block_text(text)
         if cleaned:
             parts.append(cleaned)
             command = command or is_command(text)
-    return "\n\n".join(parts).strip(), command
+    return "\n\n".join(parts).strip(), command, images
+
+
+def _data_url(url: Any) -> tuple[str, str]:
+    """(base64 bytes, mime type) of a ``data:`` URL; ("", "") for any other picture."""
+    head, _, data = str(url or "").partition(",")
+    if not head.startswith("data:") or not head.endswith(";base64") or not data:
+        return "", ""
+    return data, head[5:-7] or "image/png"
 
 
 def _output_text(output: Any) -> str:
@@ -226,9 +240,10 @@ def parse(path: Path, titles: Optional[dict[str, str]] = None) -> ExternalSessio
             continue
         item = payload.get("type")
         if item == "message" and payload.get("role") == "user":
-            text, command = _user_text(payload.get("content"))
+            text, command, images = _user_text(payload.get("content"))
             if text:
-                turn = Turn(user_text=text, timestamp=ts, ended_at=ts, command=command, turn_id=turn_id)
+                turn = Turn(user_text=text, timestamp=ts, ended_at=ts, command=command, turn_id=turn_id,
+                            images=images)
                 pending.clear()
                 session.turns.append(turn)
             continue

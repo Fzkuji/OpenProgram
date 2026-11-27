@@ -14,9 +14,7 @@ yields head=None (empty session), never a rewound node.
 """
 from __future__ import annotations
 
-import tempfile
 import time
-from pathlib import Path
 
 import pytest
 
@@ -26,8 +24,8 @@ from openprogram.state.store.session.nodes import Call, ROLE_USER, ROLE_LLM
 
 
 @pytest.fixture
-def store(monkeypatch):
-    s = SessionStore(Path(tempfile.mkdtemp()) / "s")
+def store(monkeypatch, tmp_path):
+    s = SessionStore(tmp_path / "s")
     # rewind_to / list_rewind_points call default_store() internally.
     monkeypatch.setattr(ss_mod.shared, "_default_store", s)
     return s

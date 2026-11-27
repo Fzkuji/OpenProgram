@@ -32,15 +32,31 @@
   :root {
     --phone-screen-radius: max(24px, min(55px, env(safe-area-inset-bottom) * 100));
     --phone-edge-gap: 8px;
-    /* Glass, as iOS draws its sheets and bottom bars: the page shows
-       through, blurred and saturated, under a thin light edge. */
-    --phone-glass: color-mix(in srgb, var(--bg-input, var(--bg-primary)) 68%, transparent);
-    --phone-glass-filter: blur(30px) saturate(1.8);
-    --phone-glass-edge: inset 0 0.5px 0 rgb(255 255 255 / 0.45), 0 0 0 0.5px color-mix(in srgb, var(--text-bright) 8%, transparent);
-    /* A group of rows on glass: lighter glass, not grey. */
-    --phone-glass-card: color-mix(in srgb, var(--bg-input, var(--bg-primary)) 62%, transparent);
+    /* Glass: Framework7's (its iOS theme, loaded with the phone app), so
+       the sheets, menus and composer this file draws are the same glass as
+       its bars: its tint, blur and rim. */
+    --phone-glass: var(--f7-glass-bg-color, light-dark(rgb(255 255 255 / 0.75), rgb(50 50 50 / 0.5)));
+    --phone-glass-filter: blur(16px);
+    --phone-glass-edge: var(--f7-glass-shadow, none);
+    /* A group of rows on glass: a little more of the same tint, so the
+       two layers together still let the page through. */
+    --phone-glass-card: color-mix(in srgb, var(--bg-input, var(--bg-primary)) 36%, transparent);
+    /* What a menu dims the page by: lightly, so the glass has colour to show. */
+    --phone-scrim: rgb(0 0 0 / 0.08);
     --phone-dialog-gap: 16px;
+    /* The system's springs: one that settles (a sheet rising, a page) and
+       one that overshoots a little (a pressed glass button, a menu, a
+       switch's knob, a segmented control's thumb). */
+    --phone-ease: cubic-bezier(0.32, 0.72, 0, 1);
+    --phone-spring: linear(0, 0.006, 0.025 2.8%, 0.101 6.1%, 0.539 18.9%, 0.721 25.3%, 0.849 31.5%, 0.937 38.1%, 0.968 41.8%, 0.991 45.7%, 1.006 50.1%, 1.015 55%, 1.017 63.9%, 1.001 85.9%, 1);
+    --phone-spring-pop: linear(0, 0.023, 0.088 3.5%, 0.332 9.6%, 0.866 21.3%, 1.012 26.5%, 1.087 31.6%, 1.104 35.6%, 1.093 40.1%, 1.012 52.2%, 0.989 59.1%, 0.997 76.3%, 1);
+    /* Lists grouped into cards: the page a shade off the theme's ground,
+       each card on the ground itself (Settings, Reminders); dark themes
+       sink the page and lift the cards, as the system's dark mode does. */
+    --phone-grouped: light-dark(color-mix(in srgb, var(--text-bright) 5%, var(--bg-primary)), color-mix(in srgb, #000 45%, var(--bg-primary)));
+    --phone-grouped-card: light-dark(var(--bg-primary), color-mix(in srgb, var(--text-bright) 7%, var(--bg-primary)));
   }
+
   /* The drawers run under the status bar and the home indicator; their
      content keeps clear of both. */
   #sidebar [data-slot="sidebar-inner"],
@@ -332,7 +348,7 @@
      corners; the page behind dims. Floating UI still places the wrapper,
      so its place is overridden here. The bottom follows the visual
      viewport, so a sheet opened with the keyboard up sits above it. */
-  [data-radix-popper-content-wrapper]:has(> [data-phone-sheet]) {
+  [data-radix-popper-content-wrapper]:has(> [data-phone-sheet]:not([data-phone-sheet="drop"])) {
     transform: none !important;
     top: auto !important;
     left: var(--phone-edge-gap) !important;
@@ -355,7 +371,7 @@
     -webkit-backdrop-filter: var(--phone-glass-filter);
     backdrop-filter: var(--phone-glass-filter);
     border: 0 !important;
-    box-shadow: 0 0 0 100vmax rgb(0 0 0 / 0.16), var(--phone-glass-edge), 0 -4px 30px rgb(0 0 0 / 0.12) !important;
+    box-shadow: 0 0 0 100vmax var(--phone-scrim), var(--phone-glass-edge), 0 -4px 30px rgb(0 0 0 / 0.12) !important;
   }
   /* A popover that hosts its own panel (a transparent content around a
      MENU_PANEL or a picker): the sheet is the surface, the panel inside
@@ -431,7 +447,7 @@
     font-weight: 500;
   }
   [data-phone-sheet][data-state="open"] {
-    animation: phone-sheet-up 300ms cubic-bezier(0.32, 0.72, 0, 1) !important;
+    animation: phone-sheet-up 550ms var(--phone-spring) !important;
   }
   [data-phone-sheet][data-state="closed"] {
     animation: phone-sheet-down 200ms ease-in forwards !important;
@@ -441,6 +457,28 @@
   }
   [data-phone-sub][data-state="closed"] {
     animation: phone-sheet-out 140ms ease-in forwards !important;
+  }
+
+  /* A menu opened from a button at the top grows out of that button, as
+     iOS 26's menus do: Floating UI places it under the button, it scales
+     up from the button's middle with a slight overshoot and shrinks back
+     into it as it closes. */
+  [data-phone-sheet="drop"][data-phone-sheet] {
+    width: auto !important;
+    min-width: min(290px, calc(100vw - 2 * var(--phone-edge-gap))) !important;
+    max-width: calc(100vw - 2 * var(--phone-edge-gap)) !important;
+    max-height: calc(var(--phone-viewport-h, 100dvh) - env(safe-area-inset-top) - 120px) !important;
+    padding: 10px 10px 12px !important;
+    border-radius: 28px !important;
+    transform-origin: var(--radix-dropdown-menu-content-transform-origin);
+    box-shadow: 0 0 0 100vmax var(--phone-scrim), var(--phone-glass-edge), 0 8px 30px rgb(0 0 0 / 0.12) !important;
+  }
+  [data-phone-sheet="drop"]::before { content: none; }
+  [data-phone-sheet="drop"][data-state="open"] {
+    animation: phone-grow 500ms var(--phone-spring-pop) both !important;
+  }
+  [data-phone-sheet="drop"][data-state="closed"] {
+    animation: phone-shrink 220ms ease-in forwards !important;
   }
 
   /* The effort card is not a radix layer: its sheet places itself, and
@@ -489,6 +527,11 @@
   [data-phone-sheet] .picker-provider-row > :nth-child(3) { grid-area: 1 / 2 / 3 / 3; }
 }
 
+@keyframes phone-morph-open { from { clip-path: inset(0 calc(100% - 44px) calc(100% - 44px) 0 round 22px); } to { clip-path: inset(0 0 0 0 round 22px); } }
+@keyframes phone-morph-close { from { clip-path: inset(0 0 0 0 round 22px); } to { clip-path: inset(0 calc(100% - 44px) calc(100% - 44px) 0 round 22px); } }
+@keyframes phone-morph-fade { from { opacity: 0; } }
+@keyframes phone-grow { from { transform: scale(0.2); opacity: 0; filter: blur(6px); } 40% { opacity: 1; filter: none; } }
+@keyframes phone-shrink { to { transform: scale(0.4); opacity: 0; } }
 @keyframes phone-sheet-up { from { transform: translateY(calc(100% + 16px)); } }
 @keyframes phone-sheet-down { to { transform: translateY(calc(100% + 16px)); } }
 @keyframes phone-sheet-in { from { transform: translateX(32px); opacity: 0; } }

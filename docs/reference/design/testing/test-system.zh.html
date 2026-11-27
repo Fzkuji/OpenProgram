@@ -67,7 +67,7 @@
 <p class="note">拒绝：tox、nox、任意的全局覆盖率阈值。<code translate="no">apps/web/scripts/check-*.mjs</code> 的 Web 源码检查只在源码结构本身是契约时保留。</p>
 
 <h2 id="full-run">全量运行</h2>
-<p>日常改动只跑 <code translate="no">scripts/testing/affected_tests.py</code>。全量就是下面这些任务，在 <code translate="no">CI</code> workflow 里，发布前手动启动。</p>
+<p>日常改动只跑 <code translate="no">scripts/testing/affected_tests.py</code>，其中标了 <code translate="no">slow</code> 的测试（打真实的包、交叉编译、长时间跑真实进程）不跑，除非它们自己的文件改了；加 <code translate="no">--slow</code> 才一起跑。全量（包括慢测试）就是下面这些任务，在 <code translate="no">CI</code> workflow 里，发布前手动启动。</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">任务</th><th scope="col">运行</th></tr></thead>
 <tbody>

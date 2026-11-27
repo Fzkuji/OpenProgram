@@ -24,7 +24,7 @@
 
 <h2 id="data-flow">从选择器到请求</h2>
 <ol>
-<li><code translate="no">get_thinking_config_for_model</code>（<code translate="no">interfaces/server/thinking_effort.py</code>）用模型的 <code translate="no">thinking_levels</code> 生成选项。</li>
+<li><code translate="no">get_thinking_config_for_model</code>（<code translate="no">runtime/harnesses/thinking_effort.py</code>）用模型的 <code translate="no">thinking_levels</code> 生成选项。</li>
 <li><code translate="no">_normalize_thinking</code>（<code translate="no">runtime/conversation/session_settings/session_config.py</code>）按 <code translate="no">VALID_THINKING</code> 校验，按会话分支保存。新分支创建时继承一次，切换时恢复对应分支的选择。</li>
 <li><code translate="no">reasoning_from_config</code> 把它作为 <code translate="no">SimpleStreamOptions.reasoning</code> 交给本轮，由 <code translate="no">normalize_reasoning_level</code> 限制在模型的档位之内（见下）。</li>
 <li>提供商的 <code translate="no">stream_simple()</code> 调用 <code translate="no">translate_reasoning(provider, model, level)</code>，把结果写进请求字段，例如 <code translate="no">{"output_config": {"effort": "high"}}</code>。</li>
@@ -75,7 +75,6 @@
 <tbody>
 <tr><th scope="row">anthropic</th><td><code translate="no">GET /v1/models/{id}</code>，<code translate="no">capabilities.effort.{level}.supported</code></td><td>每一档</td></tr>
 <tr><th scope="row">deepseek</th><td>模型 id：<code translate="no">v4</code> 推理且有强度，<code translate="no">reasoner</code> 或 <code translate="no">r1</code> 推理无强度</td><td>推理、强度</td></tr>
-<tr><th scope="row">openai_codex</th><td>OpenAI 模型 API 加模型 id（o1、o3、o4、gpt-5）</td><td>推理</td></tr>
 <tr><th scope="row">openai_completions</th><td>模型 id（o1、o3、o4、gpt-5）</td><td>推理</td></tr>
 <tr><th scope="row">openai_responses</th><td>OpenRouter 的 <code translate="no">supported_parameters</code> 含 <code translate="no">reasoning</code></td><td>推理</td></tr>
 <tr><th scope="row">google</th><td>模型名</td><td>推理</td></tr>
@@ -101,7 +100,6 @@
 <tr><th scope="row">anthropic</th><td>claude-sonnet-4-6</td><td>low、medium、high、max</td><td>覆盖项</td></tr>
 <tr><th scope="row">anthropic</th><td>claude-opus-4-5</td><td>low、medium、high</td><td>覆盖项</td></tr>
 <tr><th scope="row">deepseek</th><td>v4-flash、v4-pro</td><td>minimal、low、medium、high、max</td><td>提供商映射</td></tr>
-<tr><th scope="row">openai-codex</th><td>gpt-5.5</td><td>low、medium、high、xhigh、max（发送为 xhigh）</td><td>覆盖项</td></tr>
 <tr><th scope="row">minimax-cn、openrouter</th><td>支持推理的模型</td><td>low、medium、high</td><td>兜底</td></tr>
 </tbody>
 </table>
@@ -116,7 +114,7 @@
 <tr><th scope="row"><code translate="no">models/providers/settings/thinking_spec.py</code></th><td>加载、<code translate="no">translate_reasoning</code>、<code translate="no">derive_thinking_levels</code>、兜底</td></tr>
 <tr><th scope="row"><code translate="no">models/providers/catalog/models.py</code></th><td>加载时为内置模型填充思考字段</td></tr>
 <tr><th scope="row"><code translate="no">models/providers/types.py</code></th><td><code translate="no">ThinkingLevel</code>、<code translate="no">SimpleStreamOptions.reasoning</code></td></tr>
-<tr><th scope="row"><code translate="no">interfaces/server/thinking_effort.py</code></th><td>选择器、<code translate="no">apply_thinking_effort</code></td></tr>
+<tr><th scope="row"><code translate="no">runtime/harnesses/thinking_effort.py</code></th><td>选择器、<code translate="no">apply_thinking_effort</code></td></tr>
 <tr><th scope="row"><code translate="no">models/listing/listing.py</code></th><td>唯一的推导入口</td></tr>
 <tr><th scope="row"><code translate="no">models/listing/fetchers/__init__.py</code></th><td>Fetch 补全</td></tr>
 <tr><th scope="row"><code translate="no">models/providers/adapters/anthropic/list_models.py</code></th><td>从 capabilities 取档位</td></tr>

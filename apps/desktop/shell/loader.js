@@ -258,6 +258,8 @@ function runShell(
   const context = {
     runtimeRoot: root,
     shellVersion,
+    // The range of version shell_compat values this shell can host.
+    shellCompat: { min: compat.min, max: compat.max },
     runningRelease: () => store.runningRelease(root),
     openRecovery: (reason) => shellWindows.openRecovery(reason),
     switchingInProgress: () => store.switchingInProgress(root),

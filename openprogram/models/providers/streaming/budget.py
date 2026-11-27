@@ -46,8 +46,8 @@ _UNCAPPED_OUTPUT_FLOOR = 4096
 _DEFAULT_REASONING_BUDGET = 8192
 _BYTE_BOUNDED_APIS = frozenset({
     "openai-completions", "mistral-conversations", "openai-responses",
-    "azure-openai-responses", "openai-codex", "anthropic-messages",
-    "bedrock-converse-stream", "google-generative-ai", "gemini-subscription",
+    "azure-openai-responses", "anthropic-messages",
+    "bedrock-converse-stream", "google-generative-ai",
 })
 
 
@@ -164,8 +164,9 @@ def requested_output_cap(options, model) -> int:
 def provider_retry_attempts(default_attempts: int) -> int:
     """Return one provider attempt while a governed reservation is active."""
     try:
-        from openprogram.models.usage.context import request_context
-        if request_context().goal_id:
+        from openprogram.models.providers.usage_port import request_context
+        context = request_context()
+        if context is not None and context.goal_id:
             return 1
         from openprogram.state.execution_facts import current_job_resource_context
         if current_job_resource_context() is not None:
@@ -287,7 +288,7 @@ class BudgetedRequest:
         """
         if self._settled:
             return
-        from openprogram.models.usage.recorder import build_message_event, run_usage_hooks
+        from openprogram.models.providers.usage_port import build_message_event, run_usage_hooks
         event = frozen_event or build_message_event(
             model, final,
             session_id=getattr(options, "session_id", None) if options else None,

@@ -7,11 +7,11 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Part</th><th scope="col">Where</th></tr></thead>
 <tbody>
-<tr><th scope="row">Companies and their ways to connect</th><td><code translate="no">COMPANIES</code> in <code translate="no">openprogram/models/auth/login/login_method_registry.py</code>, sent as <code translate="no">family</code>, <code translate="no">family_label</code> and <code translate="no">way_label</code> by <code translate="no">openprogram/models/usage/provider_status.py</code></td></tr>
+<tr><th scope="row">Companies and their ways to connect</th><td><code translate="no">COMPANIES</code> in <code translate="no">openprogram/models/auth/login/login_method_registry.py</code>, sent as <code translate="no">family</code>, <code translate="no">family_label</code> and <code translate="no">way_label</code> by <code translate="no">openprogram/models/listing/provider_status.py</code></td></tr>
 <tr><th scope="row">Popular providers, key and billing pages</th><td><code translate="no">openprogram/models/providers/catalog/consoles.py</code></td></tr>
 <tr><th scope="row">Environment keys, local servers</th><td><code translate="no">openprogram/models/listing/detected.py</code></td></tr>
 <tr><th scope="row">Key check, connect</th><td><code translate="no">openprogram/models/listing/key_check.py</code></td></tr>
-<tr><th scope="row">Picker state, usage, fallback</th><td><code translate="no">openprogram/models/usage/provider_views.py</code></td></tr>
+<tr><th scope="row">Picker state, usage, fallback</th><td><code translate="no">openprogram/models/listing/provider_views.py</code></td></tr>
 <tr><th scope="row">Model picker state, spent-quota card</th><td><code translate="no">apps/web/lib/models/provider-state.ts</code>, <code translate="no">apps/web/lib/models/fallback.ts</code>, <code translate="no">apps/web/components/chat/top-bar/menus/agent-selector.tsx</code>, <code translate="no">apps/web/components/chat/messages/bubbles/quota-reply-card.tsx</code></td></tr>
 <tr><th scope="row">Settings pages</th><td><code translate="no">apps/web/components/settings/providers/</code> (<code translate="no">status/</code> list, <code translate="no">add/</code> dialog, <code translate="no">detail/</code> panels), <code translate="no">apps/web/lib/prefs/providers-view.ts</code>, <code translate="no">apps/web/components/settings/token-usage/</code></td></tr>
 <tr><th scope="row">Wire types</th><td>Generated to <code translate="no">apps/web/lib/settings/provider-status.generated.ts</code> by <code translate="no">scripts/generators/generate_provider_status_types.py</code></td></tr>
@@ -36,7 +36,7 @@
 <li>A balance in dollars shows its pace ("≈ 26 weeks at this pace") once three days have spend.</li>
 <li>The billing tag says API key, Local or Subscription. A subscription whose plan is known says the plan ("Plus", "Pro") in that tag; a compact row shows the same tag where it would say Included, with "Included in the Plus plan" and the API price on hover. An unknown plan changes nothing.</li>
 <li>A signed-out or stopped provider's numbers are dimmed; a snapshot older than 15 minutes is dimmed in both views and says "Updated 3 h ago" on hover, with no line of its own.</li>
-<li>A limit reported without a number (Codex's unlimited credits, Copilot's unlimited premium requests) reads "Unlimited". A quota endpoint that failed says "Couldn't read the quota" with the reason on hover.</li>
+<li>A limit reported without a number reads "Unlimited". A quota endpoint that failed says "Couldn't read the quota" with the reason on hover.</li>
 <li>The header holds Providers | Routing, the time of the last update, Refresh, the Cards | Rows switch and Add provider. No paragraph of help.</li>
 <li>Refresh reads each provider again in order: its sign-in where it lives, then its quota endpoint; health follows from both. The icon spins on the button until the answer replaces the cards, and the update time counts that read.</li>
 </ul>
@@ -48,7 +48,7 @@
 <tr><th scope="row">One way connected</th><td>The ordinary card; ways not connected never appear</td></tr>
 <tr><th scope="row">Grouping</th><td>One table, <code translate="no">COMPANIES</code>, with each way's names in English and Chinese. The payload lists a company's ways together, where its first one was, in the table's order</td></tr>
 <tr><th scope="row">Layout</th><td>Two columns (one below 720 px); each card keeps its height and the next, in list order, goes into the shortest column 12 px below. Heights are measured, estimated before that, so nothing jumps; Tab follows list order</td></tr>
-<tr><th scope="row">Rows</th><td>A company row, with a chip when none of its ways works; its ways indented under it by short name ("ChatGPT", "API", "Go"), the title on hover</td></tr>
+<tr><th scope="row">Rows</th><td>A company row, with a chip when none of its ways works; its ways indented under it by short name ("API", "Go"), the title on hover</td></tr>
 <tr><th scope="row"><code translate="no">openprogram providers status</code></th><td>The company with its best state, each way indented under it by title; <code translate="no">--json</code> carries <code translate="no">family</code>, <code translate="no">family_label</code>, <code translate="no">way_label</code>; <code translate="no">login</code>, <code translate="no">keys</code>, <code translate="no">logout</code> take catalogue ids</td></tr>
 </tbody>
 </table>
@@ -70,7 +70,7 @@
 <p>With nothing connected, the page shows the same choices Add provider shows, and no prose:</p>
 <ol>
 <li><strong>Keys in the environment</strong> first, each with Use. A variable is matched to the catalogue by the provider's key names (the static table, then models.dev's <code translate="no">env</code>). Only its name and a masked tail reach the page; Use makes the Worker read and store it, so the key never crosses the wire. OAuth token variables are never offered.</li>
-<li><strong>Popular</strong>: a grid of eight, each one click into step 2: OpenAI (ChatGPT sign-in, with the API key beside it), Anthropic (API key only), Google Gemini, xAI, DeepSeek, OpenRouter, Kimi / Moonshot (with Kimi Coding and the China endpoint), Z.ai (with its coding plan and Zhipu).</li>
+<li><strong>Popular</strong>: a grid of eight, each one click into step 2: OpenAI, Anthropic (API key only), Google Gemini, xAI, DeepSeek, OpenRouter, Kimi / Moonshot (with Kimi Coding and the China endpoint), Z.ai (with its coding plan and Zhipu).</li>
 <li><strong>On this machine</strong>: Ollama, LM Studio, vLLM and llama.cpp when one answers <code translate="no">GET /models</code> on its loopback address within half a second, without a key. Opening the model picker, Providers or Add provider probes again, showing the kept answer meanwhile; other reads reuse a probe up to 30 seconds old.</li>
 <li><strong>All providers</strong>: a search across the whole catalogue.</li>
 <li>The popular providers are read as Settings opens; until they arrive the grid's place stays empty, and a failed read is retried quietly (<a href="../ui/page-loading-performance.html#no-waiting-text">waiting without words</a>).</li>
@@ -90,7 +90,7 @@
 </table>
 <p>A kept key's balance is read once through the provider's verified quota reader.</p>
 <p>A provider's first <code translate="no">works</code> or <code translate="no">no_credit</code> key turns it on, as does an <code translate="no">unverified</code> key the provider answered with HTTP 200, and its first sign-in; a 5xx or no answer turns nothing on. There is no separate Enabled step. When none of its models is on, the three suggested models are turned on.</p>
-<p>Step 2 shows a company's ways to connect as tabs (the ChatGPT sign-in beside the OpenAI API key): the ways the company table marks as offered; Advanced folds the base URL away. A running local server connects with one button and a stopped one shows how to start it. Custom opens the custom provider form.</p>
+<p>Step 2 shows a company's ways to connect as tabs (the Kimi Coding plan beside the Moonshot API key): the ways the company table marks as offered; Advanced folds the base URL away. A running local server connects with one button and a stopped one shows how to start it. Custom opens the custom provider form.</p>
 <p>Sign in lists the provider's ways in:</p>
 <ul>
 <li>Each row has an icon, a title, a one-line description and a chevron; an import also shows the file it reads in small mono type.</li>
@@ -120,7 +120,7 @@
 <thead><tr><th scope="col">Part</th><th scope="col">Shows</th></tr></thead>
 <tbody>
 <tr><th scope="row">Header</th><td>With two or more keys, a segmented choice: In order, Evenly, Least used. Each way the provider's login methods list: Add key when it takes keys, Sign in (Sign in with another account once it has one) when it has a sign-in</td></tr>
-<tr><th scope="row">Row</th><td>At least 56 px tall: a drag grip (a button the keyboard can pick up), the name (its own name, else a sign-in's email, else "Environment key", "API key" or "ChatGPT sign-in"; In use beside the one a new conversation would take), the masked tail or <code translate="no">$VAR</code> or the plan ("Pro Lite"), then the failure line, or "signed in with ChatGPT" and today's spend and requests. A sign-in's quota windows, its own account's, as two small bars</td></tr>
+<tr><th scope="row">Row</th><td>At least 56 px tall: a drag grip (a button the keyboard can pick up), the name (its own name, else a sign-in's email, else "Environment key", "API key" or "Sign-in"; In use beside the one a new conversation would take), the masked tail or <code translate="no">$VAR</code> or the plan ("Pro Lite"), then the failure line, or "signed in with Qwen" and today's spend and requests. A sign-in's quota windows, its own account's, as two small bars</td></tr>
 <tr><th scope="row">Status</th><td>A badge with a dot: Ready, Back at 14:32, Out of quota (with its reset only when a window reports one; a spent balance has none), Invalid key, Sign in again, Not in use, Provider not set up (a key of a removed custom provider), Sign-in file not found (an import whose file is gone); a wait that has run out reads Ready on its own. The fix inline: Replace, Sign in again or Top up</td></tr>
 <tr><th scope="row">Row menu ⋯</th><td>Rename (inline), Check now, Replace key or Sign in again, Don't use for now / Use again, Move up, Move down, Remove…. Remove is the only action that asks; an environment key has no Rename or Remove</td></tr>
 <tr><th scope="row">Order</th><td>Drag a row by its grip, or pick it up with Space and move it one row per arrow press (a screen reader hears each row's name and place), or Move up / Move down; a line under the list says so once there is more than one row</td></tr>
@@ -163,7 +163,7 @@
 <table class="stack fixed">
 <thead><tr><th scope="col">Provider row</th><th scope="col">Shows</th><th scope="col">Click</th></tr></thead>
 <tbody>
-<tr><th scope="row">Name</th><td>The provider's name; one way of a company reached several ways reads "Company · Way" ("OpenAI · ChatGPT", "OpenAI · API", "OpenCode · Go", "Perplexity · Agent"), one row per catalogue id</td><td>&mdash;</td></tr>
+<tr><th scope="row">Name</th><td>The provider's name; one way of a company reached several ways reads "Company · Way" ("OpenAI · API", "OpenCode · Go", "Perplexity · Agent"), one row per catalogue id</td><td>&mdash;</td></tr>
 <tr><th scope="row">Ready, under half used</th><td>The current model's name, or the model count</td><td>Opens its models</td></tr>
 <tr><th scope="row">Window or key limit half used</th><td>A 16 px ring of what is left; its hint reads "5h · 8% left · resets 14:30"</td><td>Opens its models</td></tr>
 <tr><th scope="row">Rate limited</th><td>"Rate limited · 14:02" in the warning tone</td><td>Opens its models</td></tr>
@@ -192,7 +192,7 @@
 </tbody>
 </table>
 <p>The state comes with the models (<code translate="no">GET /api/models/enabled</code>); opening the menu reads the status route for the quota rows, which reads endpoints older than ten minutes in the background. Each <code translate="no">provider_quota</code> frame updates both reads and is passed on as the window event <code translate="no">op:provider-quota</code>.</p>
-<p>When a reply fails because a quota is spent (<code translate="no">errorCause.cause</code> is <code translate="no">quota_exhausted</code>), the reply card reads "OpenAI Codex 5h limit reached" over "Resets 14:30 · Week 71% left". A spent balance (402, or the provider's state is no credit) reads "Kimi has no credit" over the balance. The raw error stays under the collapsed details.</p>
+<p>When a reply fails because a quota is spent (<code translate="no">errorCause.cause</code> is <code translate="no">quota_exhausted</code>), the reply card reads "Kimi Coding 5h limit reached" over "Resets 14:30 · Week 71% left". A spent balance (402, or the provider's state is no credit) reads "Kimi has no credit" over the balance. The raw error stays under the collapsed details.</p>
 <table class="stack fixed">
 <thead><tr><th scope="col">Button</th><th scope="col">Does</th></tr></thead>
 <tbody>
@@ -209,7 +209,7 @@
 <tbody>
 <tr><th scope="row">Split</th><td>Cost is split by how it is billed: billed (pay-per-token providers, priced calls), included (a subscription's calls at list price, shown only in a tooltip) and the number of pay-per-token calls without a price. One unpriced call no longer hides the total</td></tr>
 <tr><th scope="row">Cost card</th><td>The cost card shows the billed sum, "N calls unpriced" beside its label and, on hover, what subscriptions cover at API prices. A subscription's row in By model reads Included with the list price on hover; a By source or By function row splits its cost the same way, reading Included when a subscription covers all of its calls</td></tr>
-<tr><th scope="row">Subscription</th><td>A provider is a subscription when it is a plan provider (OpenAI Codex, SuperGrok, OpenCode Go, Kimi Coding, GitHub Copilot, Gemini subscription) or its id names a coding or token plan</td></tr>
+<tr><th scope="row">Subscription</th><td>A provider is a subscription when it is a plan provider (OpenCode Go, Kimi Coding, Alibaba Token Plan) or its id names a coding or token plan</td></tr>
 <tr><th scope="row">Token totals</th><td>Every token total counts cached tokens: an older row whose stored total left them out reads as the sum of its parts</td></tr>
 </tbody>
 </table>
@@ -263,9 +263,7 @@
 <tr><th scope="row">Ways to sign in as a described list, the default recommended</th><td>Owner's change</td><td>Equal bare buttons gave no reason to pick one; the registry's first method is already the default every surface pre-selects</td></tr>
 <tr><th scope="row">No backdrop blur behind dialogs</th><td>Owner's change</td><td>The blurred page hid where the person was; a light scrim keeps it in view</td></tr>
 <tr><th scope="row">Anthropic by API key only</th><td>Project rule</td><td>Anthropic is used only through its official API with an API key</td></tr>
-<tr><th scope="row">Plan name from what is already held</th><td>Codex CLI</td><td>The plan a reply's rate-limit frame named, else the sign-in token's <code translate="no">chatgpt_plan_type</code> claim. No request is made for a label, and the existing billing tag carries it</td></tr>
 <tr><th scope="row">Refresh reads the sign-in first</th><td>Owner's change</td><td>A provider registers <code translate="no">reread_login</code>: refresh a token about to expire, mark one that cannot be refreshed, take back one signed in again. A quota read alone showed nothing for a provider whose reader is off</td></tr>
-<tr><th scope="row">A spent delegated sign-in is marked by its refresh token</th><td>The stored sign-in's rule</td><td>The digest of the refused token is kept on the credential. While the Codex CLI's file holds that token nothing is asked again; another login in the file clears the mark. A network failure marks nothing</td></tr>
 </tbody>
 </table>
 
@@ -274,7 +272,7 @@
 <thead><tr><th scope="col">Part</th><th scope="col">Today</th></tr></thead>
 <tbody>
 <tr><th scope="row">Model picker</th><td>Add provider and a row not set up open the Providers page and the provider's page, not yet the Add provider dialog itself</td></tr>
-<tr><th scope="row">Plan name</th><td>Read for OpenAI Codex only; other subscriptions say Subscription</td></tr>
+<tr><th scope="row">Plan name</th><td>Not read; a subscription says Subscription</td></tr>
 <tr><th scope="row">Environment keys</th><td>Only the Worker's own environment; a key set only in a shell the Worker was not started from is not seen</td></tr>
 <tr><th scope="row">Region or plan refusal</th><td>Recognised only from a 403 whose body says so</td></tr>
 <tr><th scope="row">Key and billing pages</th><td>Listed for 15 providers; the others get no link</td></tr>

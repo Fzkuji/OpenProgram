@@ -190,12 +190,19 @@ def execute(
             return f"Error: {backend.name} search failed: {type(e).__name__}: {e}"
         return _format(query, backend.name, results)
 
+    try:
+        return search(query, num_results=num_results)[0]
+    except LookupError as e:
+        return f"Error: {e}"
+
+
+def search(query: str, num_results: int = 8) -> tuple[str, list[SearchResult]]:
+    """``(text, results)`` of an unpinned search: the saved default backend
+    first, then every other available one by priority. ``text`` is what the
+    tool answers with; ``LookupError`` says why nothing could search."""
     candidates = _fallback_order()
     if not candidates:
-        try:
-            registry.select()
-        except LookupError as e:
-            return f"Error: {e}"
+        registry.select()
     failures: list[str] = []
     for backend in candidates:
         try:
@@ -206,11 +213,11 @@ def execute(
         text = _format(query, backend.name, results)
         if failures:
             text += "\n\n(skipped: " + "; ".join(failures) + ")"
-        return text
-    text = "Error: every web search backend failed: " + "; ".join(failures)
+        return text, list(results)
+    text = "every web search backend failed: " + "; ".join(failures)
     if not any(getattr(backend, "requires_env", ()) for backend in candidates):
         text += ". " + NO_KEY_HINT
-    return text
+    raise LookupError(text)
 
 
 # Appended when every unpinned backend failed and none of them needs a key:
@@ -257,4 +264,4 @@ function(
     check_fn=_tool_check_fn,
 )(_execute_agent_tool)
 
-__all__ = ["NAME", "SPEC", "execute", "DESCRIPTION", "_tool_check_fn"]
+__all__ = ["NAME", "SPEC", "execute", "search", "DESCRIPTION", "_tool_check_fn"]

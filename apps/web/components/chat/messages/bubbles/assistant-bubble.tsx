@@ -104,6 +104,47 @@ function LegacyRuntimeTrace({ children: calls, sessionId }: { children: ChatMsg[
   );
 }
 
+/** An outside agent's refused sign-in (its error names it first): its own
+ *  sign-in is what to fix, not a key in Model Services. */
+function harnessSignIn(msg: ChatMsg, text: (en: string, zh: string) => string): string | null {
+  // The failure reads "Claude Code: …", or "[error] LLMError: Claude Code: …" as a reply's text.
+  const said = msg.errorDetail || msg.content || "";
+  const agent = /^(?:\[error\] LLMError: )?(Claude Code|Codex|DeepSeek Harness|Gemini CLI)\b/.exec(said)?.[1];
+  if (agent === "Claude Code" && /invalid api key/i.test(said)) {
+    // It was handed the Model Services key, and that key was refused.
+    return text(
+      "Claude Code's Anthropic API key was rejected — check it in Settings → Model Services, or run `claude auth login` in a terminal.",
+      "Claude Code 用的 Anthropic API 密钥被拒 —— 去 设置 → LLM 服务商 检查，或在终端运行 `claude auth login`。",
+    );
+  }
+  if (agent === "Claude Code") {
+    return text(
+      "Claude Code isn't signed in — run `claude auth login` in a terminal, or add an Anthropic API key in Settings → Model Services.",
+      "Claude Code 还没登录 —— 在终端运行 `claude auth login`，或在 设置 → LLM 服务商 添加 Anthropic API 密钥。",
+    );
+  }
+  if (agent === "Codex") {
+    return text("Codex isn't signed in — run `codex login` in a terminal.", "Codex 还没登录 —— 在终端运行 `codex login`。");
+  }
+  if (agent === "Gemini CLI" && /api key not valid|invalid api key/i.test(said)) {
+    // It was handed a Gemini API key (its own or the Model Services one), and that key was refused.
+    return text(
+      "Gemini CLI's Gemini API key was rejected — check it in Settings → Model Services, or run `gemini` in a terminal and sign in with Google.",
+      "Gemini CLI 用的 Gemini API 密钥被拒 —— 去 设置 → LLM 服务商 检查，或在终端运行 `gemini` 用 Google 账号登录。",
+    );
+  }
+  if (agent === "Gemini CLI") {
+    return text(
+      "Gemini CLI isn't signed in — run `gemini` in a terminal and sign in with Google, or add a Google API key in Settings → Model Services.",
+      "Gemini CLI 还没登录 —— 在终端运行 `gemini` 用 Google 账号登录，或在 设置 → LLM 服务商 添加 Google API 密钥。",
+    );
+  }
+  if (agent === "DeepSeek Harness") {
+    return text("DeepSeek Harness isn't signed in — sign in in its app.", "DeepSeek Harness 还没登录 —— 在它的 App 里登录。");
+  }
+  return null;
+}
+
 /** Categorized, actionable headline for a failed turn, by error reason
  *  (see docs/design/providers/reliability/error-taxonomy-propagation.md). Returns null
  *  for reasons with no copy better than the raw message. */
@@ -119,7 +160,7 @@ export function errorHeadline(
         ? text(`Rate limited — try again in ${after}s.`, `请求过于频繁 —— ${after} 秒后重试。`)
         : text("Rate limited — try again shortly.", "请求过于频繁 —— 稍后重试。");
     case "auth":
-      return text(
+      return harnessSignIn(msg, text) ?? text(
         "Your API key was rejected — check it in Settings → Model Services.",
         "API 密钥被拒 —— 去 设置 → LLM 服务商 检查。",
       );

@@ -253,6 +253,20 @@ BOUNDARY_MANIFEST = (
         reason="loopback worker liveness probe does not fetch a URL",
         kinds=frozenset({"socket.connect"}),
     ),
+    BoundaryExclusion(
+        path="models/gateway/agents/local_api.py",
+        boundary_owner="owner-control-plane",
+        reason="a Unix socket to a local app's own API (Shelley, Avibe) on this computer, to put the gateway into its settings",
+        kinds=frozenset({"socket.connect"}),
+        call_counts=(("socket.connect", 1),),
+    ),
+    BoundaryExclusion(
+        path="models/gateway/agents/dim.py",
+        boundary_owner="owner-control-plane",
+        reason="the Unix socket of Dim's local daemon, its JSON-RPC API for its providers on this computer",
+        kinds=frozenset({"socket.connect"}),
+        call_counts=(("socket.connect", 1),),
+    ),
 )
 
 

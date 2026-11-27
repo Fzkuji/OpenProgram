@@ -16,8 +16,8 @@ from openprogram.runtime.permissions.modes import PermissionRules
 from openprogram.runtime.permissions.refusal import MCP_GATE_REFUSALS
 from openprogram.models.providers.types import AgentTool, AgentToolResult
 from openprogram.programs._host.runtime import function
-from openprogram.extensions.mcp.server.service import MCPClientContext, MCPService
-from openprogram.extensions.mcp.server.tools import json_result, to_mcp_content
+from openprogram.interfaces.mcp_server.service import MCPClientContext, MCPService
+from openprogram.interfaces.mcp_server.tools import json_result, to_mcp_content
 from openprogram.models.providers.types import ImageContent, TextContent
 
 

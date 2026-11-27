@@ -42,7 +42,7 @@ def _eligible(row: dict) -> bool:
 
 
 def _move_way_keys(store) -> None:
-    from openprogram.models.auth.credentials import _private_atomic_update
+    from openprogram.state.private_files import _private_atomic_update
     from .company_keys import COMPANY_MARK, company_for, takes_company_keys
     from .store import FILE_LOCK_TIMEOUT_SECONDS, FILE_NAME
 

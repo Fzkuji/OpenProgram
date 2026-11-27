@@ -396,15 +396,17 @@ def _build_output_style(agent: Any) -> str:
 def _build_skills(agent: Any) -> str:
     """The ``<available_skills>`` listing — all external sources, one renderer.
 
-    Loader and renderer are ``openprogram.extensions.skills``, the same pair
-    ``Runtime._skills_block`` calls, so a skill reads identically whether
-    the model is in a chat turn or inside an agentic function."""
-    try:
-        from openprogram.extensions.skills import format_skills_for_prompt, list_skills
-    except Exception:
+    Loader and renderer are the skills extension's (``extension_link``),
+    the same pair ``Runtime._skills_block`` calls, so a skill reads
+    identically whether the model is in a chat turn or inside an agentic
+    function."""
+    from openprogram.runtime import extension_link
+
+    source = extension_link.skills()
+    if source is None:
         return ""
     try:
-        skills = list_skills()
+        skills = source.list_skills()
     except Exception:
         return ""
     if not skills:
@@ -415,7 +417,7 @@ def _build_skills(agent: Any) -> str:
     else:
         disabled = set(_attr(disabled_obj, "disabled", None) or [])
     enabled = [s for s in skills if s.name not in disabled]
-    return format_skills_for_prompt(enabled).strip("\n")
+    return source.format_skills_for_prompt(enabled).strip("\n")
 
 
 def _build_memory(agent: Any) -> str:
@@ -654,29 +656,43 @@ def _build_deferred_catalog(agent: Any) -> str:
         return ""
     if not any(getattr(t, "name", None) == "tool_search" for t in tools):
         return ""
-    from openprogram.programs import (
-        deferred_catalog_text, split_tools_for_dispatch,
-    )
-    _, deferred = split_tools_for_dispatch(list(tools))
+    from openprogram.runtime import program_host
+    program = program_host.host()
+    _, deferred = program.split_tools_for_dispatch(list(tools))
     if not deferred:
         return ""
-    return deferred_catalog_text(deferred) or ""
+    return program.deferred_catalog_text(deferred) or ""
 
 
-def _build_devices(agent: Any) -> str:
-    """What computer_use can operate, for a prompt of its own. A
+#: What a tool adds to a prompt of its own when it is offered, by tool
+#: name (``register_tool_section``): ``computer_use`` lists what it can
+#: operate.
+_TOOL_SECTIONS: dict[str, Callable[[], str]] = {}
+
+
+def register_tool_section(tool_name: str, text: Callable[[], str]) -> None:
+    """Add ``text()`` to the capabilities of a prompt whose tools offer
+    ``tool_name``. The tool's Program registers it when it loads."""
+    _TOOL_SECTIONS[tool_name] = text
+
+
+def _build_tool_sections(agent: Any) -> str:
+    """What the offered tools add, for a prompt of its own. A
     conversation's turns get it beside their message instead
     (``catalog_beside``), so connecting a device never changes their prompt."""
     tools = _tools_var.get()
     if not tools or _catalog_beside_var.get():
         return ""
-    if not any(getattr(t, "name", None) == "computer_use" for t in tools):
-        return ""
-    from openprogram.programs.tools.computer_use.computer_use.devices import devices_text
-    try:
-        return devices_text()
-    except Exception:
-        return ""
+    offered = {getattr(t, "name", None) for t in tools}
+    parts = []
+    for tool_name, text in list(_TOOL_SECTIONS.items()):
+        if tool_name not in offered:
+            continue
+        try:
+            parts.append(text())
+        except Exception:
+            _log.debug("prompt section of %s unavailable", tool_name, exc_info=True)
+    return "\n\n".join(part for part in parts if part and part.strip())
 
 
 _PLAN_MODE_TEXT = (
@@ -748,7 +764,7 @@ def _build_capabilities(agent: Any) -> str:
     """What the agent can reach beyond its loaded tools: skills, the
     Program recipe, and the deferred tools it can load by name."""
     parts = [part for part in (
-        _build_skills(agent), _build_programs(agent), _build_deferred_catalog(agent), _build_devices(agent),
+        _build_skills(agent), _build_programs(agent), _build_deferred_catalog(agent), _build_tool_sections(agent),
     ) if part and part.strip()]
     return "\n\n".join(parts)
 

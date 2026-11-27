@@ -13,11 +13,9 @@ _log = logging.getLogger(__name__)
 def get_model(provider: str, model_id: str) -> Model | None:
     """Get a model by provider and model ID. Returns None if not found.
 
-    Falls back to alias-equivalent provider names. The model registry
-    keys are historical (e.g. ``openai-codex/gpt-5.5``) while the
-    canonical provider id from the runtime side is different (e.g.
-    ``openai-codex``). Alias-aware lookup keeps both spellings
-    working without duplicating thousands of ENABLED_MODELS rows.
+    Falls back to alias-equivalent provider names (``bailian`` →
+    ``alibaba-token-plan-cn``), so both spellings work without
+    duplicating ENABLED_MODELS rows.
     """
     key = f"{provider}/{model_id}"
     m = ENABLED_MODELS.get(key)

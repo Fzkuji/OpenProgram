@@ -241,7 +241,7 @@ def wake_text(payload: dict[str, Any]) -> str:
     fired = datetime.fromtimestamp(payload["fired_at"]).astimezone()
     event = payload.get("event")
     if event:
-        from openprogram.programs.tools.jobs.cron.worker import event_note
+        from openprogram.runtime.scheduler.worker import event_note
         return (f"⏰ {payload['message']}\n\n"
                 f"(A task you set was started by a {event.get('source') or 'outside'} event at "
                 f"{fired:%Y-%m-%d %H:%M %Z}. Act on it now.)" + event_note(event))

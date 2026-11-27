@@ -1,6 +1,6 @@
 """Write the TypeScript wire types of the provider routes, read from their Python TypedDicts.
 
-Sources: models/usage/provider_status.py (status), models/usage/provider_views.py
+Sources: models/listing/provider_status.py (status), models/listing/provider_views.py
 (model picker, usage, fallback, the provider_quota frame), models/listing/detected.py
 (Add provider) and models/listing/key_check.py (the key check).
 
@@ -13,8 +13,8 @@ from pathlib import Path
 from typing import Any, Literal, Union, get_args, get_origin, get_type_hints
 
 from openprogram.models.listing import detected, key_check
-from openprogram.models.usage import provider_status as schema
-from openprogram.models.usage import provider_views as views
+from openprogram.models.listing import provider_status as schema
+from openprogram.models.listing import provider_views as views
 
 TARGET = Path(__file__).resolve().parents[2] / "apps/web/lib/settings/provider-status.generated.ts"
 _ALIASES = {

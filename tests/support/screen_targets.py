@@ -16,7 +16,7 @@ from typing import Any, Callable
 
 from openprogram.host import machines
 from openprogram.host.machines import Connection, Machine, kinds
-from openprogram.programs._host.execution import ToolReturn
+from openprogram.runtime.agent.tool_execution import ToolReturn
 from openprogram.programs.tools.computer_use.computer_use import errors
 from openprogram.programs.tools.computer_use.computer_use.routing import registry
 from openprogram.programs.tools.computer_use.computer_use.contract import (

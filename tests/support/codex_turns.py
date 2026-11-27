@@ -34,8 +34,8 @@ from openprogram.runtime.context.session_db import SessionDB
 from openprogram.runtime.conversation import turn_runtime as D
 
 def _model() -> Model:
-    return Model(id="cache-test", name="cache-test", api="openai-codex",
-                 provider="openai-codex", base_url="https://chatgpt.com/backend-api")
+    return Model(id="cache-test", name="cache-test", api="openai-responses",
+                 provider="openai", base_url="https://api.openai.com/v1")
 
 
 @pytest.fixture
@@ -90,7 +90,7 @@ def _scripted_stream(requests: list[Context], replies: list[AssistantMessage]):
 
 
 def _reply(*blocks, stop="stop") -> AssistantMessage:
-    return AssistantMessage(content=list(blocks), api="openai-codex", provider="openai-codex",
+    return AssistantMessage(content=list(blocks), api="openai-responses", provider="openai",
                             model="cache-test", usage=Usage(input_tokens=10, output_tokens=2),
                             stop_reason=stop, timestamp=0)
 

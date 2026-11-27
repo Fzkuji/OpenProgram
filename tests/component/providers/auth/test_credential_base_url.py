@@ -9,6 +9,7 @@ import asyncio
 import pytest
 
 from openprogram.models.auth import selection
+from openprogram.models.providers.streaming import credential_failover
 from openprogram.models.providers.types import Model, SimpleStreamOptions
 
 
@@ -37,7 +38,7 @@ def _lease_for(provider: str):
     async def drain():
         model = Model(id="m", name="m", api="openai-completions", provider=provider,
                       base_url="https://api.example/v1")
-        async for _ in selection.with_credential(model, SimpleStreamOptions(), attempt):
+        async for _ in credential_failover.with_credential(model, SimpleStreamOptions(), attempt):
             pass
 
     asyncio.run(drain())

@@ -75,7 +75,8 @@ def _sealed_version_tui() -> tuple[Path, Path] | None:
     A version carries its terminal UI inside its frontend bundle, and Node
     comes from the base it shares with other versions.
     """
-    from openprogram.operations.self_update.versions import layout, store
+    from openprogram.host._platform import runtime_layout as layout
+    from openprogram.operations.self_update.versions import store
 
     runtime = layout.current_runtime()
     if runtime is None:

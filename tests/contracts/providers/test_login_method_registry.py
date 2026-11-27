@@ -7,11 +7,12 @@ import asyncio
 
 import pytest
 
+from openprogram.models.auth import provider_policy
 from openprogram.models.auth.login import login_driver
 from openprogram.models.auth.login import login_method_registry as reg
 from openprogram.models.auth.types import AuthConfigError
 
-METHODS = {"api_key", "pkce_oauth", "device_code", "import_from_cli", "paste_token"}
+METHODS = {"api_key", "import_from_cli"}
 CHECKS = {"openai_bearer", "openrouter_key", "anthropic_native", "anthropic_compat",
           "google_query", "login", "cloud"}
 
@@ -32,21 +33,14 @@ def test_each_entry_names_known_methods_and_checks(provider):
 @pytest.mark.parametrize("provider", reg.listed_providers())
 def test_every_offered_sign_in_has_a_handler(provider):
     for method in reg.login_method_list(provider):
-        if method.id == "pkce_oauth":
-            assert login_driver._pkce_config(provider) is not None
-        elif method.id == "import_from_cli":
+        if method.id == "import_from_cli":
             from openprogram.models.auth.login import credential_login
             try:
                 credential_login.import_from_cli(provider)
             except AuthConfigError as exc:
                 assert "no import-from-CLI adapter" not in str(exc)
-        elif method.id == "paste_token":
-            module = {"xai-subscription": "xai_subscription", "github-copilot": "github_copilot"}[provider]
-            import importlib
-            adapter = importlib.import_module(f"openprogram.models.providers.adapters.{module}.auth_adapter")
-            assert callable(adapter.import_pasted_token)
-        elif method.id == "device_code":
-            assert provider == "github-copilot"
+        else:
+            assert method.id == "api_key"
 
 
 def test_a_method_the_registry_does_not_offer_is_refused():
@@ -79,8 +73,18 @@ def test_the_credentials_api_describes_a_provider_from_the_registry():
 
 def test_the_cli_offers_the_registry_methods_in_order():
     from openprogram.models.auth.login.login_method_registry import login_methods
-    assert [m for m, _ in login_methods("xai-subscription")] == ["pkce_oauth", "import_from_cli", "paste_token"]
-    assert reg.default_method("github-copilot") == "device_code"
+    assert [m for m, _ in login_methods("openai")] == ["api_key"]
+    assert reg.default_method("openai") == "api_key"
+
+
+@pytest.mark.parametrize("provider", sorted(provider_policy.WITHDRAWN_PROVIDERS))
+def test_a_withdrawn_provider_offers_no_way_in(provider):
+    assert provider not in reg.listed_providers()
+    assert reg.login_method_list(provider) == []
+    assert reg.login_methods(provider) == []
+    assert reg.company_of(provider) is None
+    with pytest.raises(AuthConfigError):
+        reg.default_method(provider)
 
 
 def test_each_provider_is_one_way_of_at_most_one_company():
@@ -93,11 +97,11 @@ def test_each_provider_is_one_way_of_at_most_one_company():
 
 
 def test_a_company_names_its_ways_and_offers_some_as_tabs():
-    company, way = reg.company_of("openai-codex")
-    assert (company.id, company.label, way.title, way.short) == ("openai", "OpenAI", "ChatGPT subscription", "ChatGPT")
+    company, way = reg.company_of("kimi-coding")
+    assert (company.id, company.label, way.title, way.short) == ("moonshotai", "Moonshot AI", "Kimi Coding plan", "Kimi Coding")
     assert reg.company_of("opencode-go")[1].title == "Go · monthly subscription"
     assert reg.company_of("deepseek") is None
-    assert reg.offered_ways("openai-codex") == ["openai"]
+    assert reg.offered_ways("kimi-coding") == ["moonshotai", "moonshotai-cn"]
     assert reg.offered_ways("opencode") == []
 
 

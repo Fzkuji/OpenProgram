@@ -12,7 +12,7 @@ from openprogram.state.memory.references import (
     normalize as normalize_memory_refs,
     resolve as resolve_memory_refs,
 )
-from openprogram.programs.tools.jobs.cron import cron as cron_tool
+from openprogram.runtime.scheduler import store
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +55,7 @@ def _validate_schedule(task_type: str, cron: str | None, run_at: str | None) -> 
         return None, _parse_run_at(run_at)
     if run_at:
         raise ValueError(f"{task_type} tasks use cron, not run_at")
-    if not cron or not cron_tool._valid_cron(cron):
+    if not cron or not store._valid_cron(cron):
         raise ValueError("cron must be a supported five-field expression or macro")
     return cron.strip(), None
 
@@ -121,9 +121,9 @@ def create_task(
         from openprogram.runtime.permissions.authority import local_owner_authority
 
         authority = local_owner_authority()
-    path = cron_tool._resolve_path()
-    with cron_tool._store_lock(path):
-        entry_id = cron_tool._mint_id()
+    path = store._resolve_path()
+    with store._store_lock(path):
+        entry_id = store._mint_id()
         body_kind, body = next(
             (kind, value) for kind, value in
             (("prompt", prompt), ("command", command), ("reminder", reminder)) if value
@@ -144,7 +144,7 @@ def create_task(
             entry["wake"] = bool(wake)
         # Where the task was set, for that conversation's Activity panel. Not
         # authority: what runs is the signed execution spec.
-        origin_session = cron_tool._origin_session()[0]
+        origin_session = store._origin_session()[0]
         if origin_session:
             entry["session_id"] = origin_session
         if watch:
@@ -161,7 +161,7 @@ def create_task(
             if unsupported:
                 raise ValueError("unsupported scheduler metadata field")
             entry.update(extra)
-        entry["execution"] = cron_tool._build_execution_spec(
+        entry["execution"] = store._build_execution_spec(
             kind=body_kind,
             body=body,
             cwd=cwd,
@@ -171,9 +171,9 @@ def create_task(
             wake=bool(wake),
             watch=watch,
         )
-        entries = cron_tool._load(path)
+        entries = store._load(path)
         entries.append(entry)
-        cron_tool._save(path, entries)
+        store._save(path, entries)
     _tasks_changed()
     return entry
 
@@ -184,7 +184,7 @@ def _tasks_changed() -> None:
 
 
 def list_tasks() -> list[dict[str, Any]]:
-    return cron_tool._load(cron_tool._resolve_path())
+    return store._load(store._resolve_path())
 
 
 def get_task(task_id: str) -> dict[str, Any] | None:
@@ -203,9 +203,9 @@ def update_task(
     }
     if not isinstance(patch, dict) or not set(patch).issubset(allowed):
         raise ValueError("unsupported scheduler update field")
-    path = cron_tool._resolve_path()
-    with cron_tool._store_lock(path):
-        entries = cron_tool._load(path)
+    path = store._resolve_path()
+    with store._store_lock(path):
+        entries = store._load(path)
         for index, current in enumerate(entries):
             if current.get("id") != task_id:
                 continue
@@ -234,7 +234,7 @@ def update_task(
                 if run_at_value:
                     updated["run_at"] = run_at_value
                     updated.pop("cron", None)
-            bodies = [kind for kind in cron_tool.EXECUTION_KINDS if kind in patch]
+            bodies = [kind for kind in store.EXECUTION_KINDS if kind in patch]
             if len(bodies) > 1:
                 raise ValueError("update one of prompt, command, or reminder")
             for kind in bodies:
@@ -243,7 +243,7 @@ def update_task(
                     raise ValueError(f"{kind} must not be empty")
                 if task_type == "monitor" and kind != "prompt":
                     raise ValueError("monitor tasks require a prompt")
-                for other in cron_tool.EXECUTION_KINDS:
+                for other in store.EXECUTION_KINDS:
                     updated.pop(other, None)
                 updated[kind] = body
                 if kind != "prompt":
@@ -268,7 +268,7 @@ def update_task(
 
                 authority = local_owner_authority()
             body_kind = next(
-                kind for kind in cron_tool.EXECUTION_KINDS if kind in updated
+                kind for kind in store.EXECUTION_KINDS if kind in updated
             )
             origin = None
             if execution.get("session_id") is not None:
@@ -277,7 +277,7 @@ def update_task(
                     str(execution["session_id"]),
                     str(execution.get("agent_id") or "main"),
                 )
-            updated["execution"] = cron_tool._build_execution_spec(
+            updated["execution"] = store._build_execution_spec(
                 kind=body_kind,
                 body=updated[body_kind],
                 cwd=cwd,
@@ -290,13 +290,13 @@ def update_task(
             )
             updated.pop("cwd", None)
             entries[index] = updated
-            cron_tool._save(path, entries)
+            store._save(path, entries)
             break
         else:
             raise KeyError(task_id)
     _tasks_changed()
     if updated.get("type") == "once" and _run_minute(updated.get("run_at")) != _run_minute(current.get("run_at")):
-        from openprogram.programs.tools.jobs.cron import worker
+        from openprogram.runtime.scheduler import worker
 
         worker.forget_firing(task_id)
     return updated
@@ -305,14 +305,14 @@ def update_task(
 def delete_task(task_id: str, *, by: str = "") -> bool:
     """Remove a task. ``by`` names what asked (the API, the cron tool, ...):
     the worker log is then the record of when a task went and through what."""
-    path = cron_tool._resolve_path()
-    with cron_tool._store_lock(path):
-        entries = cron_tool._load(path)
+    path = store._resolve_path()
+    with store._store_lock(path):
+        entries = store._load(path)
         kept = [row for row in entries if row.get("id") != task_id]
         if len(kept) == len(entries):
             return False
         gone = next(row for row in entries if row.get("id") == task_id)
-        cron_tool._save(path, kept)
+        store._save(path, kept)
     _tasks_changed()
     logger.info("scheduler task %s (%s, %s) deleted by %s", task_id, gone.get("type") or "task",
                 str(gone.get("title") or "")[:60], by or "an unnamed caller")

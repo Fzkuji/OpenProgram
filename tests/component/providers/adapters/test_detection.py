@@ -49,21 +49,6 @@ class TestProviderDetection:
 
         assert providers.detect_provider() == ("anthropic", "claude-sonnet-4-6")
 
-    def test_detect_provider_prefers_cli_before_api_keys(self, monkeypatch):
-        """CLI providers should win over API keys during plain auto-detection."""
-        monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/codex" if name == "codex" else None)
-        monkeypatch.delenv("AGENTIC_PROVIDER", raising=False)
-        monkeypatch.delenv("AGENTIC_MODEL", raising=False)
-        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
-        monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
-        monkeypatch.setenv("GOOGLE_API_KEY", "test-google-key")
-        monkeypatch.delenv("GOOGLE_GENERATIVE_AI_API_KEY", raising=False)
-
-        from openprogram.models import providers
-        importlib.reload(providers)
-
-        assert providers.detect_provider() == ("openai-codex", None)
-
     def test_check_providers_marks_env_selected_provider_default(self, monkeypatch):
         """check_providers() marks the configured provider as the auto-selected default."""
         monkeypatch.setattr("shutil.which", lambda name: None)
@@ -93,8 +78,7 @@ class TestProviderSurface:
 
     def test_all_exports_factory_surface(self):
         """__all__ carries the factory/detection entry points; per-provider
-        Runtime classes are never re-exported — the three surviving
-        subscription classes are registered in the runtime layer, and the
+        Runtime classes are never re-exported — the
         API-key providers have no class at all (base Runtime via
         create_runtime)."""
         from openprogram.models import providers
@@ -106,11 +90,3 @@ class TestProviderSurface:
             "ClaudeCodeRuntime", "OpenAICodexRuntime", "GeminiCLIRuntime",
         ):
             assert class_name not in providers.__all__
-
-    def test_runtime_classes_import_from_provider_packages(self):
-        """create_runtime's targets are registered in the runtime layer.
-        Only the subscription/CLI-credential backends carry a class."""
-        from openprogram.runtime.agent.provider_runtimes import runtime_class_for
-        assert runtime_class_for("openai-codex").__name__ == "OpenAICodexRuntime"
-        assert runtime_class_for("gemini-cli").__name__ == "GeminiCLIRuntime"
-        assert runtime_class_for("anthropic") is None

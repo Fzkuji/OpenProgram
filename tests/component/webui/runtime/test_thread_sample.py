@@ -1,6 +1,8 @@
 """A Worker asked for a sample writes where its threads were working."""
 from __future__ import annotations
 
+import pytest
+
 import sys
 import threading
 
@@ -80,6 +82,7 @@ def test_a_sample_says_which_threads_used_the_processor():
     assert tail[1:] == ["  1.00 s  reader  store.py:fold", "  0.50 s  late  store.py:fold"]
 
 
+@pytest.mark.slow
 def test_the_request_file_event_starts_the_sample_without_a_timer(tmp_path, monkeypatch):
     """The folder is not read every few seconds: the request's file event
     wakes the watcher."""

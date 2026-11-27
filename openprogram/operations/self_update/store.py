@@ -26,6 +26,7 @@ from .types import (
     ActiveUpdateError,
     ConcurrentUpdateError,
     CorruptUpdateStateError,
+    SelfUpdateError,
     InvalidTransitionError,
     UpdateExistsError,
     UpdateNotFoundError,
@@ -36,6 +37,7 @@ from .types import (
     VerifierClaim,
     VerifierDispatch,
     can_transition,
+    is_held,
     is_terminal,
     known_keys,
     parse_phase,
@@ -125,6 +127,7 @@ class SelfUpdateStore:
         """Caller holds the process/file lock, including child reservation."""
         if self._maintenance_in_force_unlocked():
             raise ActiveUpdateError("self-update maintenance has not been cleared")
+        self._cancel_held_unlocked(f"cancelled for update {request.update_id}; it can be prepared again")
         current = self._load_active_unlocked()
         if current is not None and not is_terminal(current.state.phase):
             raise ActiveUpdateError(
@@ -192,6 +195,23 @@ class SelfUpdateStore:
             import logging
             logging.getLogger(__name__).exception("Could not revoke superseded source repair")
         return state
+
+    def cancel_held(self, reason: str) -> str | None:
+        """Cancel the update held ready for a restart, if there is one; its id."""
+        with self._locked():
+            return self._cancel_held_unlocked(reason)
+
+    def _cancel_held_unlocked(self, reason: str) -> str | None:
+        """A held update gives the slot up to any update that needs it."""
+        current = self._load_active_unlocked()
+        if current is None or not is_held(current):
+            return None
+        update_id = current.request.update_id
+        self._transition_unlocked(update_id, UpdatePhase.ABORTED, expected_phase=UpdatePhase.READY,
+                                  detail={**current.state.detail, "held": False, "cancelled": True, "reason": reason})
+        import logging
+        logging.getLogger(__name__).info("held update %s cancelled: %s", update_id, reason)
+        return update_id
 
     def load(self, update_id: str) -> UpdateRecord:
         with self._locked():
@@ -490,6 +510,8 @@ class SelfUpdateStore:
         turn never commits.
         """
         with self._locked():
+            if self._read_queue_unlocked():
+                self._cancel_held_unlocked("cancelled for a queued update; it can be prepared again")
             if self._load_active_unlocked() is not None or self._maintenance_in_force_unlocked():
                 return None
             while True:
@@ -965,7 +987,7 @@ def is_candidate_worker(record: UpdateRecord) -> bool:
     candidate = record.request.candidate_version or record.state.detail.get("candidate_version")
     if not candidate:
         return False
-    from .versions.layout import current_runtime
+    from openprogram.host._platform.runtime_layout import current_runtime
 
     runtime = current_runtime()
     return runtime is not None and runtime.version == candidate

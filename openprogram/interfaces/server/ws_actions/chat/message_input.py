@@ -45,7 +45,7 @@ def _title_from_text(text: str) -> str:
     at 50 chars can sever it, so we clean first, then truncate.
     """
     import re
-    from openprogram.state import attachments as _attachments
+    from openprogram.state import attachment_markers as _attachments
     t = re.sub(r"<attachment-preview[^>]*>.*?</attachment-preview>", "", text, flags=re.S)
     recorded = "<recorded-demonstration" in t
     t = re.sub(r"<recorded-demonstration[^>]*>.*?</recorded-demonstration>", "", t, flags=re.S)

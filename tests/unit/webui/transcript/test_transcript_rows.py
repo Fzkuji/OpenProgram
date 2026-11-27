@@ -89,7 +89,7 @@ def test_a_failed_reply_keeps_its_partial_text_apart_from_the_failure() -> None:
 
 
 def test_a_reply_a_spent_quota_stopped_carries_its_cause() -> None:
-    cause = {"cause": "quota_exhausted", "http_status": 429, "provider": "openai-codex", "limit": "5h",
+    cause = {"cause": "quota_exhausted", "http_status": 429, "provider": "openai", "limit": "5h",
              "resets_at": 1_800_000_000.0, "account": None,
              "other_limits": [{"label": "Week", "left_fraction": 0.71, "resets_at": None}]}
     failed, done = project_rows([

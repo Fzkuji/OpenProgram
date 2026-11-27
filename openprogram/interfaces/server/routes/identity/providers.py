@@ -1,7 +1,6 @@
-"""Provider catalog routes — list/toggle/configure/fetch-models/test.
+"""Provider catalog routes — list/toggle/fetch-models/test.
 
-Pure dispatch to ``openprogram.models.listing`` and
-``openprogram.models.providers.settings.configuration``. Plus the web-search provider
+Pure dispatch to ``openprogram.models.listing``. Plus the web-search provider
 catalog and per-env-var masked credential-status endpoint.
 
 The heavier runtime-switching routes (/api/model, /api/provider/{name},
@@ -11,7 +10,6 @@ state via ``global`` statements.
 from __future__ import annotations
 
 import logging
-import os
 import asyncio
 
 from typing import Any
@@ -353,12 +351,12 @@ def register(app):
     def api_enabled_models(probe: str = ""):
         """The picker's models and, per provider, what it shows beside them:
         configured or not, the state and its fix, the limit closest to
-        running out and a balance (models/usage/provider_views.py). Stored
+        running out and a balance (models/listing/provider_views.py). Stored
         values only; no provider is asked. A local server's loopback probe
         is reused for 30 s, except with ``?probe=local``, which the picker
         sends as it opens so a server started or stopped since shows so."""
         from openprogram.models import listing as _mc
-        from openprogram.models.usage.provider_views import picker_states
+        from openprogram.models.listing.provider_views import picker_states
         models = _mc.list_enabled_models()
         try:
             states = picker_states([m["provider"] for m in models], probe_local=probe == "local")
@@ -427,7 +425,7 @@ def register(app):
     def api_provider_probes(name: str, days: float = 7.0):
         """The requests OpenProgram sent this provider on its own behalf
         (tests, credential checks, failed model lists), newest first. They
-        are never usage; see models/listing/probe_log.py."""
+        are never usage; see models/usage/probe_log.py."""
         import time
         from openprogram.models.usage.ledger import default_ledger
         if not 0 < days <= 30:
@@ -438,7 +436,7 @@ def register(app):
         })
 
     # Quota, health and 30-day spend of every connected provider
-    # (models/usage/provider_status.py); the same payload as
+    # (models/listing/provider_status.py); the same payload as
     # ``openprogram providers status --json``.
     from openprogram.models.usage.quota import default_store as _quota_store
 
@@ -446,7 +444,7 @@ def register(app):
         """One key's new quota, with the provider's picker state recomputed
         so the model picker updates without a request (``ProviderQuotaEvent``)."""
         from openprogram.runtime.events import emit_ws_frame
-        from openprogram.models.usage.provider_views import picker_states
+        from openprogram.models.listing.provider_views import picker_states
         try:
             picker = picker_states([report["provider"]]).get(report["provider"])
         except Exception:
@@ -459,7 +457,7 @@ def register(app):
     async def api_providers_status():
         """Stored values now; quota endpoints older than ten minutes are read
         in the background and arrive as ``provider_quota`` frames."""
-        from openprogram.models.usage import provider_status
+        from openprogram.models.listing import provider_status
         from openprogram.models.usage.quota_fetchers import refresh as read_quota
         try:
             payload = await asyncio.to_thread(provider_status.build_status)
@@ -484,7 +482,7 @@ def register(app):
             not isinstance(wanted, list) or not all(isinstance(p, str) for p in wanted)
         ):
             return JSONResponse(content={"error": "providers must be a list of ids"}, status_code=400)
-        from openprogram.models.usage import provider_status
+        from openprogram.models.listing import provider_status
         rows = provider_status.connected_providers()
         if wanted is not None:
             rows = [row for row in rows if row["id"] in set(wanted)]
@@ -507,14 +505,14 @@ def register(app):
         window holds ``context_tokens``. Nothing is switched here."""
         if not provider or not model or context_tokens < 0:
             return JSONResponse(content={"error": "provider and model are required"}, status_code=400)
-        from openprogram.models.usage.provider_views import fallback_for
+        from openprogram.models.listing.provider_views import fallback_for
         return JSONResponse(content=fallback_for(provider, model, context_tokens=context_tokens))
 
     @app.post("/api/providers/{name}/refresh")
     def api_provider_refresh(name: str):
         """Read one provider's login, quota and health again now (its Refresh
         button) and answer with its status. 404 when the provider is not connected."""
-        from openprogram.models.usage import provider_status
+        from openprogram.models.listing import provider_status
         rows = [row for row in provider_status.connected_providers() if row["id"] == name]
         if not rows:
             return JSONResponse(content={"error": "provider is not connected"}, status_code=404)
@@ -525,7 +523,7 @@ def register(app):
     def api_provider_usage(name: str, days: int = 30, group: str = "day"):
         """One provider's spend by day and/or model over 1-90 days, with its
         quota samples (``group`` is ``day``, ``model`` or ``day,model``)."""
-        from openprogram.models.usage.provider_views import provider_usage
+        from openprogram.models.listing.provider_views import provider_usage
         try:
             return JSONResponse(content=provider_usage(name, days=days, group=group))
         except ValueError as exc:
@@ -580,42 +578,3 @@ def register(app):
         from openprogram.models.providers.settings import storage as provider_storage
         return JSONResponse(content=provider_storage.remove_custom_model(name, model_id))
 
-    @app.get("/api/providers/{name}/configure")
-    async def get_provider_configure(name: str):
-        from openprogram.models.providers.settings import configuration as _cfg
-        entry = _cfg.get_provider(name)
-        if entry is None:
-            return JSONResponse(
-                content={"error": f"No configuration for provider {name!r}"},
-                status_code=404,
-            )
-        return JSONResponse(content={
-            "provider": name,
-            "label": entry["label"],
-            "type": entry["type"],
-            "description": entry.get("description", ""),
-            "steps": [{"id": s["id"], "label": s["label"]} for s in entry["steps"]],
-        })
-
-    @app.post("/api/providers/{name}/configure/step/{step_id}")
-    async def run_configure_step(name: str, step_id: str, body: Any = Body(default=None)):
-        """Run one configuration step. Steps declare their own ``input_key``,
-        so the field set is open — but a credential-shaped field is refused:
-        the context is echoed back in the response, which would put a secret
-        on a read path."""
-        from .credential_secrets import has_credential_field
-        if body is None:
-            body = {}
-        if not isinstance(body, dict):
-            return JSONResponse(
-                content={"error": "body must be a JSON object"}, status_code=400
-            )
-        if has_credential_field(body):
-            return JSONResponse(
-                content={"error": "this endpoint does not accept credentials"},
-                status_code=400,
-            )
-        from openprogram.models.providers.settings import configuration as _cfg
-        ctx = dict(body)
-        result = _cfg.run_step(name, step_id, ctx)
-        return JSONResponse(content={"result": result, "context": ctx})

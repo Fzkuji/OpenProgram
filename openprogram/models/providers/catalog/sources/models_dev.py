@@ -70,9 +70,12 @@ def _slim(data: dict[str, Any]) -> dict[str, Any]:
     The same model is listed under many providers with the same limits,
     prices and modalities, so equal values become one object. Nothing here
     changes a row after it is loaded; readers copy what they hand out.
+    Providers OpenProgram does not offer (``provider_policy``) are dropped.
     """
     import json
     import sys
+
+    from openprogram.models.auth.provider_policy import WITHDRAWN_PROVIDERS
 
     values: dict[str, Any] = {}
 
@@ -94,7 +97,7 @@ def _slim(data: dict[str, Any]) -> dict[str, Any]:
 
     out: dict[str, Any] = {}
     for pid, provider in data.items():
-        if not isinstance(provider, dict):
+        if not isinstance(provider, dict) or pid in WITHDRAWN_PROVIDERS:
             continue
         row = {key: shared(provider[key]) for key in _PROVIDER_FIELDS if key in provider}
         models = provider.get("models")
@@ -169,7 +172,7 @@ def hold_background_refresh() -> None:
     The ``openprogram.models.providers`` package builds the enabled-model
     registry while it imports, and that read can find the catalogue stale
     and want a refresh. A thread started at that point imports
-    ``utils.http_transport.http_proxy`` on its way to the socket, which needs the package
+    ``utils.http_transport`` on its way to the socket, which needs the package
     lock the importing thread still holds, while the importing thread goes
     on to import ``utils`` itself and waits for the lock the thread took
     first: Python reports the cycle as ``_DeadlockError`` and the import
@@ -546,10 +549,9 @@ def list_models(provider_id: str) -> dict[str, dict[str, Any]]:
     """Every model the catalogue knows for ``provider_id`` (alias-aware),
     as ``{model_id: normalised_dict}``.
 
-    Honours the same ``_PROVIDER_ID_ALIASES`` map as :func:`lookup`, so e.g.
-    ``openai-codex`` resolves to the upstream ``openai`` catalogue. Returns
+    Honours the same ``_PROVIDER_ID_ALIASES`` map as :func:`lookup`. Returns
     ``{}`` on a cache miss / unknown provider. This is the live source a
-    no-list-endpoint provider (Codex) can fetch from instead of shipping a
+    no-list-endpoint provider can fetch from instead of shipping a
     hand-maintained list."""
     catalogue = _load()
     if not catalogue:
@@ -607,14 +609,11 @@ def _normalise_provider(pid: str, raw: dict[str, Any]) -> dict[str, Any]:
 
 def provider_info(provider_id: str) -> dict[str, Any] | None:
     """Look up provider-level metadata. Honours the same id alias map
-    as ``lookup()``, so e.g. ``openai-codex`` falls back to the
-    ``openai`` row when no Codex-specific entry exists in the
-    catalogue."""
+    as ``lookup()``."""
     catalogue = _load()
     if not catalogue:
         return None
-    # First try the verbatim id (a few providers like ``openai-codex``
-    # genuinely have a distinct entry).
+    # First try the verbatim id.
     raw = catalogue.get(provider_id)
     if not isinstance(raw, dict):
         # Fall back to alias mapping for "shares the same upstream
@@ -657,8 +656,4 @@ _listed: tuple[Any, list[dict[str, Any]]] = (None, [])
 # Groq / Cerebras / OpenRouter / Mistral / HuggingFace all match
 # verbatim. Add entries here if a future provider does need
 # translation.
-_PROVIDER_ID_ALIASES: dict[str, str] = {
-    # Our id            : models.dev id
-    "openai-codex": "openai",        # models.dev tracks one OpenAI catalogue
-    "gemini-subscription": "google",  # CodeAssist surfaces the same Gemini set
-}
+_PROVIDER_ID_ALIASES: dict[str, str] = {}

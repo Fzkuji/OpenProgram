@@ -37,7 +37,6 @@
 <tr><th scope="row"><code translate="no">utils/http_transport/http_client.py</code></th><td>Keepalive, per OS. Force-IPv4 binds an IPv4 source, since httpx has no Happy Eyeballs. <code translate="no">get_shared_async_client</code> is loop-keyed, so Codex reuses TLS across turns. Proxy through httpx <code translate="no">proxy=</code>.</td></tr>
 <tr><th scope="row"><code translate="no">utils/http_transport/rate_limit.py</code></th><td>Parses <code translate="no">x-ratelimit-*</code>, <code translate="no">anthropic-ratelimit-*</code>; Codex warns when a bucket is low</td></tr>
 <tr><th scope="row"><code translate="no">retry_after_beyond_cap</code></th><td>One rule for the stream retry and <code translate="no">Runtime.exec</code></td></tr>
-<tr><th scope="row">Partial recovery, <code translate="no">openai_codex.py</code></th><td>A transient break after content finalizes the turn; permanent failures still fail</td></tr>
 <tr><th scope="row">openai-completions retry</th><td>After <code translate="no">EventStart</code>, before content: a retryable <code translate="no">APIError</code>, including xAI's status-less <code translate="no">Internal error during token generation</code>, reopens on the same model. Otherwise the outer handler records cooldown and re-raises.</td></tr>
 <tr><th scope="row">gemini_cli</th><td>Same client and timeouts</td></tr>
 </tbody>
@@ -76,7 +75,6 @@
 <tr><th scope="row"><code translate="no">OPENPROGRAM_TCP_KEEPALIVE</code></th><td>1</td><td>Dead-peer detection</td></tr>
 <tr><th scope="row"><code translate="no">OPENPROGRAM_TCP_KEEPIDLE_S</code>, <code translate="no">_KEEPINTVL_S</code>, <code translate="no">_KEEPCNT</code></th><td>30, 10, 3</td><td>Probe timing</td></tr>
 <tr><th scope="row"><code translate="no">OPENPROGRAM_FORCE_IPV4</code></th><td>0</td><td>IPv4 source, for broken-IPv6 VPNs</td></tr>
-<tr><th scope="row"><code translate="no">OPENPROGRAM_PARTIAL_RECOVERY</code></th><td>1</td><td>Keep partial output</td></tr>
 <tr><th scope="row"><code translate="no">OPENPROGRAM_FALLBACK_MODELS</code></th><td>empty, the setting</td><td><code translate="no">same-provider</code>, a list, or <code translate="no">off</code>/<code translate="no">none</code></td></tr>
 </tbody>
 </table>
@@ -128,7 +126,7 @@
 <thead class="sr"><tr><th scope="col">Status</th><th scope="col">Items</th></tr></thead>
 <tbody>
 <tr><th scope="row">Implemented</th><td>Classifier, retry and backoff, timeouts, shared client, keepalive, IPv4 switch, rate-limit parsing, opt-in failover, pre-content retry for Codex, OpenAI Responses and completions. The SDKs' own retries are off (<code translate="no">max_retries=0</code>); the credential layer retries and switches keys. Partial recovery: Codex only.</td></tr>
-<tr><th scope="row">Credentials</th><td>Every request goes through <code translate="no">auth/selection.py</code>: a limited or refused credential is held and the next is tried. A sole credential cools like any other; the request waits up to 60 s for it with a notice, else fails saying when it is back.</td></tr>
+<tr><th scope="row">Credentials</th><td>Every request goes through <code translate="no">streaming/credential_failover.py</code>: a limited or refused credential is held and the next is tried. A sole credential cools like any other; the request waits up to 60 s for it with a notice, else fails saying when it is back.</td></tr>
 <tr><th scope="row">Not built</th><td>Per-request OAuth hook: Codex already resolves and refreshes the bearer per call.</td></tr>
 </tbody>
 </table>

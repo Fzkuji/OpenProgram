@@ -132,7 +132,7 @@ def test_a_stop_midway_delivers_each_entry_once_on_the_next_start(copy):
 
 
 def test_delivery_uses_send_messages_path_with_a_fixed_job(copy, monkeypatch):
-    from openprogram.programs.tools.agents.send_message.send_message import dispatch
+    from openprogram.runtime.conversation.peer_agents import dispatch
     from openprogram.runtime.context import session_db
     from openprogram.runtime import jobs
     from openprogram.runtime.permissions import authority
@@ -173,7 +173,7 @@ def test_delivery_uses_send_messages_path_with_a_fixed_job(copy, monkeypatch):
 
 
 def test_a_refused_delivery_is_tried_again_under_a_new_job(copy, monkeypatch):
-    from openprogram.programs.tools.agents.send_message.send_message import dispatch
+    from openprogram.runtime.conversation.peer_agents import dispatch
     from openprogram.runtime.context import session_db
     from openprogram.runtime import jobs
     from openprogram.runtime.permissions import authority

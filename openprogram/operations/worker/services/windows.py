@@ -21,7 +21,7 @@ import subprocess
 from pathlib import Path
 
 from openprogram.host._platform.processes import console_text
-from openprogram.operations.worker import paths as worker_paths
+from openprogram.host.worker import paths as worker_paths
 
 TASK_NAME = "OpenProgram Worker"
 SCRIPT_NAME = "worker-service.cmd"

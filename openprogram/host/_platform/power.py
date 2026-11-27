@@ -181,13 +181,11 @@ def _acquire_macos() -> Callable[[], None]:
 @contextmanager
 def prevent_idle_sleep() -> Iterator[None]:
     """Read the opt-in setting once and release this execution's assertion."""
-    from openprogram.state.config import read_config
+    from openprogram.host._platform import host_facts
 
     release = None
     try:
-        config = read_config()
-        execution = config.get("execution", {})
-        if isinstance(execution, dict) and execution.get("prevent_idle_sleep") is True:
+        if host_facts.setting_value("execution.prevent_idle_sleep") is True:
             release = _acquire_assertion()
     except OSError as exc:
         _report("Unable to prevent idle system sleep", exc)

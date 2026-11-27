@@ -92,11 +92,11 @@ def _turn_header(msg: dict[str, Any], index: int) -> str:
 
 def session_read_violation(store: Any, session_id: str) -> str | None:
     """Check the backing conversation files even when messages are cached."""
-    from openprogram.host.sandbox import validate_read_path
+    from openprogram.state import host_facts
 
     directory = store._session_dir(session_id)
     for path in (directory, directory / "main.jsonl", *directory.glob("agents/*.jsonl")):
-        violation = validate_read_path(str(path))
+        violation = host_facts.read_violation(str(path))
         if violation:
             return violation
     return None

@@ -89,6 +89,7 @@ def producer(package_factory, tmp_path, monkeypatch):
     return store, directory, digest, target, artifact, activations
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("restart", [False, True])
 def test_controller_persists_reopen_before_native_activation(producer, monkeypatch, restart):
     store, directory, digest, target, artifact, activations = producer
@@ -123,6 +124,7 @@ def test_controller_persists_reopen_before_native_activation(producer, monkeypat
     assert read_journal(tx)["reopen_update_id"] == directory.name
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("damage,reason", [
     ("foreign_id", "does not match the reopen update"),
     ("legacy_id", "does not match the reopen update"),

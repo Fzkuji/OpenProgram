@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from openprogram.operations.worker.ports import backend_is_ours
+from openprogram.host.worker.ports import backend_is_ours
 from openprogram.host.security.backend_endpoint import create_owner_challenge_proof
 from openprogram.interfaces.server.owner_auth import OwnerAuthState
 
@@ -16,11 +16,11 @@ def test_backend_identity_uses_worker_ownership_without_network_credentials(
     port_file = tmp_path / "worker.port"
     port_file.write_text("18100\n", encoding="utf-8")
     monkeypatch.setattr(
-        "openprogram.operations.worker.lifecycle.current_worker_pid",
+        "openprogram.host.worker.process.current_worker_pid",
         lambda: 12345,
     )
     monkeypatch.setattr(
-        "openprogram.operations.worker.paths.port_path",
+        "openprogram.host.worker.paths.port_path",
         lambda: port_file,
     )
     monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
@@ -82,7 +82,7 @@ def test_backend_identity_uses_worker_ownership_without_network_credentials(
 
 def test_backend_identity_is_inconclusive_without_a_managed_worker(monkeypatch):
     monkeypatch.setattr(
-        "openprogram.operations.worker.lifecycle.current_worker_pid",
+        "openprogram.host.worker.process.current_worker_pid",
         lambda: None,
     )
 

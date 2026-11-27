@@ -8,17 +8,17 @@ import pytest
 @pytest.fixture
 def routine_env(tmp_path, monkeypatch):
     import openprogram.state.paths as paths
-    from openprogram.programs.tools.jobs.cron import cron as cron_tool
+    from openprogram.runtime.scheduler import store as task_store
     from openprogram.runtime.permissions import authority
     from openprogram.runtime.permissions.authority import local_owner_authority
 
     monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path / "state")
     authority._reset_owner_cache_for_tests()
     monkeypatch.setenv("OPENPROGRAM_SCHEDULER_PATH", str(tmp_path / "scheduler" / "tasks.json"))
-    monkeypatch.delenv(cron_tool.DEFAULT_CRON_ENV, raising=False)
+    monkeypatch.delenv(task_store.DEFAULT_CRON_ENV, raising=False)
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(cron_tool, "_origin_session", lambda: ("sess-1", "main"))
-    monkeypatch.setattr(cron_tool, "_authorize", lambda _action: (local_owner_authority(), None))
+    monkeypatch.setattr(task_store, "_origin_session", lambda: ("sess-1", "main"))
+    monkeypatch.setattr(task_store, "_authorize", lambda _action: (local_owner_authority(), None))
     return tmp_path
 
 
@@ -101,14 +101,14 @@ def test_deleted_schedule_is_recreated(routine_env):
 
 
 def test_bad_input_and_refused_schedule_write_nothing(routine_env, monkeypatch):
-    from openprogram.programs.tools.jobs.cron import cron as cron_tool
+    from openprogram.runtime.scheduler import store as task_store
     from openprogram.programs.tools.jobs.routine import routine_path
 
     assert _save(name="  !! ").startswith("Error")
     assert _save(steps=[]).startswith("Error")
     assert _save(description=" ").startswith("Error")
     assert _save(cron="not a cron").startswith("Error")
-    monkeypatch.setattr(cron_tool, "_authorize", lambda _action: ({}, "Error: no."))
+    monkeypatch.setattr(task_store, "_authorize", lambda _action: ({}, "Error: no."))
     assert _save(cron="0 9 * * 1") == "Error: no."
     assert not routine_path("Weekly report").exists()
 

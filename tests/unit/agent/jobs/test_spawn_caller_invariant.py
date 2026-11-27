@@ -257,7 +257,7 @@ def _spawn_at(counts: dict, fn=None):
     """Call ``_agent_impl`` with the chain counters bound to ``counts``
     (keys: generations, messages), the way the runner binds them on a
     child or a follow-up turn."""
-    from openprogram.programs.tools.agents.send_message.send_message.depth import (
+    from openprogram.runtime.jobs.chain_budgets import (
         set_chain_generations, set_chain_messages,
     )
     from openprogram.programs.tools.agents.agent.agent.agent import _agent_impl
@@ -334,7 +334,7 @@ def test_agent_sync_child_sees_both_counts_incremented(store, monkeypatch):
     """The sync path binds both counts + 1 around the child turn, so a
     chain of agent()-inside-agent() trips the generation guard instead of
     recursing forever (each generation used to start back at 0)."""
-    from openprogram.programs.tools.agents.send_message.send_message.depth import (
+    from openprogram.runtime.jobs.chain_budgets import (
         current_chain_generations, current_chain_messages,
     )
     from openprogram.runtime.conversation.peer_agents.sub_agent_run import AgentTurnResult as _R
@@ -373,7 +373,7 @@ def _spawn_tool_names(depth: int) -> set:
     hook work at render time."""
     from contextvars import copy_context
     from openprogram.runtime.conversation.model_tools import resolve_tools
-    from openprogram.programs.tools.agents.send_message.send_message.depth import (
+    from openprogram.runtime.jobs.chain_budgets import (
         set_chain_messages,
     )
 

@@ -1,6 +1,7 @@
 """SessionStore messages operations."""
 from __future__ import annotations
 from . import shared
+from .preview import message_preview
 
 
 def _is_conversation_node(node, hidden=()) -> bool:
@@ -79,11 +80,11 @@ class MessagesOperations:
         session_log = cached[0] if cached else shared.SessionLog(self._session_dir(session_id))
         session_log.append_turn_record(shared.RUN_ROWS_RECORD, {"rows": rows})
 
-    def state_file(self, session_id: str, name: str) -> "SessionStateFile":
+    def state_file(self, session_id: str, name: str) -> "shared.SessionStateFile":
         """A small named document of the session, kept in its log."""
         return shared.SessionStateFile(self, self._session_dir(session_id), name)
 
-    def state_file_at(self, directory: shared.Path, name: str) -> "SessionStateFile":
+    def state_file_at(self, directory: shared.Path, name: str) -> "shared.SessionStateFile":
         return shared.SessionStateFile(self, directory, name)
 
     def write_state_line(self, directory: shared.Path, name: str, content: str | None) -> None:
@@ -184,8 +185,7 @@ class MessagesOperations:
         # 时间，侧栏排序键）；user 消息顺带刷新 preview（debounced to disk）。
         fields: dict[str, shared.Any] = {"updated_at": activity_at}
         if node.role == "user" and node.output:
-            text = (node.output or "").strip().replace("\n", " ")
-            fields["preview"] = (text[:77] + "…") if len(text) > 80 else text
+            fields["preview"] = message_preview(node.output)
         self._update_index_entry(session_id, **fields)
         self._schedule_index_flush()
 
@@ -253,36 +253,40 @@ class MessagesOperations:
         if pair is None:
             return
         session_log, idx = pair
-        node = idx.nodes_by_id.get(node_id)
-        if node is None:
-            return
-        old_predecessor = node.predecessor or None
-        old_caller = node.caller or None
-        metadata = fields.pop("metadata", {})
-        extras = {key: fields.pop(key) for key in list(fields) if not hasattr(node, key)}
-        if extras:
-            # A field a node has no column for lives in its metadata, as it
-            # does when the message is first appended.
-            metadata = {**(metadata if isinstance(metadata, dict) else {}), **extras}
-        for key, value in fields.items():
-            setattr(node, key, value)
-        if "output" in fields:
-            self.spill_large_node(session_id, node)
-        if isinstance(metadata, dict):
-            current = node.metadata if isinstance(node.metadata, dict) else {}
-            node.metadata = {**current, **metadata}
-            if metadata:
-                idx.metadata_patched(node)
-        idx.reindex_edges(
-            node_id,
-            old_predecessor=old_predecessor,
-            old_caller=old_caller,
-        )
         old_path = session_log.path
+        # The node is changed in the index and recorded under the
+        # conversation's write lock: another thread of this process that
+        # absorbs a foreign write rebuilds the index under the same lock,
+        # and must not do so between this change and its line.
         with self._head_file_lock(session_log):
             if session_log.path != old_path:
                 idx.rebuild(session_log.list_history(), session_log.read_meta(),
                                        shared._node_conv_predecessor, shared._node_caller)
+            node = idx.nodes_by_id.get(node_id)
+            if node is None:
+                return
+            old_predecessor = node.predecessor or None
+            old_caller = node.caller or None
+            metadata = fields.pop("metadata", {})
+            extras = {key: fields.pop(key) for key in list(fields) if not hasattr(node, key)}
+            if extras:
+                # A field a node has no column for lives in its metadata, as it
+                # does when the message is first appended.
+                metadata = {**(metadata if isinstance(metadata, dict) else {}), **extras}
+            for key, value in fields.items():
+                setattr(node, key, value)
+            if "output" in fields:
+                self.spill_large_node(session_id, node)
+            if isinstance(metadata, dict):
+                current = node.metadata if isinstance(node.metadata, dict) else {}
+                node.metadata = {**current, **metadata}
+                if metadata:
+                    idx.metadata_patched(node)
+            idx.reindex_edges(
+                node_id,
+                old_predecessor=old_predecessor,
+                old_caller=old_caller,
+            )
             current = node.to_dict()
             changed = {key: current[key] for key in fields}
             stamped = dict(metadata) if isinstance(metadata, dict) else {}

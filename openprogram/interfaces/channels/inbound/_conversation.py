@@ -952,7 +952,7 @@ class _BlockStreamer:
     def _emit(self, length: int) -> None:
         chunk = self.streamed[self.sent_upto:self.sent_upto + length]
         self.sent_upto += length
-        from openprogram.state.attachments import strip_markers
+        from openprogram.state.attachment_markers import strip_markers
         text = strip_markers(chunk).strip()
         if text:
             self.send(text)
@@ -1002,7 +1002,7 @@ class _BlockStreamer:
         """最终回复里还没发出去的部分, 含发送时扣下的附件标记."""
         if not self.sent_any:
             return reply_text
-        from openprogram.state.attachments import find_markers
+        from openprogram.state.attachment_markers import find_markers
         sent = self.streamed[:self.sent_upto].strip()
         held = [marker for marker, _name, _path in find_markers(sent)]
         body = reply_text
@@ -1038,7 +1038,7 @@ def _deliver_outbound_files(
       没这回事.
     * 传失败 (网络 / 太大 / 凭据) — 同样改写成一句说明, 并落日志.
     """
-    from openprogram.state.attachments import find_markers
+    from openprogram.state.attachment_markers import find_markers
     markers = find_markers(reply_text)
     if not markers:
         return reply_text

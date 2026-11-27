@@ -287,6 +287,8 @@ def test_borrowed_child_system_exit_finalizes_and_cleans_child_ownership(
         prompt = request.user_text
         agent_id = request.agent_id
         if prompt == "parent-fatal":
+            # The worker can start before spawn_job returns the id.
+            observed["parent_id"] = execution_run_control.get_current_execution_id()
             try:
                 run_agent_turn(
                     session_id=session_id,
@@ -338,7 +340,6 @@ def test_borrowed_child_system_exit_finalizes_and_cleans_child_ownership(
         session_id="p1", prompt="parent-fatal", agent_id="main",
         parent_msg_id="a1",
     )
-    observed["parent_id"] = parent_id
     try:
         parent = runner.await_job(parent_id, timeout=2.0)
 
@@ -576,6 +577,9 @@ def test_borrowed_child_runtime_budget_cancels_child_and_cleans_runtime(
     cancel_intent_staged = threading.Event()
     release_cancel_signal = threading.Event()
     concurrent_cancel_done = threading.Event()
+    # The budget stop reaches the child's driver inside request_cancel; the
+    # child honours it only after the test has looked at the staged state.
+    staged_state_seen = threading.Event()
     child_ids: list[str] = []
     concurrent_cancel_errors: list[BaseException] = []
     concurrent_cancel: threading.Thread | None = None
@@ -617,7 +621,9 @@ def test_borrowed_child_runtime_budget_cancels_child_and_cleans_runtime(
         child_ids.append(child_id)
         child_entered.set()
         while not release_child.wait(0.01):
-            if run_control.is_cancelled(session_id, execution_id=child_id):
+            if staged_state_seen.is_set() and run_control.is_cancelled(
+                session_id, execution_id=child_id,
+            ):
                 return AgentTurnResult(failed=True, error="stopped")
         return AgentTurnResult(head_id="child-head", final_text="released")
 
@@ -676,6 +682,7 @@ def test_borrowed_child_runtime_budget_cancels_child_and_cleans_runtime(
         canonical = runner._execution_store.get_execution(child_id)
         assert canonical is not None
         assert canonical.status.value == "cancelling"
+        staged_state_seen.set()
 
         def cancel_again_as_user() -> None:
             try:
@@ -717,6 +724,7 @@ def test_borrowed_child_runtime_budget_cancels_child_and_cleans_runtime(
         assert row["state"] == "released"
         assert row["reason_code"] == "budget.runtime_exhausted"
     finally:
+        staged_state_seen.set()
         release_cancel_signal.set()
         release_child.set()
         if concurrent_cancel is not None:

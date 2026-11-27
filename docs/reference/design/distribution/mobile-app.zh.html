@@ -32,7 +32,7 @@
 <tr><th scope="row">到电脑的 HTTP</th><td>同一个处理器接住 <code translate="no">/api/</code>、<code translate="no">/hooks/</code> 等服务端路径，通过同一个共享的 <code translate="no">URLSession</code> 转发到当前地址，请求复用它的连接，不必每次重新做 TLS 握手，加上 <code translate="no">Authorization: Bearer opd1.…</code>，不带 <code translate="no">Origin</code>。响应逐块流回，所以服务端事件流照常工作。对页面来说每个请求都是同源：图片、文件预览和下载都不用改。</td></tr>
 <tr><th scope="row">WebSocket</th><td>自定义协议承载不了 WebSocket，所以页面自己连 <code translate="no">wss://&lt;地址&gt;/ws</code>。App 告诉页面连哪里（<code translate="no">window.openprogramMobile.socket</code>）；浏览器的 WebSocket 不能设请求头，凭证放在握手的子协议里：<code translate="no">APP_BEARER_PREFIX</code> 后接凭证，和 <code translate="no">APP_SUBPROTOCOL</code> 一起（都在 <code translate="no">openprogram/interfaces/server/owner_auth.py</code>）。服务端只接受来自 App 源 <code translate="no">openprogram://app</code> 的这种握手，回 <code translate="no">APP_SUBPROTOCOL</code>，绝不回显凭证。</td></tr>
 <tr><th scope="row">凭证</th><td>就是<a href="../ui/remote-web-access.zh.html#paired-devices">配对设备</a>的设备凭证，没有改：兑换一次，在设置 → 设备里吊销，闲置 30 天被忘掉。存在钥匙串里，首次解锁后才可读。</td></tr>
-<tr><th scope="row">原生调用</th><td>扫码（VisionKit）、列出/添加/选择/移除电脑、触感反馈。页面通过一个 <code translate="no">WKScriptMessageHandler</code> 调用；App 把配对的电脑列表交给页面（<code translate="no">window.openprogramMobile.computers</code>）做选择器，页面再请 App 切换（<code translate="no">selectComputer</code>）或配对新电脑（<code translate="no">addComputer</code>）。菜单是页面描述、iOS 画出的 UIMenu（点按用 <code translate="no">menu</code>，长按用 <code translate="no">menuPress</code>）。</td></tr>
+<tr><th scope="row">原生调用</th><td>扫码（VisionKit）、列出/添加/选择/移除电脑、触感反馈。页面通过一个 <code translate="no">WKScriptMessageHandler</code> 调用；App 把配对的电脑列表交给页面（<code translate="no">window.openprogramMobile.computers</code>）做选择器，页面再请 App 切换（<code translate="no">selectComputer</code>）或配对新电脑（<code translate="no">addComputer</code>）。长按菜单是页面描述、iOS 画出的 UIMenu（<code translate="no">menuPress</code>）；点按打开的菜单用页面自己的。</td></tr>
 </tbody>
 </table>
 
@@ -43,7 +43,7 @@
 <li>链接里有这台电脑所有已打开的地址（同一 Wi-Fi、任何地方）。App 全部保存，同时向每个地址请求 <code translate="no">/api/auth/session</code>，用第一个应答的；远程地址先答后 300ms 内局域网也答了，仍用局域网。</li>
 <li>启动时先用上次应答的地址，网络变化或回到 App 时重新探测。只有没有任何地址应答时，401 才算被吊销。没人需要选地址。</li>
 <li>地址变化时页面不重新加载：请求每次读当前地址，页面会收到新的 socket 地址（<code translate="no">openprogram-mobile-address</code>）。从后台回来时，socket 2 秒内不回 ping 就立刻换一个新的。</li>
-<li>页面按电脑保存最近一次的对话列表，启动时在 socket 连上前先显示它（<code translate="no">lib/mobile/session-list-cache.ts</code>）；第一次绘制前视图显示页面本身的底色，不是白色。</li>
+<li>页面按电脑保存最近一次的对话列表和项目列表，启动时在 socket 连上前先显示它（<code translate="no">lib/mobile/session-list-cache.ts</code>）；第一次绘制前视图显示页面本身的底色，不是白色。</li>
 <li>网络上失败的请求换下一个地址重试，绝不显示成登录问题。只有能连上的电脑返回 <code translate="no">401</code> 才说明设备被吊销，这时 App 回到这台电脑的扫码页。</li>
 </ul>
 

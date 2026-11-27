@@ -88,7 +88,7 @@ def _looks_like_tui_invocation(argv: list[str]) -> bool:
     bypass_words = {
         "agents", "sessions", "channels", "machines", "config", "permissions", "programs", "skills", "plugins", "doctor",
         "providers", "web", "resume", "init", "doctor",
-        "worker", "update", "memory", "mcp", "trash", "backup",
+        "worker", "memory", "mcp", "trash", "backup",
         "recordings", "stop", "status", "restart", "upgrade", "help",
         "execution", "jobs", "scheduler-worker", "cron-worker", "self-update", "dev", "versions",
     }
@@ -290,8 +290,10 @@ def _needs_first_run_setup() -> bool:
     "configured?" test the doctor uses (an auth pool with ≥1 credential).
     """
     try:
+        from openprogram.models.auth.provider_policy import is_withdrawn
         from openprogram.models.auth.store import get_store
-        return not any(p.credentials for p in get_store().list_pools())
+        return not any(p.credentials and not is_withdrawn(p.provider_id)
+                       for p in get_store().list_pools())
     except Exception:
         return False  # never block startup on a detection hiccup
 
@@ -939,7 +941,7 @@ def _dispatch_settings_command(args) -> None:
             return
 
         if verb == "set":
-            from openprogram.operations.worker.ports import with_port_owner_note
+            from openprogram.host.worker.ports import with_port_owner_note
             res = with_port_owner_note(args.key, set_setting(args.key, args.value))
             if res.get("error"):
                 print(f"error: {res['error']}")
@@ -1050,35 +1052,7 @@ def _dispatch_memory_command(args) -> None:
 
 
 def _dispatch_worker_command(args) -> None:
-    """Run update, the background-service aliases and the worker command."""
-    if args.command == "update":
-        from openprogram.operations.self_update.github_release import (
-            apply_update, check_for_update, detect_install_method, is_disabled,
-        )
-        if is_disabled() and not args.force:
-            print("auto-update disabled by OPENPROGRAM_NO_AUTO_UPDATE.")
-            print("Use `openprogram update --force` to override.")
-            sys.exit(0)
-        method = detect_install_method()
-        info = check_for_update(force=args.force)
-        if info is None:
-            print(f"No update path for install method: {method.value}.")
-            sys.exit(0)
-        if not info.available:
-            print(f"openprogram {info.current} ({method.value}): {info.summary}.")
-            sys.exit(0)
-        print(f"update available: {info.current} → {info.target} ({info.summary})")
-        if args.check:
-            sys.exit(0)
-        ok, msg = apply_update(info)
-        if ok:
-            print(f"updated to {info.target}.")
-            print("Restart the worker so the new code takes effect:")
-            print("  openprogram worker restart")
-            sys.exit(0)
-        print(f"update failed: {msg}")
-        sys.exit(1)
-
+    """Run the background-service aliases and the worker command."""
     # Top-level aliases for the background service — no "worker" noun.
     if args.command == "stop":
         from openprogram.operations import worker as _worker
@@ -1340,7 +1314,6 @@ _COMMAND_DISPATCH = {
     "config": _dispatch_settings_command,
     "recordings": _dispatch_memory_command,
     "memory": _dispatch_memory_command,
-    "update": _dispatch_worker_command,
     "stop": _dispatch_worker_command,
     "restart": _dispatch_worker_command,
     "upgrade": _dispatch_worker_command,
@@ -1360,8 +1333,49 @@ _COMMAND_DISPATCH = {
 }
 
 
+def _agent_passthrough(argv: list[str]) -> int | None:
+    """``openprogram [--profile X] agy|dim run|env …`` and ``fast-tools …``:
+    what the shell functions agy and dima and agy's fast-tools plugin run. Every argument
+    after them is theirs, so they skip argparse; None for anything else."""
+    rest = list(argv)
+    profile = None
+    if rest[:1] == ["--profile"] and len(rest) >= 2:
+        profile, rest = rest[1], rest[2:]
+    elif rest and rest[0].startswith("--profile="):
+        profile, rest = rest[0].partition("=")[2], rest[1:]
+    if not rest or rest[0] not in ("agy", "dim", "fast-tools"):
+        return None
+    if rest[0] == "agy" and (len(rest) < 2 or rest[1] not in ("run", "env")):
+        from openprogram.models.gateway.agents import agy
+        print(agy.START_USAGE, end="", file=sys.stderr)
+        return 2
+    if rest[0] == "dim" and (len(rest) < 2 or rest[1] not in ("run", "env")):
+        print("openprogram dim run [args…]   start dima, on OpenProgram while Dim's daemon can't take its model\n"
+              "openprogram dim env           the variables it starts dima with, a NAME=value a line\n",
+              end="", file=sys.stderr)
+        return 2
+    if profile:
+        from openprogram.state.paths import set_active_profile
+        set_active_profile(profile)
+    if rest[0] == "fast-tools":
+        from openprogram.models.gateway.agents.fasttools import run
+        return run(rest[1:])
+    if rest[0] == "dim":
+        from openprogram.models.gateway.agents import dim as started
+    else:
+        from openprogram.models.gateway.agents import agy as started
+    if rest[1] == "env":
+        for line in started.env_lines():
+            print(line)
+        return 0
+    return started.run(rest[2:])
+
+
 def main():
-    from openprogram.operations.self_update.versions.layout import apply_base_environment
+    code = _agent_passthrough(sys.argv[1:])
+    if code is not None:
+        sys.exit(code)
+    from openprogram.host._platform.runtime_layout import apply_base_environment
     from openprogram.operations.worker.lifecycle import use_named_runtime_for_cli
     apply_base_environment()
     use_named_runtime_for_cli()
@@ -1401,7 +1415,6 @@ def main():
 from openprogram.interfaces.cli.commands.capabilities.programs import (  # noqa: E402,F401
     _get_runtime,
     _cmd_check,
-    _cmd_configure,
     _cmd_enable,
     _cmd_export,
     _cmd_install,

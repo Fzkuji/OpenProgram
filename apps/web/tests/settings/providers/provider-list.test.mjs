@@ -66,14 +66,14 @@ describe("cards", () => {
     serve(payload());
     const view = await open();
     const cards = [...view.container.querySelectorAll('[data-slot="card"]')];
-    assert.deepEqual(cards.map((c) => c.dataset.provider), ["openai-codex", "deepseek", "groq", "openrouter", "google", "moonshotai", "xai", "ollama"]);
+    assert.deepEqual(cards.map((c) => c.dataset.provider), ["opencode-go", "deepseek", "groq", "openrouter", "google", "moonshotai", "xai", "ollama"]);
     const row = (id) => card(view, id).querySelector(".credRow, [role=button]");
     // Windowed: a ring per window, shortest first, each over when it resets.
     const rings = (id) => [...row(id).querySelectorAll("[data-limit]")].map((r) => [r.dataset.limit, r.textContent]);
-    assert.deepEqual(rings("openai-codex"), [["5h", `5h${m.fmtReset(NOW + 4 * 3600, NOW)}`], ["week", `Week${m.fmtReset(NOW + 3 * 86400, NOW)}`]]);
-    assert.match(row("openai-codex").textContent, /Subscription/);
-    assert.match(card(view, "openai-codex").textContent, /gpt-5\.5/);
-    assert.equal(end(row("openai-codex")).textContent, "", "an included plan holds no amount");
+    assert.deepEqual(rings("opencode-go"), [["5h", `5h${m.fmtReset(NOW + 4 * 3600, NOW)}`], ["week", `Week${m.fmtReset(NOW + 3 * 86400, NOW)}`]]);
+    assert.match(row("opencode-go").textContent, /Subscription/);
+    assert.match(card(view, "opencode-go").textContent, /gpt-5\.5/);
+    assert.equal(end(row("opencode-go")).textContent, "", "an included plan holds no amount");
     // Balance: the amount in the last column.
     assert.equal(end(row("deepseek")).textContent, "$18.42Balance");
     assert.match(row("deepseek").textContent, /API key/);
@@ -126,7 +126,7 @@ describe("cards", () => {
         cred("Old", { key_tail: "a1b2", status: "invalid_key", status_at: NOW - 600 }),
         cred("Spare", { env_var: "OPENROUTER_API_KEY", enabled: false }),
       ] }),
-      status("openai-codex", { label: "OpenAI Codex", billing: "subscription", keys: [cred("me", { kind: "oauth", email: "me@example.com", plan: "plus" })] }),
+      status("opencode-go", { label: "OpenCode Go", billing: "subscription", keys: [cred("me", { kind: "oauth", email: "me@example.com", plan: "plus" })] }),
     ]));
     const view = await open();
     const rows = rowsOf(card(view, "openrouter"));
@@ -139,7 +139,7 @@ describe("cards", () => {
     assert.ok(rows[0].querySelector('[aria-label="In use"]'));
     assert.equal(rows[3].dataset.off, "true");
     assert.equal(rows[2].dataset.credential, "Old");
-    const codex = rowsOf(card(view, "openai-codex"));
+    const codex = rowsOf(card(view, "opencode-go"));
     assert.match(codex[0].textContent, /^me@example\.comPlus/, "the plan names the subscription");
     assert.equal(codex[0].querySelector('[aria-label="In use"]'), null, "one credential needs no mark");
     await view.unmount();
@@ -164,12 +164,12 @@ describe("cards", () => {
     serve(payload([
       status("groq", { label: "Groq", health: { state: "not_configured" }, fix: { action: "connect", url: null } }),
       status("deepseek", { label: "DeepSeek", default_model: "deepseek-chat", keys: [cred("m", { label: "Main" })] }),
-      status("openai-codex", { label: "OpenAI Codex", billing: "subscription", takes_keys: false, keys: [cred("me", { kind: "oauth", email: "me@example.com" })] }),
+      status("opencode-go", { label: "OpenCode Go", billing: "subscription", takes_keys: false, keys: [cred("me", { kind: "oauth", email: "me@example.com" })] }),
     ]), { "GET /api/providers/groq/credentials": credentialList("groq", [], { auth: { env_vars: ["GROQ_API_KEY"] } }) });
     const view = await open();
     assert.equal(button(card(view, "groq"), "Add key").dataset.variant, "default", "the first key is the way on");
     assert.equal(button(card(view, "deepseek"), "Add key").dataset.variant, "ghost");
-    assert.ok(button(card(view, "openai-codex"), "Add account"));
+    assert.ok(button(card(view, "opencode-go"), "Add account"));
     assert.match(card(view, "groq").textContent, /No key yet/);
     assert.match(card(view, "deepseek").textContent, /deepseek-chat/);
     await view.act(() => button(card(view, "groq"), "Add key").click());
@@ -184,20 +184,20 @@ describe("cards", () => {
   test("the add dialog opened for another provider never shows the last one's ways", async () => {
     let release;
     const gate = new Promise((resolve) => { release = resolve; });
-    const methods = [{ id: "browser", label: "Sign in with ChatGPT", label_zh: "", description: "", description_zh: "" }];
+    const methods = [{ id: "browser", label: "Import existing login", label_zh: "", description: "", description_zh: "" }];
     serve(payload([
       status("groq", { label: "Groq", health: { state: "not_configured" } }),
-      status("openai-codex", { label: "OpenAI Codex", billing: "subscription", health: { state: "not_configured" } }),
+      status("opencode-go", { label: "OpenCode Go", billing: "subscription", health: { state: "not_configured" } }),
     ]), {
       "GET /api/providers/groq/credentials": credentialList("groq", []),
-      "GET /api/providers/openai-codex/credentials": async () => { await gate; return credentialList("openai-codex", [], { auth: { methods } }); },
+      "GET /api/providers/opencode-go/credentials": async () => { await gate; return credentialList("opencode-go", [], { auth: { methods } }); },
     });
     const view = await open();
     await view.act(() => button(card(view, "groq"), "Add key").click());
     await settle(view);
     assert.ok(view.container.querySelector("#key-groq"));
     await view.act(() => button(view.container.querySelector('[role="dialog"]'), "Cancel").click());
-    await view.act(() => button(card(view, "openai-codex"), "Add account").click());
+    await view.act(() => button(card(view, "opencode-go"), "Add account").click());
     const step = () => view.container.querySelector('[role="dialog"] [data-step]').dataset.step;
     assert.equal(step(), "loading", "Groq's key step is not shown for Codex");
     assert.equal(view.container.querySelector('[role="dialog"] input'), null);
@@ -292,8 +292,8 @@ describe("rows", () => {
     const rows = [...view.container.querySelectorAll("tr[data-provider]")];
     assert.equal(rows.length, 8);
     const row = (id) => view.container.querySelector(`tr[data-provider="${id}"]`);
-    assert.match(row("openai-codex").textContent, /62% 5h · \d\d:\d\d · 15% Week/);
-    assert.match(row("openai-codex").textContent, /Included/);
+    assert.match(row("opencode-go").textContent, /62% 5h · \d\d:\d\d · 15% Week/);
+    assert.match(row("opencode-go").textContent, /Included/);
     assert.match(row("deepseek").textContent, /\$18\.42 balance · ≈ 26 wk/);
     assert.match(row("deepseek").textContent, /\$6\.30/);
     assert.match(row("groq").textContent, /46\/50 rpm · no balance data/);
@@ -431,12 +431,12 @@ describe("empty state", () => {
     assert.equal(empty.querySelectorAll("p").length, 0, "no prose");
     // Only the unconnected environment key is offered.
     assert.deepEqual([...empty.querySelectorAll("[data-env]")].map((r) => r.dataset.env), ["DEEPSEEK_API_KEY"]);
-    assert.deepEqual([...empty.querySelectorAll("button[data-provider]")].map((t) => t.dataset.provider), ["openai-codex", "anthropic", "deepseek", "ollama", "custom"]);
+    assert.deepEqual([...empty.querySelectorAll("button[data-provider]")].map((t) => t.dataset.provider), ["opencode-go", "anthropic", "deepseek", "ollama", "custom"]);
     assert.ok(empty.textContent.indexOf("In your environment") < empty.textContent.indexOf("Popular"));
     assert.equal(button(view.container, "Rows"), undefined, "no view switch without providers");
     await view.act(() => button(empty, "All providers (6)").click());
     assert.deepEqual([...empty.querySelectorAll('[role="listitem"]')].map((r) => r.textContent.replace("Connected", "")),
-      ["Anthropic", "DeepSeek", "Groq", "Ollama", "OpenAI", "OpenAI Codex"]);
+      ["Anthropic", "DeepSeek", "Groq", "Ollama", "OpenAI", "OpenCode Go"]);
     await view.act(() => button(empty, "Back to popular").click());
     assert.ok(empty.querySelector("[data-env]"));
     await view.unmount();
@@ -473,11 +473,11 @@ describe("plan name", () => {
   test("a subscription whose plan is known names it, on the credential's row and in the table", async () => {
     serve(payload([{ ...STATES.windowed, plan: "plus", keys: [{ ...STATES.windowed.keys[0], plan: "plus" }] }]));
     const view = await open();
-    const card = view.container.querySelector('[data-slot="card"][data-provider="openai-codex"]');
+    const card = view.container.querySelector('[data-slot="card"][data-provider="opencode-go"]');
     assert.match(card.querySelector("[data-credential]").textContent, /Plus/);
     assert.doesNotMatch(card.textContent, /Subscription/);
     await view.act(() => button(view.container, "Rows").click());
-    const row = view.container.querySelector('tr[data-provider="openai-codex"]');
+    const row = view.container.querySelector('tr[data-provider="opencode-go"]');
     assert.equal(row.querySelector("[data-plan]").textContent, "Plus");
     assert.ok(row.querySelector('[data-tip="Included in the Plus plan · $41.20 at API prices"]'));
     await view.unmount();
@@ -486,9 +486,9 @@ describe("plan name", () => {
   test("an unknown plan adds nothing: Subscription on the credential, Included in the table", async () => {
     serve(payload([STATES.windowed]));
     const view = await open();
-    assert.match(view.container.querySelector('[data-slot="card"][data-provider="openai-codex"] [data-credential]').textContent, /Subscription/);
+    assert.match(view.container.querySelector('[data-slot="card"][data-provider="opencode-go"] [data-credential]').textContent, /Subscription/);
     await view.act(() => button(view.container, "Rows").click());
-    assert.match(view.container.querySelector('tr[data-provider="openai-codex"]').textContent, /Included/);
+    assert.match(view.container.querySelector('tr[data-provider="opencode-go"]').textContent, /Included/);
     assert.equal(view.container.querySelector("[data-plan]"), null);
     await view.unmount();
   });

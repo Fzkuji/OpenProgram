@@ -247,7 +247,8 @@ class CancellationOperations:
             canonical_reason = self._canonical_cancel_reason(job_id)
             effective_reason = canonical_reason or reason_code
             try:
-                from openprogram.runtime.conversation.peer_agents import inbox
+                from openprogram.runtime import conversation_link
+                inbox = conversation_link.inbox()
                 inbox.discard_job(session_id, job_id)
                 inbox.discard_tracked_job(job_id)
             except Exception:

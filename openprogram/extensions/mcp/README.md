@@ -33,6 +33,9 @@ Public surface:
   * :func:`shutdown_mcp_servers` — call from worker shutdown
   * :func:`server_status` — diagnostic status dump (for the webui)
 
+The MCP server, through which outside programs talk to OpenProgram, is an
+interface: ``openprogram.interfaces.mcp_server``.
+
 ## Files in this directory
 
 - **`adapter.py`** — Translate between MCP wire types and our AgentTool framework types
@@ -42,9 +45,5 @@ Public surface:
 - **`registry.py`** — Manager for the set of MCP servers attached to this worker
 - **`sampling.py`** — Sampling
 - **`token_storage.py`** — File-backed ``TokenStorage`` for the MCP SDK's ``OAuthClientProvider``,
-
-## Sub-packages
-
-- **`server/`** — Authenticated MCP server surface
 
 _Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/generators/gen_dir_readmes.py` from the repo root to refresh._

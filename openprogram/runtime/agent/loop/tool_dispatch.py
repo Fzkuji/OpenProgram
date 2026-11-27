@@ -77,8 +77,8 @@ def _rewrite_tool_result(tool_call: Any, result: AgentToolResult,
     change it, in the form history stores (``_as_stored``), with the guide
     and the AGENTS.md files the call is due recorded as the attachment sent
     after it (``shared.tool_attachments``)."""
-    from openprogram.programs._authoring import guides
-    result = guides.attach(tool_call.name, tool_call.arguments, result)
+    from openprogram.runtime.agent.loop import hooks
+    result = hooks.attach_to_result(tool_call.name, tool_call.arguments, result)
     result = _attach_nested_agents_md(tool_call, result, set() if seen is None else seen)
     return _as_stored(tool_call, _transform_tool_result(tool_call, result))
 
@@ -103,9 +103,9 @@ def _bound_attachment(tool_call: Any, result: AgentToolResult) -> AgentToolResul
     entry = record(result.details)
     if entry is None:
         return result
-    from openprogram.programs._host.runtime import _persist_full_result
+    from openprogram.runtime.agent import tool_execution
     from openprogram.state.store.session.files.spill import bound_text
-    text = bound_text(entry["text"], lambda whole: _persist_full_result(str(tool_call.id), whole))
+    text = bound_text(entry["text"], lambda whole: tool_execution._persist_full_result(str(tool_call.id), whole))
     if text == entry["text"]:
         return result
     return result.model_copy(update={"details": {**result.details, ATTACHMENT: {**entry, "text": text}}})
@@ -143,15 +143,14 @@ def _as_stored(tool_call: Any, result: AgentToolResult) -> AgentToolResult:
             # Media alone: no empty text block, as history renders it.
             return result if len(media) == len(content) else result.model_copy(update={"content": media})
         return result.model_copy(update={"content": [TextContent(text=_no_output(tool_call, result))]})
-    from openprogram.programs._host.execution import CAP_DETAIL
-    from openprogram.programs._host.runtime import _persist_full_result
+    from openprogram.runtime.agent import tool_execution
     from openprogram.state.store.session.files.spill import bound_text, result_cap
     details = dict(result.details) if isinstance(result.details, dict) else {}
-    cap = result_cap(details.get(CAP_DETAIL))
+    cap = result_cap(details.get(tool_execution.CAP_DETAIL))
     saved: list[Any] = []
 
     def _save(whole: str) -> Any:
-        path = _persist_full_result(str(tool_call.id), whole)
+        path = tool_execution._persist_full_result(str(tool_call.id), whole)
         saved.append(path)
         return path
 
@@ -207,28 +206,38 @@ def _tool_call_label(name: str, args: Any) -> str:
     return name
 
 
-def _take_task_progress(tools: Any, tool: Any, args: Any) -> tuple[Any, Any]:
-    from openprogram.programs.tools.planning.todo import progress
-    return progress.take(tool, args, tools)
+def _take_call_arguments(tools: Any, tool: Any, args: Any) -> Any:
+    """``args`` without the arguments Programs carry on calls (``hooks.CallArgument``)."""
+    from openprogram.runtime.agent.loop import hooks
+    for argument in list(hooks.call_arguments):
+        args, _ = argument.take(tool, args, tools)
+    return args
 
 
-def _apply_task_progress(tools: Any, tool: Any, call: ToolCall, occurrence_id: str) -> tuple[dict | None, str]:
-    """Apply the ``task_progress`` a call carries. Returns the effect for
-    its card (``state.task_blocks``) and a note the model reads in the
-    result when the progress was not applied (todo/progress.py). It is
-    applied once per ``occurrence_id``, not per call id: some providers
-    give the calls of every response the same ids (Gemini's
-    ``call_<index>_<name>``)."""
-    _, value = _take_task_progress(tools, tool, call.arguments)
-    if value is None:
-        return None, ""
-    from openprogram.programs.tools.planning.todo import progress
-    try:
-        return progress.apply(value, occurrence_id)
-    except Exception:
-        # Progress is bookkeeping; the call itself still runs.
-        _log.warning("task_progress of %s not applied", call.name, exc_info=True)
-        return None, f"{progress.KEY} not applied: an internal error."
+def _apply_call_arguments(tools: Any, tool: Any, call: ToolCall, occurrence_id: str) -> tuple[dict | None, str]:
+    """Apply the carried arguments a call has (the task tools'
+    ``task_progress``). Returns the effect for its card
+    (``state.task_blocks``) and a note the model reads in the result when
+    one was not applied. Each is applied once per ``occurrence_id``, not
+    per call id: some providers give the calls of every response the same
+    ids (Gemini's ``call_<index>_<name>``)."""
+    from openprogram.runtime.agent.loop import hooks
+    effect: dict | None = None
+    notes: list[str] = []
+    for argument in list(hooks.call_arguments):
+        _, value = argument.take(tool, call.arguments, tools)
+        if value is None:
+            continue
+        try:
+            applied, note = argument.apply(value, occurrence_id)
+        except Exception:
+            # Bookkeeping; the call itself still runs.
+            _log.warning("%s of %s not applied", argument.key, call.name, exc_info=True)
+            applied, note = None, f"{argument.key} not applied: an internal error."
+        effect = applied if applied is not None else effect
+        if note:
+            notes.append(note)
+    return effect, "\n".join(notes)
 
 
 class _SkipExecute(Exception):
@@ -263,14 +272,11 @@ def _with_schema_hint(error: Exception, tool: Any, loaded: Any) -> Exception:
     says the schema was not sent and how to load it (Claude Code's
     ``buildSchemaNotSentHint``); any other failure is left as it is. The
     call itself is never held back: valid arguments run (Codex)."""
-    from openprogram.programs._host.runtime import (
-        Tier, _request_loaded, schema_not_sent_hint, tool_tier,
-    )
-
-    names = set(loaded) if loaded is not None else set(_request_loaded.get())
-    if tool is None or tool_tier(tool) is not Tier.DEFERRED or tool.name in names:
+    if tool is None:
         return error
-    return ValueError(f"{error}\n\n{schema_not_sent_hint(tool.name)}")
+    from openprogram.runtime import program_host
+    hint = program_host.host().schema_hint(tool, loaded)
+    return ValueError(f"{error}\n\n{hint}") if hint else error
 
 
 async def _execute_tool_calls(*args: Any, context_window: int | None = None,
@@ -368,16 +374,17 @@ async def _dispatch_tool_calls(
         if tool is None and (loaded or {}).get(tool_call.name):
             # Loaded earlier, gone now (its server disconnected): the call
             # says so instead of "not found".
-            from openprogram.programs._host.runtime import unavailable_tool
-            tool = unavailable_tool(tool_call.name, loaded[tool_call.name])
+            from openprogram.runtime import program_host
+            tool = program_host.host().unavailable_tool(tool_call.name, loaded[tool_call.name])
         occurrence_id = _occurrence_id(index, tool_call)
-        # The call's ``task_progress`` is the runtime's, applied before the
-        # call runs and never passed on (todo/progress.py). ``sent`` keeps
-        # the call as the model wrote it: its card and history replay it.
+        # The arguments Programs carry on calls (``task_progress``) are the
+        # runtime's, applied before the call runs and never passed on.
+        # ``sent`` keeps the call as the model wrote it: its card and
+        # history replay it.
         sent = tool_call
-        task_effect, task_note = _apply_task_progress(tools, tool, tool_call, occurrence_id)
-        call_args, _ = _take_task_progress(tools, tool, call_args)
-        bare, _ = _take_task_progress(tools, tool, tool_call.arguments)
+        task_effect, task_note = _apply_call_arguments(tools, tool, tool_call, occurrence_id)
+        call_args = _take_call_arguments(tools, tool, call_args)
+        bare = _take_call_arguments(tools, tool, tool_call.arguments)
         if bare is not tool_call.arguments:
             tool_call = tool_call.model_copy(update={"arguments": bare})
         dag_expose = getattr(tool, "_dag_expose", None) or "full"
@@ -514,7 +521,7 @@ async def _dispatch_tool_calls(
             timeout = _job_operation_timeout(None)
             preapproved_wait_id = getattr(tool, "_preapproved_wait_id", None)
             try:
-                from openprogram.programs._host.runtime import (
+                from openprogram.runtime.agent.call_state import (
                     _current_tool_call_occurrence_id,
                     _tool_call_identity_consumed,
                 )
@@ -604,7 +611,7 @@ async def _dispatch_tool_calls(
         finally:
             if occurrence_token is not None:
                 try:
-                    from openprogram.programs._host.runtime import _current_tool_call_occurrence_id
+                    from openprogram.runtime.agent.call_state import _current_tool_call_occurrence_id
 
                     _current_tool_call_occurrence_id.reset(occurrence_token)
                 except (ValueError, RuntimeError):
@@ -613,7 +620,7 @@ async def _dispatch_tool_calls(
                     _log.debug("occurrence id token already spent or foreign", exc_info=True)
             if identity_consumed_token is not None:
                 try:
-                    from openprogram.programs._host.runtime import _tool_call_identity_consumed
+                    from openprogram.runtime.agent.call_state import _tool_call_identity_consumed
 
                     _tool_call_identity_consumed.reset(identity_consumed_token)
                 except (ValueError, RuntimeError):

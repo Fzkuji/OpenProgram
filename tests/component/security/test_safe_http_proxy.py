@@ -272,7 +272,7 @@ async def _empty_async():
 @pytest.mark.parametrize("proxy_scheme", ["http", "https", "socks5"])
 def test_official_service_requests_use_ambient_proxy(monkeypatch, asynchronous, proxy_scheme):
     from openprogram.host.security.safe_http import configured_safe_client, configured_safe_async_client
-    from openprogram.state.settings import load_outbound_security_config
+    from openprogram.host.security.outbound_settings import load_outbound_security_config
 
     calls = []
     monkeypatch.setenv("OPENPROGRAM_PROXY_URL", f"{proxy_scheme}://user:password@127.0.0.1:7897")
@@ -303,25 +303,25 @@ def test_official_service_requests_use_ambient_proxy(monkeypatch, asynchronous, 
     monkeypatch.setattr(httpcore, pool_name, Pool)
     # Freeze a deterministic target resolution while using the real config and proxy resolver.
     from dataclasses import replace
-    import openprogram.state.settings as schema
+    import openprogram.host.security.outbound_settings as schema
     monkeypatch.setattr(schema, "load_outbound_security_config", lambda consumer: replace(
         load_outbound_security_config(consumer, config={}), resolver=lambda host, port: ("127.0.0.1",) if host == "127.0.0.1" else ("93.184.216.34",)
     ))
-    origin = "https://chatgpt.com"
+    origin = "https://api.openai.com"
     consumer = "provider.configured_api" if asynchronous else "webui.model_listing.configured"
     if asynchronous:
         async def exercise():
             async with configured_safe_async_client(consumer, origin) as client:
-                return await client.get(origin + "/backend-api/codex/models", headers={"Authorization": "Bearer service-secret", "Proxy-Authorization": "hostile"})
+                return await client.get(origin + "/v1/models", headers={"Authorization": "Bearer service-secret", "Proxy-Authorization": "hostile"})
         response = asyncio.run(exercise())
     else:
         with configured_safe_client(consumer, origin) as client:
-            response = client.get(origin + "/backend-api/codex/models", headers={"Authorization": "Bearer service-secret", "Proxy-Authorization": "hostile"})
+            response = client.get(origin + "/v1/models", headers={"Authorization": "Bearer service-secret", "Proxy-Authorization": "hostile"})
     assert response.content == b"ok"
     assert calls[0]["proxy_url"] == f"{proxy_scheme}://127.0.0.1:7897"
     assert calls[0]["proxy_auth"] == (b"user", b"password")
     assert calls[0]["network_backend"]._decision.resolved_ips == (ipaddress.ip_address("127.0.0.1"),)
-    assert calls[1].url.host == b"chatgpt.com"
+    assert calls[1].url.host == b"api.openai.com"
     assert (b"Authorization", b"Bearer service-secret") in calls[1].headers
     assert not any(name.lower() == b"proxy-authorization" for name, _ in calls[1].headers)
     assert response.extensions["url_decision"].origin == origin
@@ -329,23 +329,23 @@ def test_official_service_requests_use_ambient_proxy(monkeypatch, asynchronous, 
 
 def test_official_service_proxy_rejects_metadata_peer_before_connect(monkeypatch):
     from dataclasses import replace
-    import openprogram.state.settings as schema
+    import openprogram.host.security.outbound_settings as schema
     original = schema.load_outbound_security_config
     monkeypatch.setenv("HTTPS_PROXY", "http://proxy.test:7897")
     monkeypatch.setattr(schema, "load_outbound_security_config", lambda consumer: replace(
         original(consumer, config={}), resolver=lambda host, port: ("169.254.169.254",) if host == "proxy.test" else ("93.184.216.34",)
     ))
     from openprogram.host.security.safe_http import configured_safe_client
-    with configured_safe_client("webui.model_listing.configured", "https://chatgpt.com") as client:
+    with configured_safe_client("webui.model_listing.configured", "https://api.openai.com") as client:
         with pytest.raises(URLPolicyError) as exc:
-            client.get("https://chatgpt.com/backend-api/codex/models")
+            client.get("https://api.openai.com/v1/models")
     assert exc.value.reason == "METADATA_ADDRESS"
 
 
 def test_official_service_proxy_failure_has_no_direct_fallback(monkeypatch):
     from dataclasses import replace
     import httpx
-    import openprogram.state.settings as schema
+    import openprogram.host.security.outbound_settings as schema
     original = schema.load_outbound_security_config
     calls = []
     monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:7897")
@@ -355,9 +355,9 @@ def test_official_service_proxy_failure_has_no_direct_fallback(monkeypatch):
     monkeypatch.setattr(httpcore, "HTTPProxy", lambda **kwargs: _FailingProxyPool(calls))
     monkeypatch.setattr(httpcore, "ConnectionPool", lambda **kwargs: pytest.fail("unexpected direct fallback"))
     from openprogram.host.security.safe_http import configured_safe_client
-    with configured_safe_client("webui.model_listing.configured", "https://chatgpt.com") as client:
+    with configured_safe_client("webui.model_listing.configured", "https://api.openai.com") as client:
         with pytest.raises(httpx.ProxyError):
-            client.get("https://chatgpt.com/backend-api/codex/models")
+            client.get("https://api.openai.com/v1/models")
     assert calls == ["proxy"]
 
 
@@ -371,7 +371,7 @@ def test_official_service_proxy_failure_has_no_direct_fallback(monkeypatch):
 ])
 def test_real_proxy_handshake_uses_correct_ports_and_tls_hostnames(monkeypatch, asynchronous, proxy_url, port):
     from dataclasses import replace
-    import openprogram.state.settings as schema
+    import openprogram.host.security.outbound_settings as schema
     from openprogram.host.security.safe_http import configured_safe_client, configured_safe_async_client
     original = schema.load_outbound_security_config
     calls = []
@@ -441,7 +441,7 @@ def test_real_proxy_handshake_uses_correct_ports_and_tls_hostnames(monkeypatch, 
         original(consumer, config={}), service_proxy_mounts=(("https://", proxy_url),),
         resolver=lambda host, port: ("127.0.0.1",) if host == "proxy.test" else ("93.184.216.34",),
     ))
-    origin = "https://chatgpt.com"
+    origin = "https://api.openai.com"
     if asynchronous:
         async def exercise():
             async with configured_safe_async_client("provider.configured_api", origin) as client:
@@ -454,13 +454,13 @@ def test_real_proxy_handshake_uses_correct_ports_and_tls_hostnames(monkeypatch, 
             response = client.send(request)
     assert response.text == "ok"
     assert connections == [("127.0.0.1", port)]
-    assert calls == (["chatgpt.com"] if proxy_url.startswith("socks5") else ["proxy.test", "chatgpt.com"])
+    assert calls == (["api.openai.com"] if proxy_url.startswith("socks5") else ["proxy.test", "api.openai.com"])
 
 
 def _ambient_security(monkeypatch, resolver):
     """Real routing snapshot from the environment, deterministic target DNS."""
     from dataclasses import replace
-    import openprogram.state.settings as schema
+    import openprogram.host.security.outbound_settings as schema
 
     original = schema.load_outbound_security_config
     monkeypatch.setattr(

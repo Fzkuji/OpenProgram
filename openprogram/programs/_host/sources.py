@@ -134,7 +134,7 @@ def _write_program_sources(rows: list[dict]) -> None:
 
 
 def _update_program_sources(mutate) -> None:
-    from openprogram.models.auth.credentials import _private_file_lock
+    from openprogram.state.private_files import _private_file_lock
     from openprogram.state.paths import get_state_dir
 
     target = _program_sources_path()

@@ -15,11 +15,20 @@ const store = require("../shell/store");
 const seedModule = require("../shell/seed");
 const recovery = require("../shell/recovery");
 
+// Every directory the checks make lives under one scratch directory that is
+// removed when the process exits, whether the checks pass or fail.
+const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "thin-shell-check-"));
+process.on("exit", () => fs.rmSync(scratch, { recursive: true, force: true }));
+
+function temporaryDirectory(prefix) {
+  return fs.mkdtempSync(path.join(scratch, prefix));
+}
+
 const COMPAT = { min: 1, max: 1 };
 const BASE = "py3.12-0123456789abcdef";
 
 function temporaryRoot() {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "thin-shell-"));
+  const directory = temporaryDirectory("thin-shell-");
   return path.join(directory, "state", "runtime");
 }
 
@@ -76,7 +85,7 @@ function writePointer(root, values = {}) {
 // --- the three modes --------------------------------------------------------
 {
   const root = temporaryRoot();
-  const resourcesPath = fs.mkdtempSync(path.join(os.tmpdir(), "thin-resources-"));
+  const resourcesPath = temporaryDirectory("thin-resources-");
   assert.equal(store.chooseMode({ isPackaged: false, resourcesPath, root }).mode, "embedded");
   assert.equal(store.chooseMode({ isPackaged: true, resourcesPath, root }).mode, "managed");
   fs.mkdirSync(path.join(resourcesPath, "runtime"));
@@ -258,7 +267,7 @@ function paxEntry(name, value) {
 }
 
 async function checkExtraction() {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "thin-archive-"));
+  const directory = temporaryDirectory("thin-archive-");
   const file = path.join(directory, "a.tar.zst");
   const long = `${"long/".repeat(30)}name.txt`;
   archive(file, [
@@ -312,7 +321,7 @@ async function checkWindowsLinks() {
   assert.equal(windows("C:/Windows/System32/cmd.exe"), null);
   assert.equal(windows("\\\\server\\share\\x"), null);
 
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "thin-links-"));
+  const directory = temporaryDirectory("thin-links-");
   const seedDirectory = path.join(directory, "seed");
   fs.mkdirSync(path.join(seedDirectory, "bootstrap"), { recursive: true });
   fs.writeFileSync(path.join(seedDirectory, "bootstrap", "install_seed.py"), "");
@@ -386,7 +395,7 @@ async function checkWindowsLinks() {
 }
 
 function fakeSeed() {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "thin-seed-"));
+  const directory = temporaryDirectory("thin-seed-");
   fs.mkdirSync(path.join(directory, "bootstrap"));
   fs.writeFileSync(path.join(directory, "bootstrap", "install_seed.py"), "");
   fs.writeFileSync(path.join(directory, "seed.json"), JSON.stringify({
@@ -565,7 +574,7 @@ async function checkSeedSafeguards() {
 }
 
 function checkIdentityRefresh() {
-  const seedDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "thin-new-shell-"));
+  const seedDirectory = temporaryDirectory("thin-new-shell-");
   const helper = path.join(seedDirectory, "helper", "OpenProgram.app", "Contents", "MacOS");
   fs.mkdirSync(helper, { recursive: true });
   fs.writeFileSync(path.join(helper, "OpenProgram"), "new helper");
@@ -693,7 +702,7 @@ function fakeElectron({ isPackaged = true, windowsLoaded = false, single = true 
     isPackaged,
     getVersion: () => "1.0.0",
     getAppPath: () => "/app.asar",
-    getPath: () => os.tmpdir(),
+    getPath: () => scratch,
     requestSingleInstanceLock: () => single,
     whenReady: () => Promise.resolve(),
     on() {},
@@ -713,7 +722,7 @@ function fakeElectron({ isPackaged = true, windowsLoaded = false, single = true 
 }
 
 async function checkMoveToApplications(moveOfferNeeded, offerMoveToApplications) {
-  const userData = fs.mkdtempSync(path.join(os.tmpdir(), "thin-move-"));
+  const userData = temporaryDirectory("thin-move-");
   const executable = path.join(userData, "Downloads", "OpenProgram.app", "Contents", "MacOS", "OpenProgram");
   const standIn = (inApplications = false) => ({
     isPackaged: true,
@@ -788,11 +797,11 @@ async function checkLoader() {
   Module._load = load;
   await checkMoveToApplications(moveOfferNeeded, offerMoveToApplications);
 
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), "thin-home-"));
+  const home = temporaryDirectory("thin-home-");
   const previousHome = process.env.HOME;
   process.env.HOME = home;
   const root = path.join(home, ".openprogram", "runtime");
-  const resources = fs.mkdtempSync(path.join(os.tmpdir(), "thin-resources-"));
+  const resources = temporaryDirectory("thin-resources-");
   const previousResources = process.resourcesPath;
   process.resourcesPath = resources;
   const noShift = () => false;
@@ -927,7 +936,7 @@ async function checkLoader() {
   assert.equal(shiftHeld("win32", () => ({ status: 0 })), false);
   assert.equal(shiftHeld("linux", () => { throw new Error("unused"); }), false);
 
-  const moduleRoot = fs.mkdtempSync(path.join(os.tmpdir(), "thin-asar-"));
+  const moduleRoot = temporaryDirectory("thin-asar-");
   fs.mkdirSync(path.join(moduleRoot, "node_modules", "thin-shell-probe"), { recursive: true });
   fs.writeFileSync(path.join(moduleRoot, "node_modules", "thin-shell-probe", "index.js"), "module.exports = 7;\n");
   const before = process.env.NODE_PATH;

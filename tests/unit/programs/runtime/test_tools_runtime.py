@@ -22,6 +22,7 @@ from mcp.types import CallToolResult, TextContent as MCPTextContent
 from openprogram.models.providers.types import AgentToolResult
 from openprogram.host.backend import RunResult
 from openprogram.programs._host import runtime as R
+from openprogram.runtime.agent import tool_execution
 from openprogram.programs._host.runtime import (
     ToolReturn,
     _build_parameters_schema,
@@ -51,11 +52,11 @@ def _isolate_registry():
     see an empty registry. Collection order is filesystem-dependent, so that
     only bit on Linux CI, not macOS. Restore keeps the isolation local."""
     saved = snapshot_registry()
-    R._cache.clear()
+    tool_execution._cache.clear()
     reset_registry()
     yield
     restore_registry(saved)
-    R._cache.clear()
+    tool_execution._cache.clear()
 
 
 def _run(coro):
@@ -224,7 +225,7 @@ def _stored(result, call_id: str = "c1"):
 
 
 def test_the_tool_never_cuts_its_own_text_and_records_its_cap(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(R, "_tool_results_dir", lambda: tmp_path)
+    monkeypatch.setattr(tool_execution, "_tool_results_dir", lambda: tmp_path)
 
     @function(max_result_weight=200)
     def big() -> str:
@@ -238,7 +239,7 @@ def test_the_tool_never_cuts_its_own_text_and_records_its_cap(tmp_path: Path, mo
 
 
 def test_a_result_within_the_declared_cap_is_stored_whole(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(R, "_tool_results_dir", lambda: tmp_path)
+    monkeypatch.setattr(tool_execution, "_tool_results_dir", lambda: tmp_path)
 
     @function(max_result_weight=200)
     def small() -> str:
@@ -253,7 +254,7 @@ def test_the_loop_bounds_once_to_the_declared_cap_and_keeps_the_whole_text(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from openprogram.state.store.session.weight import weight
-    monkeypatch.setattr(R, "_tool_results_dir", lambda: tmp_path)
+    monkeypatch.setattr(tool_execution, "_tool_results_dir", lambda: tmp_path)
 
     @function(max_result_weight=200)
     def big() -> str:

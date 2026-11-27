@@ -12,9 +12,9 @@ import tarfile
 import pytest
 
 from openprogram.operations.self_update.versions import build as builder
-from openprogram.operations.self_update.versions import layout as paths
+from openprogram.host._platform import runtime_layout as paths
 from openprogram.operations.self_update.versions import pointer, store
-from openprogram.operations.self_update.versions.layout import Layout
+from openprogram.host._platform.runtime_layout import Layout
 from scripts.docs_site import generate_reference
 from tests.support.sealed_versions import REPOSITORY
 
@@ -327,7 +327,7 @@ def test_a_disk_just_under_the_need_names_the_difference(layout, repo, log, monk
 
 
 def test_the_shortfall_is_never_printed_as_nothing():
-    from openprogram.operations.self_update.versions.layout import disk_shortfall
+    from openprogram.host._platform.runtime_layout import disk_shortfall
 
     assert disk_shortfall(5 * 1024 ** 3, 5 * 1024 ** 3 - 1) == "less than 1 MB"
     assert disk_shortfall(5 * 1024 ** 3, 5 * 1024 ** 3 - 300 * 1024 ** 2) == "300 MB"
@@ -421,7 +421,7 @@ def test_component_limited_build_matches_the_generator_inputs():
     source = Path(generate_reference.__file__).read_text(encoding="utf-8")
     assert "openprogram.interfaces.cli" in source
     assert "openprogram.state.settings" in source
-    assert "openprogram.models.providers" in source
+    assert "openprogram/models/providers/" in source
     assert builder.frontend_changes(["openprogram/runtime/agent/x.py"]) is False
     assert builder.frontend_changes(["openprogram/state/settings.py"]) is True
     assert builder.frontend_changes(["uv.lock"]) is True

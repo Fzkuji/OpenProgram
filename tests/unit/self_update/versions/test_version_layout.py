@@ -6,8 +6,8 @@ import sys
 
 import pytest
 
-from openprogram.operations.self_update.versions import layout as paths
-from openprogram.operations.self_update.versions.layout import Layout
+from openprogram.host._platform import runtime_layout as paths
+from openprogram.host._platform.runtime_layout import Layout
 
 
 def test_version_id_is_utc_stamp_and_short_commit():

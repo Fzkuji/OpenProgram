@@ -12,7 +12,7 @@ from openprogram.operations.self_update.store import SelfUpdateStore
 from openprogram.operations.self_update.trial import sandbox
 from openprogram.operations.self_update.trial.engine import TrialRequest, run_trial
 from openprogram.operations.self_update.types import UpdatePhase, UpdateRequest
-from openprogram.operations.self_update.versions.layout import Layout
+from openprogram.host._platform.runtime_layout import Layout
 from tests.support.trial_versions import build_version, compile_launcher, make_base
 
 pytestmark = [
@@ -86,6 +86,7 @@ def _fingerprint(state: Path) -> dict[str, tuple[int, int]]:
     }
 
 
+@pytest.mark.slow
 def test_a_good_candidate_passes_and_nothing_live_changes(built):
     _root, state, layout, _launcher = built
     before = _fingerprint(state)
@@ -109,6 +110,7 @@ def test_a_good_candidate_passes_and_nothing_live_changes(built):
     assert rehearsed["status"] == "passed" and rehearsed["messages"] >= 2
 
 
+@pytest.mark.slow
 def test_a_candidate_that_will_not_start_fails_and_keeps_only_logs(built):
     _root, state, layout, _launcher = built
 

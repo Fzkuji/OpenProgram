@@ -9,9 +9,8 @@
 <thead><tr><th scope="col">Connection</th><th scope="col">Capability</th><th scope="col">Request</th></tr></thead>
 <tbody>
 <tr><th scope="row">xAI API, Grok 4.6</th><td>Supported only for <code translate="no">grok-4.6</code> on <code translate="no">https://api.x.ai/v1</code>, never by name prefix</td><td>Fast: <code translate="no">service_tier: priority</code>. Standard: <code translate="no">default</code>.</td></tr>
-<tr><th scope="row">Grok subscription, Grok 4.6</th><td>The CLI chat proxy accepts the same values. Other subscription models stay unknown.</td><td>Same</td></tr>
 <tr><th scope="row">Custom gateway</th><td>Nothing inherited from the model name. Route configuration can declare support; explicit <code translate="no">false</code> wins.</td><td>Configured adapter mapping, only when supported</td></tr>
-<tr><th scope="row">Codex, Claude</th><td>Existing evidence sources; UI consumes the capability dispatch uses</td><td>Existing priority, or speed and beta, mapping</td></tr>
+<tr><th scope="row">Claude</th><td>Existing evidence sources; UI consumes the capability dispatch uses</td><td>Existing priority, or speed and beta, mapping</td></tr>
 </tbody>
 </table>
 <p class="note">Resolved by <code translate="no">fast_capability()</code> in <code translate="no">openprogram/models/providers/settings/fast.py</code>: supported, unsupported or unknown, with a source. <code translate="no">chat.fast</code> is a compatibility projection. Official account data, then route configuration, then static declarations, then catalogue; a network failure keeps a valid cached declaration.</p>
@@ -58,7 +57,7 @@
 <details>
 <summary>Acceptance</summary>
 <ul>
-<li>Capability: xAI API and Grok 4.6 subscription are separate from unknown subscription models; switching routes updates the reason; catalogue failure preserves known support.</li>
+<li>Capability: the xAI API is separate from unknown gateways; switching routes updates the reason; catalogue failure preserves known support.</li>
 <li>Composer: keyboard and pointer select speed, reload preserves it, a different model starts at Standard, narrow layouts work.</li>
 <li>Dispatch: priority only for the selected supported route; queued settings stable; reasoning unchanged.</li>
 <li>Response: synthetic priority, default, absent, error and cancelled responses keep accurate status, with no duplicate request or invented price.</li>

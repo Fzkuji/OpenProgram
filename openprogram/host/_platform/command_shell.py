@@ -271,8 +271,8 @@ def bash_override(environ: Mapping[str, str] | None = None) -> str:
     if named:
         return named
     try:
-        from openprogram.state.settings import setting_value
-        return str(setting_value("shell.windows_bash_path") or "").strip().strip('"')
+        from openprogram.host._platform import host_facts
+        return str(host_facts.setting_value("shell.windows_bash_path") or "").strip().strip('"')
     except Exception:  # noqa: BLE001 - an unreadable config names no bash
         return ""
 
@@ -282,7 +282,7 @@ def bundled_git_bash() -> str:
     try:
         import json
         from pathlib import Path
-        from openprogram.operations.self_update.versions.layout import current_runtime
+        from openprogram.host._platform.runtime_layout import current_runtime
         runtime = current_runtime()
         if runtime is None:
             return ""
@@ -372,10 +372,8 @@ def _reset_host_probe() -> None:
 
 
 def _sandbox_in_force(policy: Any = None) -> bool:
-    from openprogram.host import sandbox
-    if policy is None:
-        policy = sandbox.resolve_policy()
-    return policy is not None and sandbox.unavailable_reason() is None
+    from openprogram.host._platform import host_facts
+    return host_facts.sandbox_in_force(policy)
 
 
 def resolve_shell(environment: Any = None, *, sandboxed: bool | None = None,

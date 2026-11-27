@@ -77,6 +77,7 @@
 
 <h2 id="brand-marks">品牌标志</h2>
 <p>供应商标志（<code translate="no">public/images/providers</code>）和渠道标志（<code translate="no">public/images/channels</code>）只由 <code translate="no">BrandMark</code>（<code translate="no">apps/web/components/brand-mark</code>）绘制。单色标志是文字色或品牌色的遮罩；彩色标志就是图片本身。输入框之外：<code translate="no">fit="contain"</code>，悬停不动。</p>
+<p>自带背景在深色主题下刺眼的标志（Codex 的白色底块）在 <code translate="no">provider-icons.json</code> 里用 <code translate="no">dark</code> 指定第二张图，深色主题下显示它；品牌底板上仍用第一张。</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">位置</th><th scope="col">尺寸</th></tr></thead>
 <tbody>
@@ -149,7 +150,7 @@
 <p class="note">pqoqubbw 图标自己重绘（扳手转动、箭头跳动）；填充图标做不到，所以用预设。</p>
 
 <h2 id="attribution">署名</h2>
-<p><a href="https://github.com/480-Design/Solar-Icon-Set">Solar Icons</a> © 480 Design，CC BY 4.0。两个 Font Awesome 图标：<a href="https://fontawesome.com/license/free">Font Awesome Free</a>，© Fonticons，CC BY 4.0。声明写在 <code translate="no">bodies.ts</code> 文件头和本页。</p>
+<p><a href="https://github.com/480-Design/Solar-Icon-Set">Solar Icons</a> © 480 Design，CC BY 4.0。两个 Font Awesome 图标：<a href="https://fontawesome.com/license/free">Font Awesome Free</a>，© Fonticons，CC BY 4.0。声明写在 <code translate="no">bodies.ts</code> 文件头和本页。提供商和智能体标志来自 LobeHub（MIT），LobeHub 没有的智能体标志（T3 Code、ZCode、OpenCode 一类、Pi 一类等）来自 yetone/magpie（MIT）；两者都声明在 <code translate="no">public/images/providers/NOTICE.txt</code>。</p>
 
 <h2 id="implementation-status">实现状态</h2>
 <table class="stack fixed">

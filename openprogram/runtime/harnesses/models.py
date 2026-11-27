@@ -7,6 +7,7 @@ background, so opening the Harness menu never waits on a process.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 import threading
 import time
 from typing import Any, Optional
@@ -109,8 +110,7 @@ def read_codex() -> dict:
     return entry
 
 
-def _probe_dir() -> "Path":
-    from pathlib import Path
+def _probe_dir() -> Path:
     try:
         from openprogram.state.paths import get_state_dir
         root = Path(get_state_dir())
@@ -196,11 +196,39 @@ def remember_options(harness_id: str, options: list) -> None:
     _seen_options[harness_id] = options
     with _cache_lock:
         cached = _cache.get(harness_id)
-    if cached and harness_id == "deepseek-harness":
-        from openprogram.runtime.harnesses.deepseek.client import read_options
+    if cached and harness_id in ("deepseek-harness", "gemini-cli"):
+        if harness_id == "gemini-cli":
+            from openprogram.runtime.harnesses.gemini_cli.client import read_options
+        else:
+            from openprogram.runtime.harnesses.deepseek.client import read_options
         entry = {**cached[1], "models": read_options(options)[0]}
         with _cache_lock:
             _cache[harness_id] = (cached[0], entry)
+
+
+def read_gemini_cli() -> dict:
+    """What Gemini CLI on this computer is: installed, version, sign-in and models.
+
+    Read without starting it: the version from its npm package, the models a
+    turn here last saw (kept across restarts), else its own default. Only a
+    session lists its models, and opening one would write a project and a
+    session into the person's ``~/.gemini`` and start their MCP servers."""
+    from openprogram.runtime.harnesses.gemini_cli import client
+
+    entry: dict[str, Any] = {
+        "id": "gemini-cli", "provider": "gemini-cli-harness", "label": "Gemini CLI",
+        "installed": False, "version": "", "signedIn": False, "models": [],
+        "agents": [{"id": "default", "label": "Default", "kind": "default", "default": True}],
+    }
+    binary = client.binary_path()
+    if binary is None:
+        return entry
+    entry["installed"] = True
+    entry["version"] = client.binary_version(binary)
+    entry["signedIn"] = client.sign_in_now()[0]
+    options = _seen_options.get("gemini-cli") or client.saved_options()
+    entry["models"] = client.read_options(options)[0] or [dict(client.DEFAULT_MODEL)]
+    return entry
 
 
 def read_claude_code() -> dict:
@@ -226,10 +254,10 @@ def read_claude_code() -> dict:
         entry["error"] = "not_started"
         return entry
     # Whether it is signed in, from the kind of sign-in it reports; no credential is read.
-    # The Claude app hands its own Claude Code a sign-in that a separate start does not have.
-    account = answer.get("account") or {}
-    entry["signedIn"] = (str(account.get("tokenSource") or "none") != "none"
-                         or str(account.get("apiProvider") or "firstParty") != "firstParty")
+    # The Claude app hands its own Claude Code a sign-in that a separate start does not have;
+    # without one, the Anthropic API key set in Model Services is handed to it.
+    # Whether it may sign in is checked again at each reading of the entry (``read_harness``).
+    entry["otherSignIn"] = client.own_sign_in(answer.get("account") or {}) and not client.saved_login()
     entry["models"] = [{
         "id": str(row.get("value")), "label": str(row.get("displayName") or row.get("value")),
         "default": row.get("value") == "default",
@@ -245,7 +273,8 @@ def read_claude_code() -> dict:
     return entry
 
 
-_READERS = {"codex": read_codex, "claude-code": read_claude_code, "deepseek-harness": read_deepseek}
+_READERS = {"codex": read_codex, "claude-code": read_claude_code, "deepseek-harness": read_deepseek,
+            "gemini-cli": read_gemini_cli}
 
 
 def list_harnesses(*, refresh: bool = False) -> list[dict]:
@@ -254,6 +283,21 @@ def list_harnesses(*, refresh: bool = False) -> list[dict]:
 
 
 def read_harness(harness_id: str, *, refresh: bool = False) -> dict:
+    """The harness as last read, its sign-in as it is now."""
+    entry = _read_harness(harness_id, refresh=refresh)
+    if harness_id == "claude-code" and "otherSignIn" in entry:
+        # A login or a Model Services key added or removed since shows at once.
+        from openprogram.runtime.harnesses.claude_code import client
+        signed_in, key = client.sign_in_now(bool(entry["otherSignIn"]))
+        entry = {**entry, "signedIn": signed_in, "usesSettingsKey": key is not None}
+    elif harness_id == "gemini-cli" and entry.get("installed"):
+        from openprogram.runtime.harnesses.gemini_cli import client
+        signed_in, key = client.sign_in_now()
+        entry = {**entry, "signedIn": signed_in, "usesSettingsKey": key is not None}
+    return entry
+
+
+def _read_harness(harness_id: str, *, refresh: bool = False) -> dict:
     """The harness as last read. An old reading is returned at once and read
     again in the background, so only the very first reading waits."""
     now = time.monotonic()
@@ -262,7 +306,7 @@ def read_harness(harness_id: str, *, refresh: bool = False) -> dict:
         lock = _read_locks.setdefault(harness_id, threading.Lock())
     if cached and not refresh:
         if now - cached[0] >= CACHE_SECONDS and not lock.locked():
-            threading.Thread(target=read_harness, args=(harness_id,), kwargs={"refresh": True},
+            threading.Thread(target=_read_harness, args=(harness_id,), kwargs={"refresh": True},
                              daemon=True, name=f"harness-read-{harness_id}").start()
         return cached[1]
     with lock:

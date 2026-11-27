@@ -260,8 +260,8 @@ def capture(raw: Any, ws, *, session_id: str | None = None) -> dict | None:
 
 def _record_page_display(page_key: str, **display) -> None:
     """Record a Page's title and target on its resource, when the browser is enabled."""
-    from openprogram.programs._host import services as _services
-    browser = _services.lookup("browser")
+    from openprogram.runtime import program_host
+    browser = program_host.host().services.lookup("browser")
     if browser is not None:
         browser.pages.BrowserResourceStore().update_display(page_key, **display)
 

@@ -182,7 +182,7 @@ def check_failure_history(store, records):
 def _candidate(store, record):
     from openprogram.runtime.jobs.store import load_job
     from openprogram.runtime.jobs.types import JobStatus
-    from openprogram.programs.tools.system.self_update import _git, _recorded_path, _validate_registered_worktree, _validate_candidate_snapshot
+    from ..candidate_source import git, recorded_path, validate_registered_worktree, validate_candidate_snapshot
     from .repair_candidate import check_repair_paths
     from .repair_candidate import _edits
     from .repair_candidate import _file
@@ -207,24 +207,24 @@ def _candidate(store, record):
             raise ValueError("repair worktree binding changed")
     if manifest["worktree_id"] != worktree["id"] or worktree["parent_session"] != record.request.session_id:
         raise ValueError("repair worktree owner changed")
-    source = _recorded_path(record.request.repo, "source")
-    candidate = _recorded_path(manifest["worktree_path"], "repaired candidate")
-    original = _recorded_path(config["candidate_path"], "original candidate")
+    source = recorded_path(record.request.repo, "source")
+    candidate = recorded_path(manifest["worktree_path"], "repaired candidate")
+    original = recorded_path(config["candidate_path"], "original candidate")
     sha = manifest["candidate_sha"]
-    _validate_registered_worktree(source, original, record.request.candidate_sha, config["branch_name"])
-    _validate_candidate_snapshot(original, record.request.candidate_sha)
-    _validate_registered_worktree(source, candidate, sha, manifest["branch_name"])
-    _validate_candidate_snapshot(candidate, sha)
-    if _git(candidate, "merge-base", record.request.candidate_sha, sha) != record.request.candidate_sha:
+    validate_registered_worktree(source, original, record.request.candidate_sha, config["branch_name"])
+    validate_candidate_snapshot(original, record.request.candidate_sha)
+    validate_registered_worktree(source, candidate, sha, manifest["branch_name"])
+    validate_candidate_snapshot(candidate, sha)
+    if git(candidate, "merge-base", record.request.candidate_sha, sha) != record.request.candidate_sha:
         raise ValueError("repair is not a descendant of the original candidate")
     expected = _edits(record.request, original, output["edits"])
-    changed_edits = set(filter(None, _git(candidate, "diff", "--name-only", "-z", record.request.candidate_sha, sha).split("\0")))
+    changed_edits = set(filter(None, git(candidate, "diff", "--name-only", "-z", record.request.candidate_sha, sha).split("\0")))
     if changed_edits != {p.relative_to(original).as_posix() for p, (before, after) in expected.items() if before != after}:
         raise ValueError("candidate differs from approved repair edits")
     for path, (_, after) in expected.items():
         if _file(candidate, path.relative_to(original).as_posix())[1] != after:
             raise ValueError("candidate contents differ from repair output")
-    changed = tuple(filter(None, _git(candidate, "diff", "--name-only", "-z", record.request.base_sha, sha).split("\0")))
+    changed = tuple(filter(None, git(candidate, "diff", "--name-only", "-z", record.request.base_sha, sha).split("\0")))
     if list(changed) != manifest["changed_paths"] or manifest["base_sha"] != record.request.base_sha:
         raise ValueError("candidate full diff changed")
     check_repair_paths(record.request, changed, changed_edits)
@@ -341,7 +341,7 @@ def _reservation(store, record, records, manifest, result, *, automatic, assista
 
 def submit(update_id, candidate_sha, *, req=None, assistant_id=None, _resume=False):
     """Trusted automatic call or the body of the owner's retry tool call."""
-    from openprogram.programs.tools.system.self_update import _require_local_owner
+    from ..candidate_source import require_local_owner
     from ..delivery.launcher import launch_supervisor
     store = SelfUpdateStore()
     with store._locked():
@@ -351,7 +351,7 @@ def submit(update_id, candidate_sha, *, req=None, assistant_id=None, _resume=Fal
             raise ValueError("cannot resume without original reservation")
         automatic = reservation["automatic"] if _resume else req is None
         if not automatic and not _resume:
-            _require_local_owner(req)
+            require_local_owner(req)
             if not assistant_id:
                 raise ValueError("retry requires a persisted owner turn")
         records, manifest, result = validate(store, record, candidate_sha, automatic=automatic)
@@ -458,8 +458,8 @@ def summary(store, record, *, read_only=False):
 
 
 def approval_preview(update_id, candidate_sha, req):
-    from openprogram.programs.tools.system.self_update import _require_local_owner
-    _require_local_owner(req)
+    from ..candidate_source import require_local_owner
+    require_local_owner(req)
     store = SelfUpdateStore()
     with store._locked():
         record = store._load_unlocked(_validate_update_id(update_id))
@@ -471,10 +471,10 @@ def approval_preview(update_id, candidate_sha, req):
 
 
 def cancel(update_id, req, store=None):
-    from openprogram.programs.tools.system.self_update import _require_local_owner
+    from ..candidate_source import require_local_owner
     from openprogram.runtime.jobs import get_runner
     from openprogram.runtime.jobs.store import load_job
-    _require_local_owner(req)
+    require_local_owner(req)
     store = store or SelfUpdateStore()
     jobs = []
     with store._locked():

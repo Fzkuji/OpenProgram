@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from . import claude_code, deepseek_harness
-from .codex_sync import _after, _project_of, _tip, _write_records, thread_records
+from .codex_sync import REPAIRED, REPAIRS_PER_SYNC, _after, _picture_once, _place_once, _project_of, _unwrap_once, _tip, _write_records, thread_records
 from .ledger import locked
 from .model import AGENT_LABELS, CLAUDE_CODE, DEEPSEEK_HARNESS, ExternalSession
 from .sanitize import remove_secret_values, remove_secrets
@@ -175,7 +175,8 @@ def _create(store, item: Item, session: ExternalSession, agent_id: str) -> str:
         "agent": item.agent, "source_id": item.id, "path": str(session.path),
         "cwd": session.cwd, "imported_at": time.time(), "title": session.title or "",
     }}
-    project_id = _project_of(session.cwd)
+    project_id, settled = _project_of(session.cwd)
+    fields["imported_from"].update(placed=settled, **REPAIRED)  # written as typed, with its pictures
     if project_id:
         fields["project_id"] = project_id
     store.create_session(session_id, agent_id, title=session.title or AGENT_LABELS[item.agent],
@@ -345,6 +346,9 @@ def _retitle(store, session_id: str, row: dict, session: ExternalSession) -> Non
     synced = imported.get("title")
     if synced is None or not session.title or session.title == synced or row.get("title") != synced:
         return
+    # Read again: the sync may have written other fields of it (``placed``) since ``row`` was read.
+    now = (store.get_session(session_id) or {}).get("imported_from")
+    imported = now if isinstance(now, dict) else imported
     store.update_session(session_id, title=session.title, imported_from={**imported, "title": session.title})
 
 
@@ -382,6 +386,7 @@ def sync(*, store=None, ledger_root: Optional[Path] = None, agent_id: Optional[s
     if not found:
         return results
     engine_threads: dict[str, dict[str, str]] = {}
+    unwraps, pictures = [REPAIRS_PER_SYNC], [REPAIRS_PER_SYNC]
     with locked(ledger_root) as ledger:
         for item in found:
             entry = ledger.get(item.agent, item.id) or {}
@@ -409,6 +414,11 @@ def sync(*, store=None, ledger_root: Optional[Path] = None, agent_id: Optional[s
             if entry.get("engine") and not alive:
                 continue  # its conversation here was deleted: never brought back as a new one
             engine = {"engine": True, "session_id": session_id} if entry.get("engine") else {}
+            if alive:
+                _place_once(store, session_id, row, item.cwd)
+                _unwrap_once(store, session_id, unwraps)
+                _picture_once(store, session_id, entry, item.agent, item.id,
+                              lambda item=item: remove_secrets(item.read()), pictures)
             if alive and _unlinked(row, item):
                 try:
                     _link_existing(store, session_id, item, row, entry)  # synced before its engine existed

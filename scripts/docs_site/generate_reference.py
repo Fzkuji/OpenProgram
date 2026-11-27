@@ -236,12 +236,8 @@ def generate_provider_registry(docs_root: Path = DOCS_ROOT) -> list[Path]:
              "Wire-level facts for every built-in provider, straight from its "
              "`provider.json`. For how to sign in and use each one, see "
              "[Providers](../models/providers.md).\n"]
-    # API-key env vars live in env_api_keys.py, not provider.json.
-    try:
-        from openprogram.models.providers.settings.env_api_keys import _PROVIDER_ENV_VARS
-        env_of: dict = dict(_PROVIDER_ENV_VARS)
-    except Exception:
-        env_of = {}
+    # API-key env vars live in the connection entries, not provider.json.
+    from openprogram.models.auth.env_api_keys import env_vars_for
 
     rows_by_provider = []
     for dirname, data in entries:
@@ -255,10 +251,8 @@ def generate_provider_registry(docs_root: Path = DOCS_ROOT) -> list[Path]:
             if ep.get("base_url"):
                 url_label = "Base URL" if ep_name == "default" else f"Base URL ({ep_name})"
                 rows.append((url_label, f"`{ep['base_url']}`"))
-        envs = env_of.get(pid)
+        envs = env_vars_for(pid)
         if envs:
-            if isinstance(envs, str):
-                envs = [envs]
             rows.append(("API-key env", ", ".join(f"`{e}`" for e in envs)))
         thinking = data.get("thinking")
         if isinstance(thinking, dict):

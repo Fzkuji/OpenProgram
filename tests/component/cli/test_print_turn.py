@@ -25,6 +25,7 @@ import pytest
 from openprogram.interfaces.cli import chat as chat_module
 from openprogram.interfaces.cli.print_mode import print_events, print_stop, print_turn, worker_turn
 from openprogram.models.providers.catalog import api_registry
+from openprogram.state.store.project import project_store
 from openprogram.models.providers.catalog.enabled_models import ENABLED_MODELS
 from openprogram.models.providers.types import (
     AssistantMessage,
@@ -533,7 +534,7 @@ def test_a_folder_that_cannot_take_the_project_marker_runs_unbound(provider, tmp
     (locked / "README").write_text("x")
     locked.chmod(0o555)
     try:
-        assert print_turn.working_directory_project(locked) is None
+        assert project_store.working_directory_project(locked) is None
         assert "could not be opened as the conversation's project" in capsys.readouterr().err
         assert not (locked / ".openprogram").exists()
 
@@ -820,6 +821,7 @@ main()
 '''
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("second_signal", [True, False], ids=["second-sigterm", "grace-ends"])
 def test_a_turn_that_does_not_stop_still_ends_the_command_cleanly(tmp_path, second_signal):
     import subprocess
@@ -921,6 +923,7 @@ def _alive(pid: int) -> bool:
     return True
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("left_running", [False, True],
                          ids=["two-signals-at-once", "turn-left-running"])
 def test_the_command_a_stopped_turn_ran_does_not_outlive_it(tmp_path, left_running):

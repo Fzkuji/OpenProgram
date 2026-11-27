@@ -5,7 +5,7 @@ from fastapi import FastAPI, WebSocket
 from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from openprogram.state import settings as setting_registry
+from openprogram.host.security import outbound_settings
 from openprogram.host.security.safe_http import (
     OutboundSecurityConfig,
     PolicyProxyConfig,
@@ -37,7 +37,7 @@ VALID_SETTINGS = {
 
 
 def test_owner_outbound_url_settings_are_strict_normalized_and_immutable():
-    settings = setting_registry.parse_outbound_url_settings(VALID_SETTINGS)
+    settings = outbound_settings.parse_outbound_url_settings(VALID_SETTINGS)
 
     assert settings.model_dump(mode="json", exclude_none=True) == {
         "exceptions": [
@@ -62,7 +62,7 @@ def test_owner_outbound_url_settings_are_strict_normalized_and_immutable():
 
 def test_owner_outbound_url_settings_reject_ipv4_mapped_link_local_origin():
     with pytest.raises(ValueError, match="invalid outbound URL security"):
-        setting_registry.parse_outbound_url_settings(
+        outbound_settings.parse_outbound_url_settings(
             {
                 "exceptions": [
                     {
@@ -75,7 +75,7 @@ def test_owner_outbound_url_settings_reject_ipv4_mapped_link_local_origin():
 
 
 def test_owner_outbound_url_settings_build_consumer_scoped_security():
-    settings = setting_registry.parse_outbound_url_settings(VALID_SETTINGS)
+    settings = outbound_settings.parse_outbound_url_settings(VALID_SETTINGS)
 
     skills = settings.security_for("skills.configured.catalog")
     assert skills.owner_exceptions == (
@@ -226,7 +226,7 @@ def test_owner_outbound_url_settings_build_consumer_scoped_security():
 )
 def test_owner_outbound_url_settings_reject_invalid_or_broad_authority(value):
     with pytest.raises(ValueError) as exc_info:
-        setting_registry.parse_outbound_url_settings(value)
+        outbound_settings.parse_outbound_url_settings(value)
 
     message = str(exc_info.value)
     assert "QUERY-SECRET" not in message
@@ -248,12 +248,12 @@ def test_loaded_owner_settings_default_fail_closed_on_invalid_persisted_config()
     }
 
     with pytest.raises(ValueError, match="invalid outbound URL security configuration"):
-        setting_registry.load_outbound_security_config(
+        outbound_settings.load_outbound_security_config(
             "skills.configured.catalog", config=config
         )
 
     with pytest.raises(ValueError, match="invalid outbound URL security configuration"):
-        setting_registry.load_outbound_security_config(
+        outbound_settings.load_outbound_security_config(
             "skills.configured.catalog", config={"security": []}
         )
 
@@ -282,9 +282,9 @@ def test_owner_exception_batch_is_bounded_and_duplicate_free():
     }
 
     with pytest.raises(ValueError, match="invalid outbound URL security"):
-        setting_registry.parse_outbound_url_settings(too_many)
+        outbound_settings.parse_outbound_url_settings(too_many)
     with pytest.raises(ValueError, match="invalid outbound URL security"):
-        setting_registry.parse_outbound_url_settings(duplicate)
+        outbound_settings.parse_outbound_url_settings(duplicate)
 
 
 def test_managed_factories_load_owner_policy_without_minting_callsite_authority(

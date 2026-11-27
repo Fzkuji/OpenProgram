@@ -21,7 +21,7 @@ from openprogram.models.auth import (
 )
 
 
-def _oauth_cred(provider="openai-codex", access="A", refresh="R", email="") -> Credential:
+def _oauth_cred(provider="qwen", access="A", refresh="R", email="") -> Credential:
     return Credential(
         provider_id=provider, kind="oauth",
         identity={"email": email} if email else {},
@@ -39,7 +39,7 @@ def _api_cred(provider="openai", key="sk-xxx") -> Credential:
     )
 
 
-def _file(root: Path, provider="openai-codex") -> Path:
+def _file(root: Path, provider="qwen") -> Path:
     return root / "auth" / provider / "credentials.json"
 
 
@@ -54,7 +54,7 @@ def _no_env_keys(monkeypatch):
 def test_add_and_read(tmp_path: Path):
     s = AuthStore(root=tmp_path)
     s.add_credential(_oauth_cred())
-    pool = s.get("openai-codex")
+    pool = s.get("qwen")
     assert [c.payload.auth_value for c in pool.credentials] == ["A"]
     assert pool.strategy == "in_order"
 
@@ -83,9 +83,9 @@ def test_signing_in_again_renews_the_row_in_place(tmp_path: Path):
     s = AuthStore(root=tmp_path)
     first = s.add_credential(_oauth_cred(access="old", email="me@example.com"))
     s.add_credential(_oauth_cred(access="other", email="you@example.com"))
-    s.update("openai-codex", first.id, lambda c: setattr(c, "label", "Mine"))
+    s.update("qwen", first.id, lambda c: setattr(c, "label", "Mine"))
     s.add_credential(_oauth_cred(access="new", email="me@example.com"))
-    rows = s.get("openai-codex").credentials
+    rows = s.get("qwen").credentials
     assert [(c.id == first.id, c.label, c.payload.auth_value) for c in rows] == \
         [(True, "Mine", "new"), (False, "", "other")]
 
@@ -103,9 +103,9 @@ def test_delete_provider_removes_the_file(tmp_path: Path):
     s = AuthStore(root=tmp_path)
     s.add_credential(_oauth_cred())
     assert _file(tmp_path).exists()
-    s.delete_provider("openai-codex")
+    s.delete_provider("qwen")
     assert not _file(tmp_path).exists()
-    assert s.get("openai-codex").credentials == []
+    assert s.get("qwen").credentials == []
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX symlink semantics")
@@ -118,7 +118,7 @@ def test_delete_provider_unlinks_a_symlink_without_deleting_its_target(tmp_path:
     path.unlink()
     path.symlink_to(outside)
 
-    store.delete_provider("openai-codex")
+    store.delete_provider("qwen")
 
     assert outside.read_text() == "outside"
     assert not path.exists()
@@ -127,15 +127,15 @@ def test_delete_provider_unlinks_a_symlink_without_deleting_its_target(tmp_path:
 def test_delete_provider_does_not_report_success_when_unlink_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
-    from openprogram.models.auth.credentials import PrivateAtomicWriteError
-    from openprogram.models.auth.credentials import io
+    from openprogram.state.private_files import PrivateAtomicWriteError
+    from openprogram.state import private_files as io
 
     store = AuthStore(root=tmp_path)
     store.add_credential(_oauth_cred())
     monkeypatch.setattr(io.os, "unlink", lambda _path: (_ for _ in ()).throw(OSError("unlink denied")))
 
     with pytest.raises(PrivateAtomicWriteError) as caught:
-        store.delete_provider("openai-codex")
+        store.delete_provider("qwen")
 
     assert caught.value.code == "delete"
     assert caught.value.committed is False
@@ -168,7 +168,7 @@ def test_an_environment_row_keeps_its_place_once_moved(tmp_path: Path, monkeypat
 
 def test_reload_after_restart(tmp_path: Path):
     AuthStore(root=tmp_path).add_credential(_oauth_cred(access="secret123"))
-    pool = AuthStore(root=tmp_path).get("openai-codex")
+    pool = AuthStore(root=tmp_path).get("qwen")
     assert pool.credentials[0].payload.auth_value == "secret123"
 
 
@@ -176,7 +176,7 @@ def test_the_file_holds_strategy_list_and_cursor(tmp_path: Path):
     AuthStore(root=tmp_path).add_credential(_oauth_cred())
     doc = json.loads(_file(tmp_path).read_text())
     assert {"v", "provider_id", "strategy", "cursor", "credentials"} <= set(doc)
-    assert doc["provider_id"] == "openai-codex"
+    assert doc["provider_id"] == "qwen"
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX permission semantics")
@@ -185,7 +185,7 @@ def test_wide_permission_file_remains_readable(tmp_path: Path):
     path = _file(tmp_path)
     os.chmod(path, 0o644)
 
-    pool = AuthStore(root=tmp_path).get("openai-codex")
+    pool = AuthStore(root=tmp_path).get("qwen")
     assert pool.credentials[0].payload.auth_value == "SECRET-WIDE"
     assert stat.S_IMODE(path.stat().st_mode) == 0o644
 
@@ -195,7 +195,7 @@ def test_corrupt_file_without_a_good_copy_raises(tmp_path: Path):
     path.parent.mkdir(parents=True)
     path.write_text("{not: json}")
     with pytest.raises(AuthCorruptCredentialError):
-        AuthStore(root=tmp_path).get("openai-codex")
+        AuthStore(root=tmp_path).get("qwen")
 
 
 def test_schema_mismatch_raises(tmp_path: Path):
@@ -205,7 +205,7 @@ def test_schema_mismatch_raises(tmp_path: Path):
     d["v"] = 99
     path.write_text(json.dumps(d))
     with pytest.raises(AuthCorruptCredentialError):
-        AuthStore(root=tmp_path).get("openai-codex")
+        AuthStore(root=tmp_path).get("qwen")
 
 
 # ---- another process --------------------------------------------------------
@@ -213,7 +213,7 @@ def test_schema_mismatch_raises(tmp_path: Path):
 def test_a_write_by_another_process_is_read(tmp_path: Path):
     s1 = AuthStore(root=tmp_path)
     s1.add_credential(_oauth_cred(access="v1"))
-    assert s1.get("openai-codex").credentials[0].payload.auth_value == "v1"
+    assert s1.get("qwen").credentials[0].payload.auth_value == "v1"
 
     path = _file(tmp_path)
     d = json.loads(path.read_text())
@@ -222,14 +222,14 @@ def test_a_write_by_another_process_is_read(tmp_path: Path):
     future = path.stat().st_mtime + 5
     os.utime(path, (future, future))
 
-    assert s1.get("openai-codex").credentials[0].payload.auth_value == "v2"
+    assert s1.get("qwen").credentials[0].payload.auth_value == "v2"
 
 
 def test_a_file_removed_by_another_process_is_an_empty_list(tmp_path: Path):
     s = AuthStore(root=tmp_path)
     s.add_credential(_oauth_cred())
     _file(tmp_path).unlink()
-    assert s.get("openai-codex").credentials == []
+    assert s.get("qwen").credentials == []
 
 
 # ---- every provider -----------------------------------------------------------
@@ -239,7 +239,7 @@ def test_list_pools_enumerates_providers(tmp_path: Path):
     s.add_credential(_oauth_cred())
     s.add_credential(_api_cred())
     s.add_credential(_api_cred(provider="anthropic", key="ant-k"))
-    assert sorted(p.provider_id for p in s.list_pools()) == ["anthropic", "openai", "openai-codex"]
+    assert sorted(p.provider_id for p in s.list_pools()) == ["anthropic", "openai", "qwen"]
 
 
 # ---- events -------------------------------------------------------------------
@@ -250,7 +250,7 @@ def test_add_credential_emits_events(tmp_path: Path):
     s.subscribe(events.append)
     c = s.add_credential(_oauth_cred())
     added = [e for e in events if e.type == AuthEventType.POOL_MEMBER_ADDED]
-    assert added and added[-1].credential_id == c.id and added[-1].provider_id == "openai-codex"
+    assert added and added[-1].credential_id == c.id and added[-1].provider_id == "qwen"
     assert events[-1].type == AuthEventType.CREDENTIALS_CHANGED
 
 
@@ -259,7 +259,7 @@ def test_remove_credential_emits_event(tmp_path: Path):
     c = s.add_credential(_oauth_cred())
     events: list[AuthEvent] = []
     s.subscribe(events.append)
-    s.remove_credential("openai-codex", c.id)
+    s.remove_credential("qwen", c.id)
     assert any(e.type == AuthEventType.POOL_MEMBER_REMOVED for e in events)
 
 
@@ -363,15 +363,15 @@ def test_a_change_applies_to_the_file_as_it_is_now(tmp_path: Path):
 def test_a_refreshed_token_survives_a_use_recorded_at_the_same_time(tmp_path: Path):
     a, b = AuthStore(root=tmp_path), AuthStore(root=tmp_path)
     cred = a.add_credential(_oauth_cred(access="ACCESS-OLD", refresh="RT-OLD"))
-    b.get("openai-codex")
+    b.get("qwen")
 
     def refresh(row: Credential) -> None:
-        b.record_use("openai-codex", cred.id, 1)
+        b.record_use("qwen", cred.id, 1)
         row.payload = CredentialData(kind="oauth", auth_value="ACCESS-NEW",
                                      data={"refresh_token": "RT-NEW"})
 
-    a.update("openai-codex", cred.id, refresh)
-    row = AuthStore(root=tmp_path).find("openai-codex", cred.id)
+    a.update("qwen", cred.id, refresh)
+    row = AuthStore(root=tmp_path).find("qwen", cred.id)
     assert (row.payload.auth_value, row.payload.data["refresh_token"]) == ("ACCESS-NEW", "RT-NEW")
     assert row.use_count == 1
 
@@ -406,7 +406,7 @@ def test_clearing_a_provider_removes_every_copy_and_its_folder(tmp_path: Path):
 
 
 def test_a_replaced_key_leaves_no_copy_on_disk(tmp_path: Path, monkeypatch):
-    from openprogram.models.auth import manage
+    from openprogram.models.listing import manage
     s = AuthStore(root=tmp_path)
     set_store_for_testing(s)
     try:

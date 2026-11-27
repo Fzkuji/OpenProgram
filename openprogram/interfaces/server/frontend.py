@@ -22,6 +22,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from starlette.requests import Request
+
 from openprogram.operations.worker.startup_log import worker_print
 
 
@@ -213,7 +215,7 @@ def ensure_frontend_built() -> None:
 
 def mount_frontend(app) -> None:
     """Register static serving + SPA fallback. Call LAST in create_app()."""
-    from fastapi.responses import FileResponse, PlainTextResponse
+    from fastapi.responses import FileResponse, PlainTextResponse, RedirectResponse
     from starlette.datastructures import Headers
     from starlette.middleware.gzip import (
         GZipMiddleware,
@@ -284,8 +286,14 @@ def mount_frontend(app) -> None:
     # HEAD as well as GET: Next.js <Link> prefetch probes page routes with
     # HEAD, and a GET-only catch-all answered every probe with 405.
     @app.api_route("/{full_path:path}", methods=["GET", "HEAD"], include_in_schema=False)
-    async def _serve_frontend(full_path: str):  # noqa: ANN202
+    async def _serve_frontend(full_path: str, request: Request):  # noqa: ANN202
         rel = full_path.strip("/")
+        # "/" is only a way into the chat. An HTTP redirect keeps the
+        # address's fragment (a sign-in #token=…), and no page of the app
+        # loads, hydrates and then moves away from an empty "/".
+        if not rel:
+            query = request.url.query
+            return RedirectResponse("/chat" + (f"?{query}" if query else ""), status_code=307)
         # Machine prefixes never fall back to HTML: an unregistered
         # /api/... (typo'd fetch, removed endpoint) must 404, not return
         # the SPA shell with a 200.

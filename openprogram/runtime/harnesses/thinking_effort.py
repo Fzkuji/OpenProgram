@@ -1,0 +1,192 @@
+"""Thinking / reasoning-effort picker config + runtime apply helpers.
+
+The provider-specific effort tables, the model-aware lookup and the
+runtime-apply shim live with the runtime that applies them: a harness
+engine (``harnesses.codex``) reads a gateway model's default from here,
+and the Server's picker reads the same tables.
+
+The picker config drives the dropdown in the UI:
+    GET /api/providers/models → { thinking: { label, options, default, variant } }
+built from `_get_thinking_config_for_model(provider, model_id)`.
+
+Runtime-side, after the UI sends an effort back via the WS chat
+payload, we call `apply_thinking_effort(runtime, effort)` which
+normalises the value (falls back to the provider default resolved
+from `runtime.provider_id` if empty) and sets the unified
+`runtime.thinking_level` knob.
+"""
+from __future__ import annotations
+
+
+# UI label per provider — what the thinking picker is called in the UI.
+# Everything else (options, default, mapping) comes from thinking.json.
+THINKING_CONFIGS = {
+    "anthropic": {"label": "thinking"},
+    "openai": {"label": "reasoning effort"},
+    "gemini": {"label": "thinking"},
+    "google": {"label": "thinking"},
+    "amazon-bedrock": {"label": "thinking"},
+    "azure-openai-responses": {"label": "reasoning effort"},
+}
+
+
+# Short descriptions reused across providers when we build a per-model
+# config from `Model.thinking_levels`.
+_LEVEL_DESC = {
+    "minimal": "Minimal reasoning",
+    "low": "Quick reasoning",
+    "medium": "Balanced",
+    "high": "Deep reasoning",
+    "xhigh": "Extended effort",
+    "max": "Maximum effort",
+    "ultra": "Beyond maximum",
+}
+
+_LEVEL_ORDER = {
+    "none": -1,
+    "minimal": 0,
+    "low": 1,
+    "medium": 2,
+    "high": 3,
+    "xhigh": 4,
+    "max": 5,
+    "ultra": 6,
+}
+
+
+def get_thinking_config(provider: str) -> dict:
+    """Static config for a provider. Falls back to the OpenAI label."""
+    return THINKING_CONFIGS.get(provider, THINKING_CONFIGS["openai"])
+
+
+def get_thinking_config_for_model(provider: str, model_id: str | None) -> dict:
+    """Build the thinking picker config for a specific model.
+
+    Single source of truth: listing.list_models_for_provider, which
+    already merges Fetch data, models.dev, thinking.json, and catalog
+    into one consistent result. This function just reformats it for
+    the UI picker.
+    """
+    label = get_thinking_config(provider).get("label", "thinking")
+
+    def _build(levels: list[str], default: str | None, variant: str | None) -> dict:
+        # Account APIs do not agree on ordering: Codex currently returns
+        # weakest-to-strongest while Grok returns strongest-to-weakest. The
+        # GUI slider is labelled Faster -> Smarter, so expose one stable
+        # ascending order regardless of the upstream response order.
+        ordered = sorted(
+            dict.fromkeys(levels),
+            key=lambda level: (_LEVEL_ORDER.get(level, len(_LEVEL_ORDER)), level),
+        )
+        values = ["off", *ordered]
+        return {
+            "label": label,
+            "options": [
+                {"value": v, "desc": _LEVEL_DESC.get(v, "No reasoning" if v == "off" else v)}
+                for v in values
+            ],
+            "default": default or (ordered[len(ordered) // 2] if ordered else None),
+            "variant": variant,
+        }
+
+    from openprogram.runtime.harnesses import is_harness_provider
+    if is_harness_provider(provider):
+        return _harness_thinking_config(provider, model_id, _build)
+
+    if model_id:
+        # Enabled models: read thinking levels straight off the stored config
+        # spec row — no live browse / network. Only fall through to the live
+        # browse path for a model that isn't an enabled spec row (browse
+        # context, where derivation stays as-is).
+        from openprogram.models.providers.settings.storage import _read_providers_cfg
+        pcfg = _read_providers_cfg().get(provider, {})
+        for row in (pcfg.get("models") or []):
+            if row.get("id") == model_id:
+                levels = row.get("thinking_levels") or []
+                if levels:
+                    return _build(
+                        levels,
+                        row.get("default_thinking_level"),
+                        row.get("thinking_variant"),
+                    )
+                return {"label": label, "options": [], "default": None, "variant": None}
+
+        from openprogram.models.listing.listing import list_models_for_provider
+        for m in list_models_for_provider(provider):
+            if m.get("id") == model_id:
+                levels = m.get("thinking_levels") or []
+                if levels:
+                    return _build(
+                        levels,
+                        m.get("default_thinking_level"),
+                        m.get("thinking_variant"),
+                    )
+                return {"label": label, "options": [], "default": None, "variant": None}
+
+    # model_id not given or not found — provider-level fallback
+    from openprogram.models.providers.settings.thinking_spec import get_thinking_spec, get_default_effort
+    spec = get_thinking_spec(provider)
+    emap = spec.get("effort_map") or spec.get("budget_map")
+    if emap:
+        # ``off`` in a map is how "no thinking" is sent, not a level.
+        return _build([k for k in emap if k != "off"], get_default_effort(provider), None)
+    return {"label": label, "options": [], "default": None, "variant": None}
+
+
+def _harness_thinking_config(provider: str, model_id: str | None, build) -> dict:
+    """An outside agent's model: the efforts it lists, or those of the
+    OpenProgram model it runs (``openprogram:<provider>/<model>``)."""
+    from openprogram.runtime.harnesses.codex.engine import GATEWAY_PREFIX
+    if model_id and model_id.startswith(GATEWAY_PREFIX):
+        inner_provider, _, inner_model = model_id[len(GATEWAY_PREFIX):].partition("/")
+        if inner_provider and inner_model:
+            return get_thinking_config_for_model(inner_provider, inner_model)
+    from openprogram.runtime.harnesses.models import cached_harness, harness_model, warm
+    model = harness_model(provider, model_id)
+    if model is None:
+        # Reading the harness starts a process: never on this call's thread.
+        entry = cached_harness(provider)
+        if entry is None:
+            warm(provider)
+            # Not read yet: no answer about its levels (the read says when it has one).
+            return {"label": "reasoning effort", "options": [], "default": None, "variant": None, "pending": True}
+        model = next((m for m in entry.get("models") or [] if m.get("default")), None)
+    if not model or not model.get("efforts"):
+        return {"label": "reasoning effort", "options": [], "default": None, "variant": None}
+    # Codex's "none" and DeepSeek Harness's "off" are OpenProgram's "off";
+    # a model with neither lists no "off".
+    levels = [level for level in model["efforts"] if level not in ("none", "off")]
+    default = "off" if model.get("default_effort") == "none" else model.get("default_effort")
+    config = build(levels, default, None)
+    config["label"] = "reasoning effort"
+    if "none" not in model["efforts"] and "off" not in model["efforts"]:
+        config["options"] = [option for option in config["options"] if option["value"] != "off"]
+    return config
+
+
+def default_effort_for(runtime) -> str:
+    """Provider default thinking effort for a live runtime.
+
+    The runtime's ``provider_id`` (derived from its model namespace) picks the thinking.json
+    spec via thinking_spec; providers without a spec get the generic
+    OpenAI-compatible fallback.
+    """
+    from openprogram.models.providers.settings.thinking_spec import get_default_effort
+    return get_default_effort(getattr(runtime, "provider_id", None))
+
+
+def resolve_effort(effort, runtime) -> str:
+    """Return ``effort`` if truthy, else the runtime's provider default."""
+    return effort or default_effort_for(runtime)
+
+
+def apply_thinking_effort(runtime, effort: str) -> None:
+    """Push a normalized effort onto a live runtime.
+
+    Every runtime shares the unified ``runtime.thinking_level`` attribute
+    (pi-ai ThinkingLevel: off/minimal/low/medium/high/xhigh), which flows
+    into the provider's SimpleStreamOptions.reasoning — same abstraction
+    opencode / pi-ai use.
+    """
+    effort = resolve_effort(effort, runtime)
+    runtime.thinking_level = effort or "off"

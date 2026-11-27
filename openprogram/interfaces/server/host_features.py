@@ -108,7 +108,7 @@ def _conversational_update() -> dict:
     # A runtime in the version store updates through its own controller on
     # every platform (a Scheduled Task on Windows): install the new version,
     # move the pointer, keep the previous one for rollback.
-    from openprogram.operations.self_update.versions.layout import managed
+    from openprogram.host._platform.runtime_layout import managed
     if managed():
         return {"available": True, "reason": ""}
     return {"available": False,

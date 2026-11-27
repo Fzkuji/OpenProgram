@@ -35,7 +35,7 @@
 <table class="stack fixed">
 <thead><tr><th scope="col">领域和现有边界</th><th scope="col">职责</th></tr></thead>
 <tbody>
-<tr><th scope="row">持久化：<code translate="no">runtime/agent_registry/manager.py</code>、<code translate="no">workspace.py</code></th><td>保持 AgentSpec 和存储归属；提议同目录的 <code translate="no">configuration.py</code> / <code translate="no">resolution.py</code> 放类型化值和纯逻辑</td></tr>
+<tr><th scope="row">持久化：<code translate="no">runtime/agent_registry/manager.py</code>、<code translate="no">workspace.py</code></th><td>保持 AgentSpec 和存储归属；提议同目录的配置模块和解析模块放类型化值和纯逻辑</td></tr>
 <tr><th scope="row">API：<code translate="no">interfaces/server/routes/catalog/agents.py</code></th><td>一个原子 manager 操作；类型化的预览、修订和就绪响应；没有路由内合并或第二次写 tools</td></tr>
 <tr><th scope="row">函数调用：<code translate="no">runtime/agent/agent_function.py</code>、<code translate="no">llm.py</code>、<code translate="no">runtime/execution.py</code></th><td>新旧参数只规范化一次；不可变作用域配置；保持返回和校验，无 Program/MCP 工具循环，原生搜索需显式授权</td></tr>
 <tr><th scope="row">持久派发：<code translate="no">programs/tools/agents/agent/agent/agent.py</code>、<code translate="no">runtime/conversation/peer_agents/sub_agent_run.py</code></th><td>复用派发和任务生命周期；通过实际运行和 DAG 存储持久化快照和沿袭</td></tr>

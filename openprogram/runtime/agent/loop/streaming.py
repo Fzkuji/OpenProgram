@@ -194,8 +194,8 @@ async def _stream_in_conversation(
             llm_messages = await result
         else:
             llm_messages = result
-    from openprogram.programs._authoring import guides
-    guides.observe_request(llm_messages)
+    from openprogram.runtime.agent.loop import hooks as _loop_hooks
+    _loop_hooks.observe_request(llm_messages)
 
     # Per-turn memory prefetch — extract the latest user message and ask the
     # memory subsystem for relevant snippets. The result is already fenced as
@@ -255,11 +255,12 @@ async def _stream_in_conversation(
     # which is refused is left out only from an epoch's first request, and a
     # mode change leaves it alone; the dispatcher refuses the calls. A loaded
     # tool that is no longer offered stays, and a call of it says why.
-    from openprogram.models.providers.shared.tool_loads import loaded_records
-    from openprogram.programs import loaded_tools, note_request_loaded, split_tools_for_dispatch
+    from openprogram.models.providers.shared.tool_loads import loaded_records, loaded_tools
+    from openprogram.runtime import program_host
     from openprogram.runtime.agent.loop import tool_epoch
+    _program_host = program_host.host()
     _loaded = loaded_tools(llm_messages)
-    note_request_loaded(_loaded)
+    _program_host.note_request_loaded(_loaded)
     _submit = None
     if structured_plan is not None and structured_plan.mode == "tool":
         _submit = {
@@ -270,15 +271,14 @@ async def _stream_in_conversation(
     _epoch = tool_epoch.epoch_for(
         config.session_id, tool_epoch.epoch_key(config.model, llm_messages),
         context.tools or [], _submit)
-    _provider_tools, _ = split_tools_for_dispatch(
+    _provider_tools, _ = _program_host.split_tools_for_dispatch(
         [tool for tool in (context.tools or []) if tool.name not in _epoch.withheld],
         _loaded,
         loaded_records(llm_messages),
     )
-    # Every tool of a turn that offers the task tools takes ``task_progress``
-    # (todo/progress.py): progress rides on a real call, not a round trip.
-    from openprogram.programs.tools.planning.todo import progress as _task_progress
-    _provider_tools = _task_progress.annotate(_provider_tools, context.tools)
+    # The arguments Programs carry on every call (``hooks.CallArgument``):
+    # the task tools' ``task_progress`` rides on a real call, not a round trip.
+    _provider_tools = _loop_hooks.annotate_tools(_provider_tools, context.tools)
     _note_tool_loaded(config, llm_messages)
     try:
         from openprogram.runtime.context.session_db import default_db

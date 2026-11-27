@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import openprogram.interfaces.channels  # noqa: F401  the Server registers the channel interface the routes read
+from openprogram.programs.tools.planning.goal import standing
 from openprogram.runtime.conversation.always_on import runtime
 from openprogram.runtime.agent_registry import manager
 from openprogram.interfaces.server.routes.catalog import agents
@@ -97,7 +98,7 @@ def _work_client(tmp_path, monkeypatch):
     monkeypatch.setattr(runtime, "_db", lambda: db)
     monkeypatch.setattr("openprogram.runtime.context.session_db.default_db", lambda: db)
     monkeypatch.setattr(runtime, "_turn_running", lambda sid: False)
-    monkeypatch.setattr(runtime, "_goal", lambda sid: None)
+    monkeypatch.setattr(standing, "_goal", lambda sid: None)
     monkeypatch.setattr(runtime, "_broadcast", lambda frame: None)
     monkeypatch.setattr("openprogram.runtime.conversation.open_work._publish", lambda *a: None)
     tasks = [

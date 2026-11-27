@@ -34,7 +34,7 @@ class GeminiVisionProvider:
 
     @staticmethod
     def _resolve_key() -> str:
-        from openprogram.models.providers.settings.env_api_keys import resolve_provider_key
+        from openprogram.models.auth.env_api_keys import resolve_provider_key
         return resolve_provider_key("google") or ""
 
     def analyze(

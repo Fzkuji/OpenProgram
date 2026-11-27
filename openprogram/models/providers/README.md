@@ -7,15 +7,14 @@
 Python mirror of @mariozechner/pi-ai.
 
 Provider detection is :func:`detect_provider`. Building a Runtime is the
-runtime layer's (``openprogram.runtime.agent.runtime.factory.create_runtime``,
-with the provider-specific classes in
-``openprogram.runtime.agent.provider_runtimes``); the provider packages
-here hold only model, auth and wire code.
+runtime layer's (``openprogram.runtime.agent.runtime.factory.create_runtime``);
+the provider packages here hold only model, auth and wire code.
 
 ## Files in this directory
 
 - **`structured_output.py`** — Strict JSON Schema output normalization and local validation
 - **`types.py`** — Core type definitions
+- **`usage_port.py`** — What the provider call path tells usage metering, and asks of it
 
 ## Sub-packages
 

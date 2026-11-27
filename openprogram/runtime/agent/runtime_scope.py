@@ -188,7 +188,7 @@ def agent_scope(owner, *, request=False):
     from .call_scope import CallScope
     from openprogram.runtime.context import Context
     from openprogram.state.store import SessionNodeWriter, _store
-    from openprogram.programs._host.runtime import (
+    from openprogram.runtime.agent.call_state import (
         _current_tool_call_id, _current_tool_call_occurrence_id,
         _tool_call_identity_consumed,
     )

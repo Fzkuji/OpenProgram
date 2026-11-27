@@ -36,7 +36,7 @@ class TestGeminiProviderWiring:
         monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
         monkeypatch.delenv("GOOGLE_GENERATIVE_AI_API_KEY", raising=False)
         monkeypatch.setattr(
-            "openprogram.models.providers.settings.env_api_keys.resolve_provider_key",
+            "openprogram.models.auth.env_api_keys.resolve_provider_key",
             lambda *a, **k: None,
         )
         with pytest.raises(ValueError, match="API key"):

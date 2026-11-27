@@ -1,12 +1,203 @@
-<title>稳定版自动更新</title>
-<meta name="description" content="什么算更新，Desktop 和托管 CLI 如何校验并应用更新。">
-<h1>稳定版自动更新</h1>
-<p>更新是一个按清单校验过的完整稳定 GitHub Release。新提交不是更新。更新单位是整个产品：wheel、Web、Program、OCR、Browser 和模型都不单独更新。macOS App 和终端安装接收完整安装包；Windows 和 Linux App 接收已签名的<a href="#official-replay">封存版本</a>。</p>
-<p>能替换自己的 App 在后台下载并校验新版本，然后在侧栏标志旁显示 <strong>New</strong>；点一次<strong>重启以更新</strong>就换上新版本。</p>
+<title>自动更新</title>
+<meta name="description" content="OpenProgram 如何把更新发布成按内容寻址的层，已安装的 App 如何发现、下载、构建并切换到它。">
+<h1>自动更新</h1>
+<p>用户只安装一次，用最新 <code translate="no">vX.Y.0</code> 的安装包。之后的每次更新都在 App 内到达：只下载变了的文件，构建并试运行新版本，然后在侧栏标志旁显示 <strong>New</strong>；点<strong>重启以更新</strong>就切换过去。</p>
+<p>只有 GitHub Release 会到达已安装的 App；<code translate="no">main</code> 的每日同步不会。</p>
 
-<h2 id="architecture">从 Release 到平台</h2>
 <figure>
-<svg class="fig-wide" viewBox="0 0 680 388" role="img" aria-label="GitHub latest 只接受非草稿、非预发布的 vX.Y.Z 标签。Release 关卡要求资产唯一。清单关卡校验版本、字节数和 SHA-256。随后按安装类型和架构分流。macOS 的 Desktop，以及外壳需要变化时的 Windows 或 Linux Desktop，选中确切的安装包，流式写入可续传的 .part 文件，校验字节数和 SHA-256，Windows 再按本 App 的更新线检查 Authenticode，然后在能替换自己的 App 上准备好新版本并提供重启以更新，否则打开安装包由用户确认。macOS、Linux 或 Windows 的托管 CLI 从不可变标签取安装器，校验归档和能力清单，运行版本探测和隔离的 worker 冷启动，然后 macOS 和 Linux 切换 current，Windows 替换启动器；运行中的 worker 由用户重启。">
+<svg class="fig-wide" viewBox="0 0 680 300" role="img" aria-label="发布端在发布用的电脑上运行，不用 GitHub Actions：先运行 publish-github.sh，再运行 publish-updates.py run，它构建代码层，把新对象写成一个包，并给指针签名。这些文件上传到滚动的 updates 发行版：channel.json 对应已宣布的发行版，latest.json 对应每次发布，各自带着签名，包文件里是永不改变的对象。已安装的 App 在启动 30 秒后检查，之后每小时一次：校验指针的签名和序号，读取通往每处改动的层 tree，按字节范围从包里下载缺少的对象，组装、构建并试运行版本，保留到用户点重启以更新。">
+  <defs><marker id="au-l" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="34">发布端</text>
+  <text class="t-soft" x="0" y="58">本机，不用 Actions</text>
+  <text class="t-note" x="0" y="104" translate="no">publish-github.sh</text>
+  <text class="t-note" x="0" y="128" translate="no">publish-updates.py run</text>
+  <text class="t-note" x="0" y="164">构建代码层</text>
+  <text class="t-note" x="0" y="188">新对象写成一个包</text>
+  <text class="t-note" x="0" y="212">给指针签名</text>
+  <line class="ln" x1="172" y1="150" x2="206" y2="150" marker-end="url(#au-l)"/>
+  <text class="t-big" x="214" y="34" translate="no">updates</text>
+  <text class="t-soft" x="214" y="58">一个滚动发行版</text>
+  <rect class="tile" x="214" y="80" width="204" height="196" rx="8"/>
+  <text class="t-note" x="230" y="112" translate="no">channel.json</text>
+  <text class="t-soft" x="230" y="132">已宣布的发行版</text>
+  <text class="t-note" x="230" y="172" translate="no">latest.json</text>
+  <text class="t-soft" x="230" y="192">每次发布</text>
+  <text class="t-note" x="230" y="232" translate="no">pack-&lt;hash&gt;.pack</text>
+  <text class="t-soft" x="230" y="252">对象，永不改变</text>
+  <line class="ln-acc" x1="424" y1="120" x2="458" y2="120" marker-end="url(#au-l)"/>
+  <text class="t-big" x="466" y="34">已安装的 App</text>
+  <text class="t-soft" x="466" y="58">启动 30 秒后，之后每小时</text>
+  <text class="t-note" x="466" y="104">1  校验签名和序号</text>
+  <text class="t-note" x="466" y="128">2  读取变动的层 tree</text>
+  <text class="t-note" x="466" y="152">3  下载缺少的对象</text>
+  <text class="t-note" x="484" y="172">按字节范围</text>
+  <text class="t-note" x="466" y="200">4  组装、构建、试运行</text>
+  <text class="t-note" x="466" y="224">5  保留；重启以更新</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>发布端</strong><small>本机，不用 Actions：<code translate="no">publish-github.sh</code>，然后 <code translate="no">publish-updates.py run</code> 构建代码层，把新对象写成一个包，并给指针签名</small></li>
+  <li><strong><code translate="no">updates</code> 发行版</strong><small><code translate="no">channel.json</code> 对应已宣布的发行版，<code translate="no">latest.json</code> 对应每次发布，签名都在文件里；包里是永不改变的对象</small></li>
+  <li class="flow-end"><strong>已安装的 App</strong><small>启动 30 秒后，之后每小时：校验签名和序号；读取变动的层 tree；按字节范围下载缺少的对象；组装、构建、试运行；保留到重启以更新</small></li>
+</ol>
+</figure>
+
+<h2 id="published">发布了什么</h2>
+<p>所有文件都在 <code translate="no">Fzkuji/OpenProgram</code> 的一个滚动 GitHub 发行版上，标签 <code translate="no">updates</code>：预发布，永不标为 latest，也不匹配 <code translate="no">v*</code>。客户端只通过 <code translate="no">https://github.com/Fzkuji/OpenProgram/releases/download/updates/&lt;name&gt;</code> 读取，这个地址只在一处定义：<code translate="no">official/channel.py</code> 的 <code translate="no">UPDATES_URL</code>。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">文件</th><th scope="col">内容</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">channel.json</code></th><td>最新的已宣布发行版。已安装的 App 读它</td></tr>
+<tr><th scope="row"><code translate="no">latest.json</code></th><td>每次发布，包括每日同步。只在设置 <code translate="no">OPENPROGRAM_UPDATE_POINTER=latest</code> 时读取：开发版和测试</td></tr>
+<tr><th scope="row"><code translate="no">pack-&lt;12 hex&gt;.pack</code></th><td>对象首尾相接，没有文件头，以自身 sha256 的前缀命名。发布后永不改变</td></tr>
+<tr><th scope="row"><code translate="no">runtime-&lt;platform&gt;-&lt;base&gt;.json</code></th><td>Release 工作流构建并连同包一起上传的运行时层，等待引用它的那次发布</td></tr>
+<tr><th scope="row"><code translate="no">shell-&lt;platform&gt;-&lt;version&gt;.json</code></th><td>App 外壳层的同类文件，由所属 vX.Y.0 的 Release 工作流上传</td></tr>
+</tbody>
+</table>
+<details>
+<summary>指针字段</summary>
+<p>指针文件是 <code translate="no">{"signed": "&lt;pointer JSON&gt;", "signature": "&lt;hex&gt;"}</code>。签名的文本里有 <code translate="no">schema</code>（2）、<code translate="no">pointer</code>（<code translate="no">channel</code> 或 <code translate="no">latest</code>，一个不能冒充另一个）、<code translate="no">sequence</code>、<code translate="no">published_at</code>、<code translate="no">version</code>（三段或四段）、<code translate="no">announce</code>、<code translate="no">build</code>（提交，12 位十六进制）、<code translate="no">notes</code>、<code translate="no">commit</code>、<code translate="no">shell_compat</code>、<code translate="no">layers</code>（<code translate="no">{name: {manifest, pack, offset, length}}</code>；外壳层另有 App 的 <code translate="no">version</code>）和 <code translate="no">packs</code>（<code translate="no">{name: {bytes, sha256}}</code>）。</p>
+<p><code translate="no">channel.json</code> 的 <code translate="no">announce</code> 必须为 true。<code translate="no">sequence</code> 在两个指针之间统一递增。签名是对签名文本的十六进制 Ed25519 签名，密钥在 <code translate="no">RELEASE_PUBLIC_KEYS</code> 中（<code translate="no">official/signing.py</code>；<code translate="no">update-service.js</code> 里是同一把）。</p>
+</details>
+
+<h2 id="format">格式</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">单位</th><th scope="col">是什么</th></tr></thead>
+<tbody>
+<tr><th scope="row">对象</th><td>一个文件的字节，以其 sha256 命名，存为独立的 zstd 帧（级别 19）</td></tr>
+<tr><th scope="row">分片</th><td>1 MiB 及以上的文件按固定偏移切成 256 KiB 的分片发布，每片是一个对象。重签名的二进制只改文件头和末尾的签名，中间的分片名字不变</td></tr>
+<tr><th scope="row">包</th><td>对象一个接一个。一次发布每个变动的层最多写一个包，tree 放在最后；每个对象的位置记在 tree 里</td></tr>
+<tr><th scope="row">Tree</th><td>一个目录，Git 的做法，本身也是以 sha256 命名的对象：<code translate="no">{"entries": [...]}</code>，每项是文件 <code translate="no">{name, mode, size, sha256, at}</code>（分片的文件用 <code translate="no">chunks: [[sha256, size, at], ...]</code> 代替 <code translate="no">at</code>）、链接 <code translate="no">{name, symlink}</code> 或目录 <code translate="no">{name, tree, at}</code>。<code translate="no">at</code> 是 <code translate="no">[pack, offset, length]</code>，tree 自己所在的包写作 <code translate="no">""</code>。代码源文件还带 Git blob id</td></tr>
+<tr><th scope="row">层格式</th><td>根 tree 里的 <code translate="no">schema</code> 3。客户端遇到别的格式的层，报出层名后拒绝。发布端整个重写代码层，运行时层和外壳层重建之前一律拒绝</td></tr>
+<tr><th scope="row">层清单</th><td>根 tree，另外带 <code translate="no">schema</code>、<code translate="no">layer</code> 和 <code translate="no">meta</code>。内容没变的目录沿用原来的 tree，客户端只读通往改动的那几个 tree</td></tr>
+</tbody>
+</table>
+<table class="stack even">
+<thead><tr><th scope="col">层</th><th scope="col">内容</th><th scope="col">元数据</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">code</code></th><td>所有平台共用。提交的全部跟踪文件放在 <code translate="no">source/</code> 下，构建好的 Web、文档和终端界面放在 <code translate="no">frontend/</code> 下</td><td>提交、Git tree、版本、base id、<code translate="no">shell_compat</code></td></tr>
+<tr><th scope="row"><code translate="no">runtime-&lt;platform&gt;</code></th><td>base：Python 和锁定的包、Playwright、Node、Git、uv，以及 <code translate="no">bin/</code> 里的 Tailscale 边车</td><td>base id、平台</td></tr>
+<tr><th scope="row"><code translate="no">shell-&lt;platform&gt;</code></th><td>macOS arm64 和 x86_64、Windows x86_64、Linux x86_64 和 arm64：构建、签名、公证后的 App 原样：<code translate="no">OpenProgram.app</code>、安装目录，或作为单个文件的 AppImage，保留权限位和链接</td><td>平台、App 版本、可执行文件、<code translate="no">shell_compat</code> 范围、Python 小版本、空目录</td></tr>
+</tbody>
+</table>
+<ul>
+<li>不带扩展属性：macOS 包的签名在 Mach-O 文件、<code translate="no">_CodeSignature</code> 和装订的票据里，都是普通文件。客户端校验前会清掉所有扩展属性。</li>
+<li>deb 继续用安装包：它装在只有 root 能写的 <code translate="no">/opt</code> 下。</li>
+<li>外壳只随功能版本变化，而功能版本总带着新提交。客户端仍按外壳层本身比较，所以当时不能替换自己、先取了代码的 App，之后也会取到外壳。</li>
+</ul>
+<p class="note">base id 是 <code translate="no">uv.lock</code>、pyproject 依赖、<code translate="no">product-runtime.json</code> 和 <code translate="no">apps/tailnet</code> 的 Git tree id 的哈希；提交里没有这个目录时不计入它。</p>
+
+<h2 id="client">已安装的 App 上</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">步骤</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">检查</th><td>启动约 30 秒后一次，之后每小时一次，失败的也一样。<code translate="no">update-service.js</code> 读取 <code translate="no">channel.json</code>；自动检查打开时运行 <code translate="no">openprogram upgrade --prepare --json</code>，由它完成其余步骤</td></tr>
+<tr><th scope="row">指针</th><td>先对签名文本验签。序号低于已见过的最高值（<code translate="no">&lt;runtime&gt;/channel-seen.json</code>）就拒绝，重放的旧指针不能把 App 带回旧代码。指针正好处在替换它的删除和上传之间而缺失时，这次检查当作没有新内容，不提示；下一次每小时检查会读到</td></tr>
+<tr><th scope="row">Tree</th><td>读代码层的；本平台运行时层的只在它的 base 在本机是新的时候才读。本机已有的 tree 不再下载。单个 tree 上限 16 MiB。树或文件所在的包不在指针列表里就拒绝：指针列出它各层的文件和树所在的每个包，包括沿用在旧包里的，垃圾回收保留的也正是这些包</td></tr>
+<tr><th scope="row">App 外壳</th><td>在能替换自己的 App 上（没被转移、所在文件夹可写、macOS 上有 Developer ID 团队、Linux 上是 AppImage 而不是 deb），本机的外壳层版本比运行中的 App（<code translate="no">OPENPROGRAM_SHELL_VERSION</code>）新时读取它，代码已经在本机时也一样</td></tr>
+<tr><th scope="row">谁来判断</th><td>App 能不能替换自己只在这里判断：每份 <code translate="no">upgrade --json</code> 报告都带 <code translate="no">shell_swap</code>，App 记住这个答案，不能替换的 App 每次检查都拿到安装包</td></tr>
+<tr><th scope="row">需要新外壳的代码</th><td>只在新 App 里运行。普通的 <code translate="no">upgrade</code> 拼好 App 就停下（<code translate="no">prepared</code>）；只有 <code translate="no">upgrade --prepare</code> 把拼好的外壳当作已安装的来构建和试运行，已安装的外壳容纳不了时也不会切换到保留的更新。新 App 第一次启动时切换过去</td></tr>
+<tr><th scope="row">无事可做</th><td>仓库已有发布的提交时为 <code translate="no">up_to_date</code>。外壳、启动器和本机的外壳层都容纳不了时为 <code translate="no">waiting_for_shell</code>；本平台的运行时还没发布时为 <code translate="no">waiting_for_runtime</code>。两者都不改动任何东西</td></tr>
+<tr><th scope="row">缺什么</th><td>仓库里没有对应 Git blob 的源文件；运行中版本或 base 里不存在同路径同大小文件的前端和运行时文件，存在的经哈希校验后直接收用；运行中的 App 里不存在同路径同大小文件的外壳文件</td></tr>
+<tr><th scope="row">分片的文件</th><td>只下载本机旧版本（同路径，大小不限）在同一偏移处没有的分片。分片在对象库里拼回整个文件，校验整个文件的 sha256，然后删掉分片</td></tr>
+<tr><th scope="row">下载</th><td>对每个包的下载地址发 HTTP Range 请求。GitHub 重定向到支持 Range 的 CDN；每个包只跟随一次重定向，每一跳都检查主机。相距不到 64 KiB 的范围合并，每个包最多 32 个请求，6 个并行。中断后从 <code translate="no">&lt;runtime&gt;/objects/</code> 里已保存的对象续传</td></tr>
+<tr><th scope="row">上限</th><td>每个响应以该范围的大小为上限；服务器回 206 以外的任何状态就不再请求它，只有连接中断、5xx 和过期的 CDN 地址才重试。每个对象经过以 tree 给出的大小为上限的流解压，不管帧头声称多大，再按 sha256 校验</td></tr>
+<tr><th scope="row">组装</th><td>在更新控制器下进行。用运行时层写出 base（文件系统支持写时复制就克隆，否则复制）。缺的 blob 写进 Git，用临时索引重建 tree，必须等于发布的 tree id，再以固定元数据提交到 <code translate="no">refs/heads/release</code>；<code translate="no">refs/openprogram/official/&lt;github sha&gt;</code> 记下它对应的 GitHub 提交</td></tr>
+<tr><th scope="row">新 App</th><td>试运行之前，在 App 旁边的隐藏文件夹 <code translate="no">.&lt;App 名&gt;.update/</code> 里拼出新 App，和 App 在同一个盘，不管数据在哪个盘：重建链接，文件取自对象库，或从运行中的 App 复制并校验哈希，Windows 卸载程序一并带上</td></tr>
+<tr><th scope="row">它的检查</th><td>macOS <code translate="no">codesign --verify --deep --strict</code>、运行中 App 的团队和版本；Windows 与运行中 App 主体相同的 Authenticode，未签名的 App 要求 <code translate="no">NotSigned</code>；Linux 是可执行的 ELF 文件。之后移到那里的 <code translate="no">staged/</code>，记入 <code translate="no">&lt;runtime&gt;/shell/staged.json</code>；失败不改动任何东西</td></tr>
+<tr><th scope="row">链接</th><td>按 tree 解析，指向 tree 之外的一律拒绝，只写一层的一部分时也一样</td></tr>
+<tr><th scope="row">构建</th><td>用这个提交和预构建的前端构建版本，不跑 Web 构建。<code translate="no">version.json</code> 记录 <code translate="no">official: {commit, sequence, code_layer}</code></td></tr>
+<tr><th scope="row">收尾</th><td>重放、试运行、保留或切换、回滚，见下文。成功后清理当前各层不再用到的对象；外壳的文件不留作对象，只留它的 tree</td></tr>
+<tr><th scope="row">带新外壳重启</th><td>重启以更新会退出 App；一个脱离的脚本（<code translate="no">sh</code>，Windows 上是 PowerShell）等 App 退出，在同一个盘上用两次改名换上新 App（第二次失败就撤回第一次），再打开它。只有换成功后，各自单独 try，Windows 上把卸载项的 <code translate="no">DisplayVersion</code>（HKCU，按 <code translate="no">InstallLocation</code>）改成新版本。调换后留下写着更新键的 <code translate="no">shell/activate</code>；新 App 启动时切换到准备好的版本</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">openprogram upgrade --from DIR</code> 从本地副本读取同样的文件（<code translate="no">channel.json</code> 和包）。<code translate="no">upgrade --check --json</code> 报告 <code translate="no">published_days_ago</code>，仅供参考；文本输出在指针超过 60 天时加一句说明。</p>
+
+
+<h2 id="official-replay">重放、试运行与切换</h2>
+<p>从版本库运行的安装把所有者自己的提交带到每个新的官方提交上。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">官方线</th><td>每接受一次更新，在 <code translate="no">refs/heads/release</code> 上加一个本地提交。不需要 GitHub 的历史：只需要新的官方提交，以及 <code translate="no">local</code> 上它不包含的提交</td></tr>
+<tr><th scope="row">重放</th><td>所有者的提交是 <code translate="no">release..local</code>。从旧到新在 <code translate="no">work/official-&lt;release&gt;</code> 里 cherry-pick。冲突的提交存到 <code translate="no">unreplayable/&lt;release&gt;/</code>，其余继续。release 已包含的提交跳过。候选基于官方版本构建，没动过的 Web 包直接克隆</td></tr>
+<tr><th scope="row">失败</th><td>构建或试运行失败时保存最新的提交并尝试其余的，最多重试 5 次，然后直接试未修改的官方版本。磁盘不足不丢弃提交。切换失败不重试</td></tr>
+<tr><th scope="row">先准备，重启时切换</th><td>App 的自动检查运行 <code translate="no">openprogram upgrade --prepare --json</code>。它下载、构建并试运行候选版本，然后停在 <code translate="no">ready</code>，标记为 <code translate="no">held</code> 并记下目标，App 于是显示<strong>重启以更新</strong>，什么都不切换，和 VS Code、Chrome 后台下载、重启时切换一样。worker 启动、看门狗和队列都不会推进被保留的更新</td></tr>
+<tr><th scope="row">被保留的更新</th><td>对同一目标再次准备什么都不做；更新的目标会先取消保留的那个。下一次 <code translate="no">upgrade --json</code> 在保留的更新仍是应安装的版本时（离线也一样）切换到它（结果 <code translate="no">activated</code>）；如果 <code translate="no">local</code> 在这之后移动过，就取消它，按常规方式安装。任何需要更新槽的其他更新（包括 <code translate="no">self_update</code> 工具）都会先取消它。<code translate="no">upgrade --check --json</code> 在 <code translate="no">prepared</code> 下列出它</td></tr>
+</tbody>
+</table>
+
+<h2 id="publisher">发布</h2>
+<p>代码不经过 GitHub Actions。<code translate="no">scripts/publishing/publish-github.sh</code> 把 <code translate="no">dev</code> 压成一个提交同步到 <code translate="no">main</code>（<a href="github-publishing.zh.html">GitHub 发布</a>），再运行 <code translate="no">scripts/release/publish-updates.py run</code>。</p>
+<ol class="flow">
+  <li><strong>读取</strong><small>通过下载地址读取线上的指针</small></li>
+  <li><strong>构建</strong><small>在本机构建代码层。前端在发布端自己的版本库里构建，没变就复用</small></li>
+  <li><strong>打包</strong><small>新对象写成一个包。<code translate="no">RUNTIME_PLATFORMS</code> 里的每个平台（macOS arm64 和 x86_64、Linux x86_64 和 arm64、Windows x86_64）都需要代码 base id 对应的运行时层：线上已有的、Release 工作流上传的，或本机构建的</small><p class="refused">缺任何一个平台：拒绝，什么都不发布。拒绝信息列出缺的平台和 <code translate="no">gh workflow run release.yml -R Fzkuji/OpenProgram --ref main -f runtime_layers_only=true</code></p></li>
+  <li class="flow-end"><strong>上传</strong><small>先上传新包，再对每个指针删一次、传一次。指针自带签名，读者看到的是旧的、没有、或新的。发行版上丢失的指针由发布端从本地历史补回</small></li>
+</ol>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">命令</th><th scope="col">作用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">publish-updates.py plan</code></th><td>说明发布某个提交会做什么；被拒绝时退出码为 3。<code translate="no">publish-github.sh</code> 在推送前运行它</td></tr>
+<tr><th scope="row"><code translate="no">publish-updates.py run</code></th><td>发布 <code translate="no">latest.json</code>；带 <code translate="no">--release vX.Y.Z</code> 时同时发布 <code translate="no">channel.json</code></td></tr>
+<tr><th scope="row"><code translate="no">publish-updates.py announce vX.Y.0</code></th><td>在 <code translate="no">channel.json</code> 中宣布功能版本。vX.Y.0 的 GitHub Release 发布、所有运行时层都在、Release 发布的每个能替换自己的 App（从它的 <code translate="no">release-manifest.json</code> 读）都有该版本的外壳层且既能容纳新代码也能容纳之前宣布的代码之前，一律拒绝。没有外壳层的平台（例如 AppImage 构建失败）继续用安装包</td></tr>
+<tr><th scope="row"><code translate="no">publish-updates.py upload-runtime-layer</code></th><td>Release 工作流按平台执行的步骤：从 base 构建运行时层，上传它的包和 <code translate="no">runtime-&lt;platform&gt;-&lt;base&gt;.json</code>。不移动指针，不需要密钥</td></tr>
+<tr><th scope="row"><code translate="no">publish-updates.py upload-shell-layer</code></th><td>Release 工作流对每个已签名的 macOS App、Windows App 和每个 AppImage（带 <code translate="no">--seed</code>，说明它的 Python 版本线）执行的步骤：用用户安装到的那个 App 构建外壳层，上传它的包和 <code translate="no">shell-&lt;platform&gt;-&lt;version&gt;.json</code>。带 <code translate="no">--no-upload</code>（演练时）只构建</td></tr>
+<tr><th scope="row"><code translate="no">publish-updates.py build-runtime-layer</code></th><td>在本机把现有的 base 目录做成运行时层，随下一次 run 发布</td></tr>
+<tr><th scope="row"><code translate="no">publish-updates.py release-page</code></th><td>用一次 API 调用创建只含代码的发行版的 GitHub Release 页面</td></tr>
+<tr><th scope="row"><code translate="no">publish-updates.py gc</code></th><td>删除已不可能被读取的包；线上的包大部分已失效时重新打包。读不了的指针从历史补回，但只有 404 算缺失：其他连不上发行版的情况一律中止</td></tr>
+</tbody>
+</table>
+<p class="note">一次每日发布约调用 GitHub 5 次：读一次发行版及其资产，上传一个包，<code translate="no">latest.json</code> 删一次传一次，再删除失效的包。</p>
+
+<h2 id="release-rules">什么会通知用户</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">发布</th><th scope="col">效果</th></tr></thead>
+<tbody>
+<tr><th scope="row">每日同步<span class="arg">不带 <code translate="no">--tag</code></span></th><td>只移动 <code translate="no">latest.json</code>。已安装的 App 看不到</td></tr>
+<tr><th scope="row">功能版本<span class="arg"><code translate="no">--tag vX.Y.0</code></span></th><td><code translate="no">publish-github.sh</code> 推送 <code translate="no">main</code> 和标签，只派发 Release 工作流（先演练，再等 12 小时）。工作流构建安装包、全部运行时层和全部外壳层。然后由 <code translate="no">publish-updates.py announce vX.Y.0</code> 宣布，所以 <code translate="no">channel.json</code> 最后才动。只有这一种可以改变运行时或外壳</td></tr>
+<tr><th scope="row">只含代码的版本<span class="arg"><code translate="no">--tag vX.Y.Z</code>、<code translate="no">vX.Y.Z.W</code></span></th><td>不跑工作流。发布端更新 <code translate="no">channel.json</code>，推送标签（不触发任何东西），并创建带说明的 Release 页面，不标为 latest，链接 X.Y.0 的安装包。运行时或外壳输入变了就拒绝：<code translate="no">this needs a feature release vX.Y.0 (runtime/shell changed)</code></td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">release.yml</code> 只由 <code translate="no">workflow_dispatch</code> 启动。带 <code translate="no">runtime_layers_only</code> 时只构建并上传运行时层。</p>
+
+<h2 id="gc">垃圾回收</h2>
+<p>线上的 <code translate="no">latest.json</code>、线上的 <code translate="no">channel.json</code>、发布端历史里最近 3 个指针、或等待发布的运行时层（本机构建的，或已上传的 <code translate="no">runtime-*.json</code>）还引用的包保留，其余删除。</p>
+<p>线上包的字节有一半以上不被两个指针的层（含 tree）使用时，<code translate="no">gc</code> 把用到的对象重新写进一个新包。存储量有上限，也没有增量链。</p>
+
+<h2 id="measured">实测</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">情况</th><th scope="col">大小</th></tr></thead>
+<tbody>
+<tr><th scope="row">代码层，首次发布</th><td>9,106 个文件，原始 170 MB；包 59 MB</td></tr>
+<tr><th scope="row">改一行 Python</th><td>新包 9.5 KB：5 个 tree 共 5.8 KB（根 330 B），加 3.7 KB 的文件。客户端连指针约下载 11 KB</td></tr>
+<tr><th scope="row">重签名的 macOS 外壳，代码不变</th><td>已签名的 1.5.1 App（1,463 MB，18,878 个文件）对比一份把 305 个 Mach-O 文件和 15 个 bundle 全部重签名的副本：168 个文件不同。按整个文件算是 929 MB，压缩后 291 MB</td></tr>
+<tr><th scope="row">同样的改动，按分片</th><td>压缩后 21 MB（原始 60 MB）：119 个 1 MiB 以下的改动文件 7 MB，49 个更大文件的分片 14 MB。Electron 和 Chromium 两个框架从 73 MB 降到 3 MB</td></tr>
+<tr><th scope="row">分片的代价</th><td>整个都变了的文件分片后压缩得更大：Electron Framework 整个 66.5 MB，256 KiB 分片 78.1 MB，1 MiB 分片 73.7 MB。如果从 4 MiB 起切 1 MiB 分片，重签名的外壳要 47 MB，因为 29 个 1 到 4 MiB 的改动文件仍是整个</td></tr>
+</tbody>
+</table>
+<p class="note">用一份扁平清单时，同样的改动客户端要下载约 644 KB；按目录的 tree（和 Git、OSTree 的 dirtree 对象一样）只留下通往改动的那条路径。</p>
+
+<details>
+<summary>为什么这样设计</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">决定</th><th scope="col">理由</th></tr></thead>
+<tbody>
+<tr><th scope="row">文件以哈希命名</th><td>和 <a href="https://ostreedev.github.io/ostree/">OSTree</a>、Steam depot 一样：任何版本已有的文件都不再下载，不管客户端从哪个版本跳过来</td></tr>
+<tr><th scope="row">源码树，而不是 Git bundle</th><td>bundle 需要一个前置提交，跳过几次更新的客户端可能没有。带 blob id 的源码树让任何客户端都能用手头的 blob 重建出发布的那棵 tree</td></tr>
+<tr><th scope="row">没有增量链</th><td>Codex 桌面 App（Sparkle）把增量链限制在 5 层。按内容寻址加重新打包，根本不需要增量链</td></tr>
+<tr><th scope="row">签名的静态指针</th><td>和 Claude Code 的签名清单、magpie 的签名校验和列表一样：一个小文件决定信任什么，序号防止重放</td></tr>
+<tr><th scope="row">用下载地址，不用 API</th><td>GitHub REST API 未认证时每小时 60 次，按 IP 共享。发行版下载没有这个限制，并且支持 HTTP Range</td></tr>
+<tr><th scope="row">代码在本机构建，运行时在 CI 构建</th><td>GitHub 上的活动只有每天一次推送和几次上传；CI 完整构建一个发行版约一小时，所以只在运行时变化时才跑 CI。每个平台的运行时要在那个平台上构建</td></tr>
+<tr><th scope="row">拒绝，而不是降级</th><td>新的运行时或外壳需要只有功能版本才带的原生文件；拒绝能让每个安装都停在能运行的版本上</td></tr>
+<tr><th scope="row">App 作为一层，重启时调换</th><td>和 Chrome、Sparkle 增量更新对同一个包的做法一样：签好名的 App 是更新单位，运行中的 App 已有的文件直接复用，调换是 App 关闭时的两次改名。签名在拼好的副本上检查，拼装出错到不了用户手里</td></tr>
+</tbody>
+</table>
+</details>
+
+<h2 id="architecture">安装包</h2>
+<p>安装包仍然装着整个产品。没有版本库的 App 或终端安装按下面的方式从最新的稳定 GitHub Release 更新；不能替换自己的版本库 App（deb、只读或被转移的 App），更新需要更新的外壳时，也从这里取 App 文件。</p>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 388" role="img" aria-label="GitHub latest 只接受非草稿、非预发布的 vX.Y.Z 标签。Release 关卡要求资产唯一。清单关卡校验版本、字节数和 SHA-256。随后按安装类型和架构分流。没有版本库的 Desktop，以及外壳需要变化时不能替换自己的 Desktop，选中确切的安装包，流式写入可续传的 .part 文件，校验字节数和 SHA-256，Windows 再按本 App 的更新线检查 Authenticode，然后在能替换自己的 App 上准备好新版本并提供重启以更新，否则打开安装包由用户确认。macOS、Linux 或 Windows 的托管 CLI 从不可变标签取安装器，校验归档和能力清单，运行版本探测和隔离的 worker 冷启动，然后 macOS 和 Linux 切换 current，Windows 替换启动器；运行中的 worker 由用户重启。">
   <defs><marker id="au-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
   <text class="t-big" x="0" y="34">GitHub latest</text>
   <text class="t-soft" x="0" y="58">非草稿、非预发布</text>
@@ -22,7 +213,7 @@
   <text class="t-soft" x="390" y="104">安装类型 + 架构</text>
   <rect class="tile" x="0" y="156" width="332" height="224" rx="8"/>
   <text class="t-big" x="16" y="190">Desktop</text>
-  <text class="t-soft" x="16" y="212">macOS · 外壳变化时的 Windows、Linux</text>
+  <text class="t-soft" x="16" y="212">没有版本库 · 外壳变化时的 deb</text>
   <text class="t-note" x="16" y="244">1  选中确切的安装包</text>
   <text class="t-note" x="16" y="268">2  流式写入可续传的 .part 文件</text>
   <text class="t-note" x="16" y="292">3  校验字节数和 SHA-256</text>
@@ -42,7 +233,7 @@
   <li><strong>GitHub latest</strong><small>非草稿、非预发布、<code translate="no">vX.Y.Z</code></small></li>
   <li><strong>Release 关卡</strong><small>资产唯一</small></li>
   <li><strong>清单关卡</strong><small>版本、字节数、SHA-256</small></li>
-  <li><strong>桌面</strong><small>macOS；外壳变化时的 Windows 和 Linux</small><small>选中确切的安装包；流式写入可续传的 <code translate="no">.part</code> 文件；校验字节数和 SHA-256；Windows 上按本 App 的更新线检查 Authenticode；准备好后提供重启以更新，App 不能替换自己时打开安装程序</small></li>
+  <li><strong>桌面</strong><small>没有版本库；外壳变化时的 deb 或不能替换自己的 App</small><small>选中确切的安装包；流式写入可续传的 <code translate="no">.part</code> 文件；校验字节数和 SHA-256；Windows 上按本 App 的更新线检查 Authenticode；准备好后提供重启以更新，App 不能替换自己时打开安装程序</small></li>
   <li class="flow-end"><strong>托管 CLI 和服务端</strong><small>macOS、Linux、Windows</small><small>从不可变标签取安装器；校验归档和能力清单；版本探测和隔离 worker 冷启动；macOS、Linux：切换 <code translate="no">current</code>；Windows：替换启动器；运行中的 worker 由用户重启</small></li>
 </ol>
 </figure>
@@ -61,11 +252,11 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">平台</th><th scope="col">资产</th></tr></thead>
 <tbody>
-<tr><th scope="row">macOS</th><td>Developer ID 签名、文件夹可写的 App 在数据目录里解包 <code translate="no">OpenProgram-&lt;version&gt;-mac-&lt;arch&gt;.zip</code>，只有 <code translate="no">codesign --verify --deep --strict</code> 通过、团队是自己的、版本等于发行版时才保留。重启时一个脱离的 shell 等 App 退出，用两次改名调换新旧包（第二次失败就撤回第一次），再打开 App</td></tr>
-<tr><th scope="row">macOS，其他情况</th><td>本地构建（没有团队）、被转移或只读的 App、没有 <code translate="no">.zip</code> 的发行版：<code translate="no">-mac-&lt;arch&gt;.dmg</code>，再回退到 <code translate="no">-unsigned.dmg</code>，保存到用户选择的位置</td></tr>
-<tr><th scope="row">Windows</th><td>只在发行版需要更新的外壳时：<code translate="no">OpenProgram-&lt;version&gt;-win-&lt;arch&gt;.exe</code>；未签名构建的 App 用 <code translate="no">-unsigned.exe</code>。下载到 App 的数据目录并校验；重启以更新会退出 App，以 <code translate="no">/S --updated --force-run</code> 运行它，静默安装后启动新 App</td></tr>
+<tr><th scope="row">macOS、Windows、AppImage</th><td>能替换自己的版本库 App 从外壳层取新外壳（<a href="#client">见上文</a>），不用安装包</td></tr>
+<tr><th scope="row">macOS，其他情况</th><td>没有版本库的 App、本地构建（没有团队）、被转移或只读的 App：<code translate="no">-mac-&lt;arch&gt;.dmg</code>，再回退到 <code translate="no">-unsigned.dmg</code>，保存到用户选择的位置</td></tr>
+<tr><th scope="row">Windows，其他情况</th><td>不能替换自己的 App：<code translate="no">OpenProgram-&lt;version&gt;-win-&lt;arch&gt;.exe</code>，未签名构建的 App 用 <code translate="no">-unsigned.exe</code>，下载、校验后打开给用户</td></tr>
 <tr><th scope="row">Linux deb</th><td>只在发行版需要更新的外壳时。App 装在 <code translate="no">/opt</code> 下，自己写不了，所以它不替换任何东西：<code translate="no">.deb</code> 保存到用户选择的位置，用系统的软件包安装器打开，由它询问管理员密码</td></tr>
-<tr><th scope="row">Linux AppImage</th><td>只在发行版需要更新的外壳时。下载到运行中文件的旁边，校验，设为可执行；重启以更新时一步改名覆盖运行中的文件，App 从新文件重启。所在文件夹不可写时，保存到用户选择的位置</td></tr>
+<tr><th scope="row">Linux AppImage，其他情况</th><td>所在文件夹不可写时：<code translate="no">.AppImage</code> 保存到用户选择的位置</td></tr>
 </tbody>
 </table>
 
@@ -90,10 +281,9 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">时机</th><th scope="col">下次检查</th></tr></thead>
 <tbody>
-<tr><th scope="row">App 启动（打包版）</th><td>30 秒后，或缓存算出的到期时间</td></tr>
-<tr><th scope="row">成功后</th><td><code translate="no">lastSuccessAt</code> + 24 小时</td></tr>
-<tr><th scope="row">失败后</th><td><code translate="no">lastAttemptAt</code> + 6 小时</td></tr>
-<tr><th scope="row">唤醒或改设置</th><td>清掉旧定时器，最多检查一次，重新排期</td></tr>
+<tr><th scope="row">App 启动（打包版）</th><td>30 秒后</td></tr>
+<tr><th scope="row">之后</th><td>每小时一次，不论上次成功还是失败。自动检查关闭时跳过</td></tr>
+<tr><th scope="row">立即检查</th><td>马上检查；每小时的定时器不变</td></tr>
 </tbody>
 </table>
 <details>
@@ -110,9 +300,10 @@
 <tr><th scope="row">网络路径</th><td>走 Chromium 网络栈，因此使用系统代理。API 返回 403、429、5xx 或无响应时，改用 <code translate="no">releases/latest</code> 重定向加 <code translate="no">release-manifest.json</code>。仍失败时，用可选的 <code translate="no">update-source.json</code>，只有带内置密钥的 Ed25519 签名才生效</td></tr>
 <tr><th scope="row">渲染进程 IPC</th><td>只暴露状态、检查、布尔设置、下载、打开发行版、订阅。不接受 URL、路径、哈希、仓库或命令。公开状态去掉资产名、URL 和 SHA-256。关窗口不中止任何操作</td></tr>
 <tr><th scope="row">下载文件</th><td>随机排他临时文件，处理短写，任何不符都删除。CLI 在新版本目录校验并拒绝归档路径穿越。启动器失败保留旧 <code translate="no">current</code></td></tr>
+<tr><th scope="row">新的 App 外壳</th><td>它的文件在指针签名覆盖的层里按哈希命名。拼好的 App 还要先通过平台自己的检查才放进暂存：macOS 上 <code translate="no">codesign --verify --deep --strict</code> 和运行中 App 的团队，Windows 上与运行中 App 主体相同的 Authenticode。调换脚本只用 <code translate="no">staged.json</code> 里、位于 App 自己的 <code translate="no">.&lt;App 名&gt;.update/staged/</code> 下的路径</td></tr>
 <tr><th scope="row">已签名的 Windows 线</th><td>已签名的 App 只接受 Authenticode 签名有效、且发布者与自己相同的安装器：同一张证书，或续期后主体名相同。发布者取自 App 自身的文件。读取失败、超时或 App 的签名已损坏时，比较前会再读一次；仍然读不到发布者，就拒绝该安装器</td></tr>
 <tr><th scope="row">未签名的 Windows 线</th><td>未签名构建的 App 接受状态为 <code translate="no">NotSigned</code>、大小和 SHA-256 与 <code translate="no">release-manifest.json</code> 一致的安装器。这能发现损坏、截断或被调换的下载。它不能证明发布者：该清单没有签名，只靠到固定主机的 HTTPS 取信，能在那里发布发行版的人就能发布安装器。已签名的 App 不走这条线</td></tr>
-<tr><th scope="row">更新签名覆盖什么</th><td><code translate="no">update-manifest.json.sig</code> 覆盖版本存储的文件：version、base、toolchain 和 <code translate="no">repo.bundle</code>。它不覆盖 App 安装器，也不覆盖 <code translate="no">release-manifest.json</code></td></tr>
+<tr><th scope="row">更新签名覆盖什么</th><td><code translate="no">channel.json</code> 里的签名覆盖指针，指针按哈希列出每份层清单和每个包，所以版本库更新取用的每个对象都在覆盖范围内，外壳层也一样。它不覆盖 App 安装器，也不覆盖 <code translate="no">release-manifest.json</code></td></tr>
 <tr><th scope="row">安装器子进程</th><td>固定仓库和版本。只放行 PATH、HOME、临时目录、语言、代理、XDG、OpenProgram 状态。不继承 provider 或 API 凭据，不继承归档或校验和覆盖项。<code translate="no">--json</code> 只输出一个 JSON 文档</td></tr>
 </tbody>
 </table>
@@ -121,7 +312,7 @@
 <table class="stack fixed">
 <thead><tr><th scope="col">发生了什么</th><th scope="col">结果</th></tr></thead>
 <tbody>
-<tr><th scope="row">离线、超时、限流</th><td>先回退到网页路径。自动检查：记录并退避 6 小时。手动检查：可重试的错误，并用平实的话说明原因。App 继续运行</td></tr>
+<tr><th scope="row">离线、超时、限流</th><td>先回退到网页路径。自动检查：到下一次每小时检查时再试。手动检查：可重试的错误，并用平实的话说明原因。App 继续运行</td></tr>
 <tr><th scope="row">Release 或清单无效</th><td>下载前拒绝。不退回 wheel、源码归档、其他架构或旧版本。可保留最近的有效元数据</td></tr>
 <tr><th scope="row">卡住、大小、哈希或 Windows 签名错误</th><td>下载中断时重试，并通过 <code translate="no">.part</code> 文件续传，重启后也能继续。大小、哈希或签名不符时删除文件并恢复重试。未验证的文件绝不打开</td></tr>
 <tr><th scope="row">CLI 归档、冷启动或启动器失败</th><td>在最后切换前非零退出。旧版本保持选中（macOS 和 Linux 上是 <code translate="no">current</code>，Windows 上是启动器）</td></tr>
@@ -148,7 +339,7 @@
 <thead class="sr"><tr><th scope="col">文件</th><th scope="col">内容</th></tr></thead>
 <tbody>
 <tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/desktop/main/self-update/update-service.js"><code translate="no">update-service.js</code></a></th><td>元数据、状态、缓存、调度、资产选择、下载、哈希、公开投影</td></tr>
-<tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/desktop/main/self-update/app-replace.js"><code translate="no">app-replace.js</code></a></th><td>重启时替换 App：macOS 解包、验签和调换；静默 NSIS；AppImage 改名</td></tr>
+<tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/desktop/main/self-update/app-replace.js"><code translate="no">app-replace.js</code></a></th><td>重启时替换 App：调换暂存的 App 外壳，Windows 卸载项的版本</td></tr>
 <tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/desktop/main/self-update/windows-signature.js"><code translate="no">windows-signature.js</code></a></th><td>Authenticode 状态、主体、指纹</td></tr>
 <tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/desktop/main.js"><code translate="no">apps/desktop/main.js</code></a></th><td>定时器、唤醒、IPC、多窗口广播</td></tr>
 <tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/desktop/main/preload.js"><code translate="no">main/preload.js</code></a></th><td>固定的渲染进程桥</td></tr>
@@ -158,40 +349,31 @@
 <tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/operations/self_update/github_release/github.py"><code translate="no">github_release/github.py</code></a></th><td>稳定版元数据、清单、不可变安装器获取</td></tr>
 <tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/scripts/install-release.sh"><code translate="no">scripts/install-release.sh</code></a>、<a href="https://github.com/Fzkuji/OpenProgram/blob/main/scripts/install-release.ps1"><code translate="no">.ps1</code></a></th><td>已发布的兼容入口；从同一标签取真正的安装器</td></tr>
 <tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/scripts/release/install-release.sh"><code translate="no">scripts/release/install-release.sh</code></a>、<a href="https://github.com/Fzkuji/OpenProgram/blob/main/scripts/release/install-release.ps1"><code translate="no">.ps1</code></a></th><td>下载、校验、冷启动、启动器暂存、原子激活</td></tr>
-<tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/operations/self_update/official/assets.py"><code translate="no">official/assets.py</code></a></th><td>release 资源格式：打包、签名、校验、解包</td></tr>
 <tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/operations/self_update/official/replay.py"><code translate="no">official/replay.py</code></a></th><td>把所有者的提交重放到已校验的 release 上，失败时丢弃</td></tr>
-<tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/scripts/release/create-update-assets.py"><code translate="no">create-update-assets.py</code></a></th><td>构建单个平台的资源，并生成签过名的 release 目录</td></tr>
+<tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/operations/self_update/official/channel.py"><code translate="no">official/channel.py</code></a></th><td>指针、签名和序号检查、下载地址、按字节范围的传输</td></tr>
+<tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/operations/self_update/official/objects.py"><code translate="no">official/objects.py</code></a></th><td>对象、包、层 tree、本地对象库</td></tr>
+<tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/operations/self_update/official/assemble.py"><code translate="no">official/assemble.py</code></a></th><td>本机缺什么；从各层得到 base、源码提交、前端和新 App</td></tr>
+<tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/operations/self_update/official/shell.py"><code translate="no">official/shell.py</code></a></th><td>运行中的 App、暂存的 App 及其记录、签名检查</td></tr>
+<tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/operations/self_update/official/fetch.py"><code translate="no">official/fetch.py</code></a></th><td><code translate="no">openprogram upgrade</code> 在版本库上做的事：读取、下载、应用</td></tr>
+<tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/operations/self_update/official/publish.py"><code translate="no">official/publish.py</code></a></th><td>代码层、运行时层和外壳层、拒绝规则、垃圾回收与重新打包</td></tr>
+<tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/scripts/release/publish-updates.py"><code translate="no">publish-updates.py</code></a></th><td>发布端：签名和 GitHub 调用；由 <code translate="no">publish-github.sh</code> 运行</td></tr>
 <tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/.github/workflows/release.yml"><code translate="no">release.yml</code></a></th><td>产物发布和 latest 端点关卡</td></tr>
 </tbody>
 </table>
 </details>
 
-<h2 id="official-replay">版本库上的正式更新</h2>
-<p>从版本库运行的安装用签过名的 release 资源更新，并把所有者自己的提交重放到新 release 上。</p>
-<table class="stack fixed">
-<thead class="sr"><tr><th scope="col">项目</th><th scope="col">规则</th></tr></thead>
-<tbody>
-<tr><th scope="row">资产</th><td>每个发行版都发布 <code translate="no">version-&lt;platform&gt;.tar.zst</code>、<code translate="no">base-&lt;platform&gt;.tar.zst</code>、<code translate="no">toolchain-&lt;platform&gt;.tar.zst</code>、<code translate="no">repo.bundle</code>、<code translate="no">SHA256SUMS</code> 和带 Ed25519 签名的 <code translate="no">update-manifest.json</code>，跳过若干版本的机器也能更新。客户端只下载缺少的部分：已有的 base 跳过，toolchain 只有在要构建 owner 提交时才下载。版本归档不含 venv 的链接和封印，因为它们带有构建机路径；解包时用构建自身的命令重建 venv，并在本机封存</td></tr>
-<tr><th scope="row">获取</th><td>不带参数的 <code translate="no">openprogram upgrade</code> 解析最新 release，在内存中校验 manifest、签名和校验和，再把本平台文件下载到 <code translate="no">&lt;runtime&gt;/downloads/&lt;release&gt;</code>，每个文件都按签名中的大小和哈希检查，下次运行时续传。<code translate="no">--from &lt;directory&gt;</code> 应用已经在本机的文件</td></tr>
-<tr><th scope="row">校验</th><td>解析清单前验签名，用清单验校验和，用校验和验本平台用到的资源。bundle 只把 <code translate="no">refs/heads/release</code> 向前移动，较旧的已签名 release 不能替换较新的。没有可信公钥的构建不接受任何 release</td></tr>
-<tr><th scope="row">重放</th><td>所有者的提交是 <code translate="no">release..local</code>，有压缩过的官方线就够。从旧到新在 <code translate="no">work/official-&lt;release&gt;</code> 里 cherry-pick。冲突的提交存到 <code translate="no">unreplayable/&lt;release&gt;/</code>，其余继续。release 已包含的提交跳过。候选基于 release 自身的版本构建，没动过的 Web 包直接克隆</td></tr>
-<tr><th scope="row">失败</th><td>构建或试运行失败时保存最新的提交并尝试其余的，最多重试 5 次，然后直接试未修改的 release。磁盘不足不丢弃提交。切换失败不重试。需要已安装外壳范围之外的 <code translate="no">shell_compat</code> 或 Python 小版本的 release 会等外壳更新，什么都不移动</td></tr>
-</tbody>
-</table>
-
 <h2 id="implementation-evidence">实现状态</h2>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">部分</th><th scope="col">状态</th></tr></thead>
 <tbody>
-<tr><th scope="row">桌面路径</th><td>已实现。<code translate="no">npm run check --workspace apps/desktop</code>。Windows 和 Linux 路径用替身测试；未在已发布的版本上走过</td></tr>
-<tr><th scope="row">托管 CLI 路径</th><td>已实现。<code translate="no">pytest tests/component/config/test_formal_release_updates.py tests/component/config/test_distribution_release</code></td></tr>
-<tr><th scope="row">安全和失败路径</th><td>已验证。<code translate="no">apps/desktop/tests/self-update/check-update-service.js</code></td></tr>
-<tr><th scope="row">Release 关卡</th><td>每个稳定版发布前都通过运行时、CLI、Desktop、清单和校验和检查。它们证明发布了什么，不代表运行中客户端的表现</td></tr>
-<tr><th scope="row">已安装的客户端</th><td>待完成：在已发布版本的真实安装上走一遍后台下载、macOS 调换和 Windows 静默安装；长时间运行和睡眠唤醒；官方 runner 上用真实证书的 Authenticode；真实的 GitHub 响应和真实代理</td></tr>
-<tr><th scope="row">版本库 release 资源与重放</th><td>已实现，以本地目录作为 release 来源测试。<code translate="no">pytest -q tests/component/self_update/official/test_replay.py</code></td></tr>
-<tr><th scope="row">版本库发布路径</th><td>已实现，在 macOS 上对模拟 GitHub 的本地服务器端到端通过（更新、续传、回退、拒绝）。已安装的副本信任官方签名密钥。Release 工作流只为 Linux 发布过签名的更新文件（v1.1.0）；macOS 和 Windows 的资产步骤在那次运行中失败，此后没有再运行。Linux 激活还需要再验证一次</td></tr>
+<tr><th scope="row">分层更新</th><td>已实现：按目录 tree 的格式、发布端、Release 工作流构建的运行时层、客户端、垃圾回收与重新打包、每小时的 <code translate="no">channel.json</code> 检查和发版规则。<code translate="no">pytest -q tests/unit/self_update/official/test_update_format.py tests/component/self_update/official/test_updates.py</code></td></tr>
+<tr><th scope="row">准备与重启</th><td>已实现。<code translate="no">pytest -q tests/component/self_update/official/test_prepare.py</code></td></tr>
+<tr><th scope="row">Desktop 和托管 CLI 的安装包路径</th><td>已实现。<code translate="no">npm run check --workspace apps/desktop</code>；<code translate="no">pytest tests/component/config/test_formal_release_updates.py tests/component/config/test_distribution_release</code>。Windows 和 Linux 路径用替身测试</td></tr>
+<tr><th scope="row">第二阶段：外壳层</th><td>macOS、Windows x86_64 和 Linux AppImage 已实现，用替身测试过：假的包和 AppImage、从运行中 App 的文件拼装、代码已在本机时更新的外壳、暂存检查、调换脚本和顺序、announce 的拒绝。<code translate="no">pytest -q tests/component/self_update/official/test_updates.py</code>；<code translate="no">npm run check --workspace apps/desktop</code>。还没在真实签名安装、一次 Release 工作流运行或 Windows 注册表上跑过</td></tr>
+<tr><th scope="row">第三阶段：安装包由层组装</th><td>未做。安装包将由已发布的层组装</td></tr>
+<tr><th scope="row">已安装的客户端</th><td>待完成：已发布版本的真实安装通过 GitHub 接收更新、长时间运行和睡眠、真实代理、真实证书的 Authenticode、真实 macOS 和 Windows App 上的外壳调换</td></tr>
 <tr><th scope="row">从 v0.6.6 或更早升级</th><td>v0.7.0 之前没有更新器：手动装一次当前 DMG。CLI 和服务端重新运行一次公开安装器</td></tr>
 </tbody>
 </table>
 
-<p class="note">不在范围内：Windows 沙箱、PyPI 产品安装、在运行中替换 App：调换只在点重启以更新时发生。</p>
+<p class="note">不在范围内：Windows 沙箱、PyPI 产品安装、在运行中替换 App：切换只在点重启以更新时发生。</p>

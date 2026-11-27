@@ -57,14 +57,14 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{
             __html: `(function () {
               try {
-                // "/" only forwards to /chat (app/page.tsx). Going there
-                // before any bundle loads skips loading, hydrating and then
-                // client-navigating away from an empty page. The hash (a
+                // "/" only forwards to /chat (app/page.tsx; the worker
+                // redirects it before any page loads). Where "/" is served
+                // anyway, go there before any bundle loads; the hash (a
                 // sign-in #token=…) goes along, and replace() keeps it out
-                // of history.
+                // of history. The theme still applies below: Next's own
+                // redirect can cancel this one.
                 if (location.pathname === '/') {
                   location.replace('/chat' + location.search + location.hash);
-                  return;
                 }
                 ${THEME_BOOTSTRAP_SCRIPT}
 

@@ -4,7 +4,7 @@ Nobody watches a check-in or a scheduled run, so a stuck one would otherwise
 hold its place and keep spending for ever. The clock starts when the run is
 admitted and is not reset by a restart, so a resumed run counts its earlier
 time too. A stop goes through the execution control path with the reason
-:data:`TIME_LIMIT`, and that reason is how each ending says why it stopped.
+:data:`~openprogram.runtime.execution.run_control.stop_reasons.TIME_LIMIT`, and that reason is how each ending says why it stopped.
 
 The Worker checks every run it can reach (:func:`stop_overdue`). A scheduled
 run in its own process cannot be signalled from the Worker, so that process
@@ -30,10 +30,10 @@ from typing import Any, Callable
 
 from openprogram.host._platform.processes import kill_process_tree
 from openprogram.runtime.execution.model import CommandKind, TERMINAL_EXECUTION_STATUSES, ExecutionStatus
+from openprogram.runtime.execution.run_control.stop_reasons import TIME_LIMIT, stopped_by_limit
 
 _LOG = logging.getLogger(__name__)
 
-TIME_LIMIT = "time_limit"
 CHECK_IN_LIMIT_S = 15 * 60.0
 SCHEDULED_RUN_LIMIT_S = 2 * 3600.0
 COMMAND_LIMIT_S = 2 * 3600.0
@@ -44,12 +44,6 @@ SCHEDULED_RUN_STOPPED = "Stopped at the 2 hour limit for a scheduled run"
 COMMAND_STOPPED = "Stopped at the 2 hour limit for a scheduled command"
 
 _LIMITS = {"runtime/always_on": CHECK_IN_LIMIT_S, "runtime/scheduler": SCHEDULED_RUN_LIMIT_S}
-
-
-def stopped_by_limit(execution: Any) -> bool:
-    """Whether this execution ended because it ran out of time."""
-    return (getattr(execution, "status", None) is ExecutionStatus.CANCELLED
-            and getattr(execution, "reason_code", None) == TIME_LIMIT)
 
 
 def _limit(store: Any, execution: Any) -> float | None:

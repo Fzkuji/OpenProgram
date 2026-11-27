@@ -21,7 +21,7 @@ def test_the_load_is_announced_past_the_runtime_note(monkeypatch):
     announced = []
     monkeypatch.setattr("openprogram.models.usage.prefix_fingerprint.expect_break",
                         lambda session_id, cause, **_kw: announced.append((session_id, cause)))
-    config = SimpleNamespace(session_id="s1", model=SimpleNamespace(provider="xai-subscription",
+    config = SimpleNamespace(session_id="s1", model=SimpleNamespace(provider="xai",
                                                                     api="openai-responses", id="grok-4.7"))
     note = RuntimeNote(content=[TextContent(text="[Runtime permission setting] bypass")], timestamp=0)
     streaming._note_tool_loaded(config, [_search_result(), note])

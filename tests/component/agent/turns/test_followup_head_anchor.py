@@ -51,7 +51,7 @@ def _runner_lifecycle(monkeypatch, tmp_path):
         control_mod._default_control_services.clear()
     execution_store_mod._store_for_path.cache_clear()
     session_store.shared._default_store = None
-    monkeypatch.setattr("openprogram.operations.worker.lock.is_held_by", lambda _pid: True)
+    monkeypatch.setattr("openprogram.host.worker.lock.is_held_by", lambda _pid: True)
     yield
     runner_mod.shutdown_runner()
     with control_mod._default_control_services_lock:

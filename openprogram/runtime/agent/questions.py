@@ -23,7 +23,7 @@ import uuid
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping, Optional
 
 
 class UserDeclined(Exception):
@@ -69,6 +69,28 @@ def live_workflow_questions(*, execution_id, attempt_id, generation, producer_id
         yield
     finally:
         _live_workflow_owner.reset(token)
+
+
+# The frontend's answer to ``ask_user``: a handler that takes the question
+# and returns the answer (it may block, e.g. on a WebSocket). The Server,
+# the channels and a follow-up ``Session`` install it; the ``ask_user``
+# tool asks it first. Process-wide and thread-safe, since a ContextVar
+# does not cross the threads tools run on.
+_ask_user_handler: Optional[Callable[[str], str]] = None
+_ask_user_lock = threading.Lock()
+
+
+def set_ask_user(handler: Optional[Callable[[str], str]]) -> None:
+    """Install the frontend's ``ask_user`` handler; None removes it."""
+    global _ask_user_handler
+    with _ask_user_lock:
+        _ask_user_handler = handler
+
+
+def ask_user_handler() -> Optional[Callable[[str], str]]:
+    """The installed frontend ``ask_user`` handler, or None."""
+    with _ask_user_lock:
+        return _ask_user_handler
 
 
 @dataclass

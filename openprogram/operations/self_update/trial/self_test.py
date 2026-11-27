@@ -56,7 +56,7 @@ class _NoWorker:
 def _controller(root: str):
     from ..control.switch import SwitchController
     from ..store import SelfUpdateStore
-    from ..versions.layout import Layout
+    from openprogram.host._platform.runtime_layout import Layout
 
     return SwitchController(SelfUpdateStore(), _TEST_UPDATE, _NoWorker(), Layout(Path(root)))
 
@@ -66,7 +66,7 @@ def _switch(root: str, version: str, base: str) -> dict:
     from ..store import SelfUpdateStore
     from ..types import UpdatePhase, UpdateRequest
     from ..versions import pointer
-    from ..versions.layout import Layout
+    from openprogram.host._platform.runtime_layout import Layout
 
     layout = Layout(Path(root))
     store = SelfUpdateStore()
@@ -88,7 +88,7 @@ def _switch(root: str, version: str, base: str) -> dict:
 def _rollback(root: str, candidate: str) -> dict:
     from ..store import SelfUpdateStore
     from ..versions import pointer
-    from ..versions.layout import Layout
+    from openprogram.host._platform.runtime_layout import Layout
 
     _controller(root)._rollback("updater self-test")
     return {"version": pointer.read(Layout(Path(root))).version,

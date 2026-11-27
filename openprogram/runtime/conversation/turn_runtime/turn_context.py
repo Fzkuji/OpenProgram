@@ -226,16 +226,16 @@ class TurnBindings:
             self._worktree_token = None
         # Deferred tools need no binding: each request reads what its own
         # messages loaded (``programs.loaded_tools``).
-        from openprogram.programs._host import runtime as tool_runtime
+        from openprogram.runtime import program_host
+        programs = program_host.host()
         # Exposure tiers: an application open in a window for this session
         # has its deferred entries resident for the session's requests.
         try:
-            from openprogram.programs._host.ui.bindings import open_application_ids
-            open_ids = open_application_ids(req.session_id)
+            open_ids = programs.open_application_ids(req.session_id)
         except Exception:
             _log.debug("could not read the session's open applications", exc_info=True)
             open_ids = set()
-        self._open_applications_token = tool_runtime.install_open_applications(open_ids)
+        self._open_applications_token = programs.install_open_applications(open_ids)
 
         # Project auto-commit (entity layer): snapshot which paths are
         # already dirty in the session's bound project BEFORE the agent
@@ -247,7 +247,7 @@ class TurnBindings:
         # agent dirt as the user's.
         if snapshot_project_baseline:
             try:
-                from openprogram.state.store.project import project_commit as _pc
+                from openprogram.state import project_commit as _pc
                 self.project_baseline = _pc.snapshot_baseline(req.session_id)
             except Exception:
                 self.project_baseline = None
@@ -354,9 +354,9 @@ class TurnBindings:
             _render_range_override as _render_range_var,
         )
         try:
-            from openprogram.programs._host import runtime as tool_runtime
+            from openprogram.runtime import program_host
             if self._open_applications_token is not None:
-                tool_runtime._open_applications.reset(self._open_applications_token)
+                program_host.host().reset_open_applications(self._open_applications_token)
             if self._surface_token is not None:
                 from openprogram.runtime.conversation.surface_context import (
                     current as _current_surface,

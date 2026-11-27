@@ -30,11 +30,10 @@ from openprogram.models.providers.types import AgentTool, AgentToolResult
 from openprogram.runtime.agent.runtime import Runtime
 from openprogram.models.providers.catalog.api_registry import get_api_provider, register_api_provider
 from openprogram.models.providers.recording.recording import (
-    PLACEHOLDER,
     RECORDING_FORMAT_VERSION,
     RecordingProvider,
-    remove_secret_values,
 )
+from openprogram.state.secret_removal import PLACEHOLDER, remove_secret_values
 from openprogram.models.providers.recording.replay import (
     ReplayMismatch,
     ReplayProvider,
@@ -135,6 +134,11 @@ def _forbid_network(monkeypatch: pytest.MonkeyPatch, message: str) -> None:
 @pytest.fixture
 def offline(monkeypatch: pytest.MonkeyPatch) -> None:
     """Fail loudly if anything under test opens a network connection."""
+    # A first credential lookup reads the models.dev catalogue; offline it has
+    # none, as on a machine with no network, instead of fetching it here.
+    from openprogram.models.providers.catalog.sources import models_dev
+
+    monkeypatch.setattr(models_dev, "_fetch_catalogue", lambda timeout: {})
     _forbid_network(monkeypatch, "replay must not open a network connection")
 
 
@@ -336,7 +340,7 @@ def test_structured_retry_records_v2_calls_and_replays_same_typed_result(
     replay = ReplayProvider(recording_file)
     register_api_provider(_API, replay, capabilities)
     monkeypatch.setattr(
-        "openprogram.models.auth.selection.with_credential",
+        "openprogram.models.providers.streaming.credential_failover.with_credential",
         lambda model, opts, attempt: pytest.fail("structured replay resolved credentials"),
     )
     replayed = _runtime_for_registered_model(monkeypatch, max_retries=2).exec(
@@ -399,7 +403,7 @@ def test_replay_rejects_structured_schema_mismatch_at_exact_path_before_events(
     replay = ReplayProvider(recording_file)
     register_api_provider(_API, replay, capabilities)
     monkeypatch.setattr(
-        "openprogram.models.auth.selection.with_credential",
+        "openprogram.models.providers.streaming.credential_failover.with_credential",
         lambda model, opts, attempt: pytest.fail("schema mismatch resolved credentials"),
     )
     failover_module = importlib.import_module("openprogram.models.providers.utils.failures.failover")
@@ -1211,7 +1215,7 @@ def test_replay_stream_skips_credential_resolution(
     register_api_provider(_API, replay)
     stream_module = importlib.import_module("openprogram.models.providers.streaming.stream")
     monkeypatch.setattr(
-        "openprogram.models.auth.selection.with_credential",
+        "openprogram.models.providers.streaming.credential_failover.with_credential",
         lambda model, opts, attempt: pytest.fail("replay resolved provider credentials"),
     )
 

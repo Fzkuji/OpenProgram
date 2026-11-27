@@ -131,7 +131,7 @@ def test_the_route_serves_the_report():
 def test_a_windows_runtime_in_the_version_store_updates_from_a_conversation(host, monkeypatch):
     # The version store's controller runs on Windows as a Scheduled Task, so
     # only an install outside it is sent to the CLI and App updaters.
-    monkeypatch.setattr("openprogram.operations.self_update.versions.layout.managed", lambda: True)
+    monkeypatch.setattr("openprogram.host._platform.runtime_layout.managed", lambda: True)
     row = host("win32")["conversational_update"]
     assert (row["available"], row["reason"]) == (True, "")
 

@@ -1,13 +1,10 @@
 """What a model asked to deliver a file is sent about ``send_file``.
 
-Read from the body the Codex adapter builds for a real web turn with the
-default Agent's tools: ``send_file`` is a function of the tools array, the
-deferred list does not name it, the prompt says it needs no search, and a
-search for it anyway is answered with words the model receives. On this
-wire a search's result travels as a ``tool_search_output`` of definitions
-only, so an answer left in the result text alone never reaches the model:
-an empty list reads as "no such tool" and the reply says the file cannot
-be sent.
+Read from the body the Responses adapter builds for a real web turn with
+the default Agent's tools: ``send_file`` is a function of the tools array,
+the deferred list does not name it, the prompt says it needs no search, and
+a search for it anyway is answered with words the model receives, not an
+empty result that reads as "no such tool".
 """
 from __future__ import annotations
 
@@ -23,7 +20,7 @@ def bench(monkeypatch, tmp_path):
     from openprogram.runtime.conversation.turn_runtime import loop_runner
 
     resolve = loop_runner._configure_screen_tool
-    bench = install_bench(monkeypatch, tmp_path, "codex", [])
+    bench = install_bench(monkeypatch, tmp_path, "responses", [])
     # The Agent's own tools, as a chat in the App resolves them.
     monkeypatch.setattr(loop_runner, "_configure_screen_tool", resolve)
     monkeypatch.setattr(D, "_load_agent_profile", lambda agent_id: {
@@ -39,6 +36,12 @@ def _names(body: dict) -> list[str]:
 def _texts(body: dict) -> list[str]:
     return [part["text"] for item in body["input"] if item.get("role") == "user"
             for part in item["content"] if part.get("type") == "input_text"]
+
+
+def _prompt(body: dict) -> str:
+    (system,) = [item for item in body["input"] if item.get("role") in ("system", "developer")]
+    content = system["content"]
+    return content if isinstance(content, str) else "".join(part["text"] for part in content)
 
 
 def _deferred_names(body: dict) -> list[str]:
@@ -73,7 +76,7 @@ def test_the_request_says_which_tools_need_a_search(bench):
     assert "Every tool already in your tools list is callable as it is; never search for one." in note
     # Not "before a tool's first call", which reads as every tool.
     assert "Before a tool's first call" not in note
-    (loader,) = [tool for tool in body["tools"] if tool["type"] == "tool_search"]
+    (loader,) = [tool for tool in body["tools"] if tool.get("name") == "tool_search"]
     assert "A tool already in your tools list is callable as it is" in loader["description"]
     assert "names and JSON Schemas are not sent" not in loader["description"]
 
@@ -83,7 +86,7 @@ def test_the_prompt_says_to_call_send_file_with_no_search(bench, source):
     bench.turn("Write hello.txt and send it to the chat.",
                reply(bench.model, TextContent(text="done")), source=source)
     body = bench.requests[0].body
-    prompt = body["instructions"]
+    prompt = _prompt(body)
 
     assert "send_file" in _names(body)
     (rule,) = [line for line in prompt.splitlines() if "call it for each deliverable" in line]
@@ -98,7 +101,7 @@ def test_the_prompt_lets_a_real_refusal_be_reported(bench):
     file was not sent: it limits that to a refusal the tool returned."""
     bench.turn("Write hello.txt and send it to the chat.",
                reply(bench.model, TextContent(text="done")), source="wechat")
-    prompt = bench.requests[0].body["instructions"]
+    prompt = _prompt(bench.requests[0].body)
 
     (rule,) = [line for line in prompt.splitlines() if "was not sent" in line]
     assert "only when a `send_file` call refused it" in rule
@@ -116,11 +119,10 @@ def test_a_search_for_send_file_is_answered_with_call_it_now(bench):
 
     assert second["tools"] == first["tools"]
     assert "send_file" in _names(second)
-    search, output, note = second["input"][len(first["input"]):]
-    assert search["type"] == "tool_search_call"
-    assert output["type"] == "tool_search_output" and output["tools"] == []
-    text = note["content"][0]["text"]
-    assert note["role"] == "user"
+    search, output = second["input"][len(first["input"]):]
+    assert search["type"] == "function_call" and search["name"] == "tool_search"
+    assert output["type"] == "function_call_output" and output["call_id"] == search["call_id"]
+    text = output["output"]
     assert "`send_file` is already callable: it is in your tools list with its full schema." in text
     assert "Call it now" in text
     assert "available" not in text and "not found" not in text

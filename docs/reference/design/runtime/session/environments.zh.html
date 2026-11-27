@@ -12,7 +12,7 @@
 <tr><th scope="row"><code translate="no">docker</code></th><td><code translate="no">DockerBackend(image, container, mounts, labels)</code></td><td><code translate="no">docker exec -i [-w cwd] &lt;container&gt; sh -c &lt;cmd&gt;</code></td><td>本机路径，以相同路径挂载</td><td>关闭；隔离靠容器</td></tr>
 </tbody>
 </table>
-<p class="note">命令功能在 <code translate="no">SHELLS</code>（<code translate="no">openprogram/host/backend/__init__.py</code>）里对应能跑命令的连接方式：<code translate="no">local</code>、<code translate="no">ssh</code>、<code translate="no">docker</code>，各带 <code translate="no">backend</code>；Docker 另有 <code translate="no">instance_scope="conversation"</code> 和 <code translate="no">remove_instances</code>。同一模块向设备层登记 <code translate="no">ssh</code> 和 <code translate="no">docker</code> 两种方式（设置 schema、<code translate="no">check</code>）。<code translate="no">backend_for(machine, session_id)</code> 按机器的连接方式构造后端，不点名任何方式。</p>
+<p class="note">命令功能在 <code translate="no">SHELLS</code>（<code translate="no">openprogram/host/backend/__init__.py</code>）里对应能跑命令的连接方式：<code translate="no">local</code>、<code translate="no">ssh</code>、<code translate="no">docker</code>，各带 <code translate="no">backend</code>；Docker 另有 <code translate="no">instance_scope="conversation"</code> 和 <code translate="no">remove_instances</code>。设备层在 <code translate="no">openprogram/host/machines/shells.py</code> 里登记 <code translate="no">ssh</code> 和 <code translate="no">docker</code> 两种方式（设置 schema、<code translate="no">check</code>）。<code translate="no">backend_for(machine, session_id)</code> 按机器的连接方式构造后端，不点名任何方式。</p>
 
 <h2 id="registry">运行环境这个角色</h2>
 <table class="stack fixed">
@@ -39,7 +39,7 @@
 <p class="note"><code translate="no">computer_use</code> 的目标是另一种绑定，每次调用各自选择；当运行环境从不让一台机器成为默认目标。</p>
 
 <h2 id="turn-binding">轮次绑定</h2>
-<p><code translate="no">TurnBindings.bind</code> 设置 <code translate="no">_current_environment</code> ContextVar。<code translate="no">current_environment()</code> 先读它，再读当前 session 项目的机器，没有 session 时是这台电脑。<code translate="no">get_active_backend()</code> 据此和当前 session 构造后端。</p>
+<p><code translate="no">TurnBindings.bind</code> 设置 <code translate="no">_current_environment</code> ContextVar。<code translate="no">current_environment()</code> 先读它，再读当前 session 项目的机器，没有 session 时是这台电脑。<code translate="no">get_active_backend()</code>（同在 <code translate="no">openprogram.host.machines</code>）据此和当前 session 构造后端。</p>
 <p>Shell 不在这台电脑时，<code translate="no">&lt;environment&gt;</code> 块写明机器 id、名称和它的连接方式的描述，并说明对话本身和 OpenProgram 仍在这台电脑；提供 <code translate="no">computer_use</code> 时再说明不带 <code translate="no">device</code> 的调用作用于这台电脑。</p>
 <ul>
 <li>带 <code translate="no">remote_files</code> 的 Shell（SSH）：worktree ContextVar 是项目在主机上的文件夹（<code translate="no">remote_project_folder</code>），命令从那里开始，权限围栏也按它检查。打开项目时文件夹已在主机上转成绝对路径（<code translate="no">cd</code> 后 <code translate="no">pwd -P</code>）。</li>

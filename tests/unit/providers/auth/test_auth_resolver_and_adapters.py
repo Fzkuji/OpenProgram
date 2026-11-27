@@ -1,8 +1,6 @@
 """Tests for resolve_api_key_sync + Anthropic/Gemini/Copilot adapters."""
 from __future__ import annotations
 
-import json
-import time
 
 import pytest
 
@@ -11,8 +9,6 @@ from openprogram.models.auth.resolver import resolve_api_key_sync
 from openprogram.models.auth.store import AuthStore, set_store_for_testing
 from openprogram.models.auth.types import Credential, CredentialData
 from openprogram.models.providers.adapters.anthropic import auth_adapter as anthro_adapter
-from openprogram.models.providers.adapters.github_copilot import auth_adapter as copilot_adapter
-from openprogram.models.providers.adapters.google_gemini_cli import auth_adapter as gemini_adapter
 
 
 @pytest.fixture
@@ -79,46 +75,3 @@ def test_anthropic_import_api_key_wrapper():
 def test_anthropic_register_is_idempotent():
     anthro_adapter.register_anthropic_auth()
     anthro_adapter.register_anthropic_auth()  # should not raise
-
-
-# ---- Gemini CLI adapter --------------------------------------------------
-
-def test_gemini_import_happy_path(tmp_path):
-    path = tmp_path / "oauth_creds.json"
-    path.write_text(json.dumps({
-        "access_token": "ya29.XXX",
-        "refresh_token": "1//YYY",
-        "scope": "https://www.googleapis.com/auth/cloud-platform",
-        "token_type": "Bearer",
-        "expiry_date": 1712345678901,
-    }))
-    cred = gemini_adapter.import_from_gemini_cli(path=path)
-    assert cred is not None
-    assert cred.kind == "import"
-    assert cred.read_only is True
-    assert cred.metadata["scope"].startswith("https://")
-
-
-def test_gemini_import_corrupt(tmp_path):
-    path = tmp_path / "oauth_creds.json"
-    path.write_text("{not json")
-    assert gemini_adapter.import_from_gemini_cli(path=path) is None
-
-
-# ---- Copilot adapter -----------------------------------------------------
-
-def test_copilot_oauth_wrapper():
-    cred = copilot_adapter.import_oauth_credential("ACC", "REF", expires_at_ms=1)
-    assert cred.kind == "oauth"
-    assert cred.payload.auth_value == "ACC"
-    assert cred.payload.data["client_id"] == "Iv1.b507a08c87ecfe98"
-
-
-def test_copilot_reads_its_token_variables_in_order(store, monkeypatch):
-    for var in ["COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"]:
-        monkeypatch.delenv(var, raising=False)
-    assert resolve_api_key_sync("github-copilot") is None
-    monkeypatch.setenv("GITHUB_TOKEN", "ghp-general")
-    monkeypatch.setenv("COPILOT_GITHUB_TOKEN", "ghu-copilot")
-    rows = store.get("github-copilot").credentials
-    assert [c.id for c in rows] == ["env:COPILOT_GITHUB_TOKEN", "env:GITHUB_TOKEN"]

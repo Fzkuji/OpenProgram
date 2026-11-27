@@ -117,7 +117,7 @@ def _on_activating(store: SelfUpdateStore) -> None:
 
 
 def test_the_candidates_own_worker_cannot_move_its_update(tmp_path: Path, monkeypatch) -> None:
-    from openprogram.operations.self_update.versions import layout
+    from openprogram.host._platform import runtime_layout as layout
 
     store = SelfUpdateStore(tmp_path)
     store.create(_request(controller_version="old", kind="change", task="t"))
@@ -130,7 +130,7 @@ def test_the_candidates_own_worker_cannot_move_its_update(tmp_path: Path, monkey
 
 
 def test_the_old_versions_controller_can_move_it(tmp_path: Path, monkeypatch) -> None:
-    from openprogram.operations.self_update.versions import layout
+    from openprogram.host._platform import runtime_layout as layout
 
     store = SelfUpdateStore(tmp_path)
     store.create(_request(controller_version="old", kind="change", task="t"))

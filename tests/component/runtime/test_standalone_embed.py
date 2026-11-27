@@ -109,7 +109,6 @@ def no_implicit_state_dir(monkeypatch):
         )
 
     monkeypatch.setattr(paths, "get_state_dir", _forbidden)
-    monkeypatch.setattr(paths, "get_sessions_dir", _forbidden)
 
 
 def test_function_executes_with_host_supplied_call(no_implicit_state_dir):

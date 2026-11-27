@@ -47,7 +47,7 @@ export function coerceSchedulerView(value) {
   return SCHEDULER_VIEWS.includes(value) ? value : "list";
 }
 
-// The worker (openprogram/programs/tools/jobs/cron/worker.py) expands the
+// The worker (openprogram/runtime/scheduler/worker.py) expands the
 // same macros before matching; @reboot fires at worker start, not on a clock.
 const CRON_MACROS = {
   "@yearly": "0 0 1 1 *",

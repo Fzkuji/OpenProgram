@@ -15,6 +15,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from openprogram.state import attachments
+from openprogram.state import attachment_markers as lexicon
 from openprogram.state.store.session.files.session_log import SessionLog
 from openprogram.state.store.session.files.migration import migrate_session
 from openprogram.state.store.session.session_store import SessionStore
@@ -177,7 +178,7 @@ def test_raw_rebases_legacy_session_attachment_after_real_migration(
     old_attachment.parent.mkdir(parents=True)
     log = SessionLog(source)
     log.write_meta({"id": "s1"})
-    marker = attachments.format_marker(
+    marker = lexicon.format_marker(
         "report.pdf", old_attachment, len(b"legacy"), mime="application/pdf",
     )
     log.write_history(1, "user", "u1", {"id": "u1", "role": "user", "content": marker})

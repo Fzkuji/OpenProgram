@@ -78,7 +78,7 @@ function menu({ models, providers, status, current = {} }) {
 }
 
 const MODELS = [
-  model("openai-codex", "gpt-6.1-sol", "OpenAI Codex"),
+  model("opencode-go", "gpt-6.1-sol", "OpenCode Go"),
   model("deepseek", "deepseek-v4", "DeepSeek"),
   model("kimi", "kimi-k2", "Kimi"),
   model("xai-grok", "grok-5", "Grok Subscription"),
@@ -88,14 +88,14 @@ const MODELS = [
 const STATUS = {
   generated_at: 0, stale_after_s: 900,
   providers: [
-    { id: "openai-codex", label: "OpenAI Codex", quota: { kind: "windowed", account: null, fetched_at: 0, stale: false, read_error: null, read_at: null,
+    { id: "opencode-go", label: "OpenCode Go", quota: { kind: "windowed", account: null, fetched_at: 0, stale: false, read_error: null, read_at: null,
       limits: [limit("primary", "5h", 0.08), limit("secondary", "Week", 0.71)] } },
     { id: "deepseek", label: "DeepSeek", quota: { kind: "balance", account: null, fetched_at: 0, stale: false, read_error: null, read_at: null,
       limits: [limit("balance", "Balance", null, { unit: "usd", remaining: 18.42, left_fraction: null, used_fraction: null })] } },
   ],
 };
 const PROVIDERS = {
-  "openai-codex": state("openai-codex", { attention: true, quota: { limit_key: "primary", label: "5h", left_fraction: 0.08, resets_at: null, tone: "warning", ring: true, warn: true } }),
+  "opencode-go": state("opencode-go", { attention: true, quota: { limit_key: "primary", label: "5h", left_fraction: 0.08, resets_at: null, tone: "warning", ring: true, warn: true } }),
   deepseek: state("deepseek", { balance: { amount: 18.42, unit: "usd", label: "Balance" } }),
   kimi: state("kimi", { state: "no_credit", attention: true, fix: { action: "top_up", url: "https://platform.moonshot.ai/console/pay" } }),
   "xai-grok": state("xai-grok", { state: "signed_out", attention: true, fix: { action: "sign_in", url: null } }),
@@ -111,8 +111,8 @@ const rowOf = (html, provider) => {
 };
 
 test("a half-used window shows its ring with the reset in its hint; the current model stays named", () => {
-  const html = menu({ models: MODELS, providers: PROVIDERS, status: STATUS, current: { provider: "openai-codex", model: "gpt-6.1-sol" } });
-  const codex = rowOf(html, "openai-codex");
+  const html = menu({ models: MODELS, providers: PROVIDERS, status: STATUS, current: { provider: "opencode-go", model: "gpt-6.1-sol" } });
+  const codex = rowOf(html, "opencode-go");
   assert.match(codex, /data-quota-ring="warning"/);
   assert.match(codex, /data-tip="5h · 8% left"/);
   assert.match(codex, /GPT-6\.1-SOL/);
@@ -123,7 +123,7 @@ test("a half-used window shows its ring with the reset in its hint; the current 
 
 test("the submenu header carries the quota rows, worst first, and the balance", () => {
   const html = menu({ models: MODELS, providers: PROVIDERS, status: STATUS });
-  const codexSub = html.slice(html.indexOf('data-mark="openai-codex"'), html.indexOf('data-mark="deepseek"'));
+  const codexSub = html.slice(html.indexOf('data-mark="opencode-go"'), html.indexOf('data-mark="deepseek"'));
   assert.match(codexSub, /data-quota-row="warning"[^]*5h[^]*8%[^]*data-quota-row="normal"[^]*Week[^]*71%/);
   const deepseekSub = html.slice(html.indexOf('data-mark="deepseek"'), html.indexOf('data-mark="kimi"'));
   assert.match(deepseekSub, /Balance[^]*\$18\.42/);
@@ -138,13 +138,13 @@ test("the submenu header carries the quota rows, worst first, and the balance", 
 });
 
 test("the header shows the ring's limit even before the status read arrives", () => {
-  const providers = { ...PROVIDERS, "openai-codex": state("openai-codex", {
+  const providers = { ...PROVIDERS, "opencode-go": state("opencode-go", {
     stale: true,
     quota: { limit_key: "primary", label: "Weekly", left_fraction: 0.16, resets_at: null, tone: "warning", ring: true, warn: true },
     balance: { amount: 38991.82, unit: "credits", label: "Credits" },
   }) };
   const html = menu({ models: MODELS, providers, status: undefined });
-  const codexSub = html.slice(html.indexOf('data-mark="openai-codex"'), html.indexOf('data-mark="deepseek"'));
+  const codexSub = html.slice(html.indexOf('data-mark="opencode-go"'), html.indexOf('data-mark="deepseek"'));
   assert.match(codexSub, /data-quota-row="warning" data-stale="true"[^]*Weekly[^]*text-text-muted">16%[^]*data-slot="progress-indicator" class="[^"]*opacity-50[^]*Credits[^]*38,991\.82 credits/);
 });
 
@@ -161,7 +161,7 @@ const cred = (id, label, fields = {}) => ({
   last_used_at: null, use_count: 0, created_at: 0, ...fields,
 });
 const KEYS = {
-  provider: "openai-codex", strategy: "in_order", strategies: ["in_order", "evenly", "least_used"], active: "a1b2",
+  provider: "opencode-go", strategy: "in_order", strategies: ["in_order", "evenly", "least_used"], active: "a1b2",
   auth: { methods: [], env_vars: [], check: null, keys_url: null, billing_url: null },
   credentials: [cred("a1b2", "Personal"), cred("work", "Work", { status: "cooling", cooldown_until: 4_000_000_000 }), cred("old0", "Old team key", { status: "invalid_key" })],
 };
@@ -169,16 +169,16 @@ function keyMenu(keys, session) {
   globalThis.__queries = {
     [JSON.stringify(S.PICKER_QUERY_KEY)]: { models: MODELS, providers: PROVIDERS },
     [JSON.stringify(S.PICKER_LIMITS_QUERY_KEY)]: STATUS,
-    [JSON.stringify(["provider-credentials", "openai-codex"])]: keys,
+    [JSON.stringify(["provider-credentials", "opencode-go"])]: keys,
     [JSON.stringify(["session-credentials", "s1"])]: session,
   };
   const html = renderToStaticMarkup(h(AgentSelector, { onClose() {} }));
-  return html.slice(html.indexOf('data-mark="openai-codex"'), html.indexOf('data-mark="deepseek"'));
+  return html.slice(html.indexOf('data-mark="opencode-go"'), html.indexOf('data-mark="deepseek"'));
 }
 
 test("a provider with several keys ends its models with its keys inline, not a third panel", () => {
   const codex = keyMenu(KEYS, { binding: {}, pin: {} });
-  const row = codex.slice(codex.indexOf('data-picker-keys="openai-codex"'));
+  const row = codex.slice(codex.indexOf('data-picker-keys="opencode-go"'));
   assert.match(row, /This conversation uses Personal<\/div>/);
   assert.doesNotMatch(row, /data-key-mode/, "the check on Automatic says it; the label carries no hint");
   assert.doesNotMatch(row, /data-slot="dropdown-menu-sub-trigger"/, "the keys open no submenu of their own");
@@ -192,11 +192,11 @@ test("a provider with several keys ends its models with its keys inline, not a t
   assert.doesNotMatch(row, /data-disabled=""[^>]*data-credential-choice="a1b2"/);
   assert.match(choice("old0"), /text-text-muted">invalid/);
   assert.doesNotMatch(row, /--(warning|danger)-soft/, "no coloured words in the key submenu");
-  assert.match(row, /<a href="\/settings\/providers\/openai-codex"[^>]*data-picker-manage-keys[^]*Manage keys…/);
+  assert.match(row, /<a href="\/settings\/providers\/opencode-go"[^>]*data-picker-manage-keys[^]*Manage keys…/);
 });
 
 test("a pinned conversation names its key and says it is pinned; one key has no row", () => {
-  const pinned = keyMenu(KEYS, { binding: { "openai-codex": "a1b2" }, pin: { "openai-codex": "work" } });
+  const pinned = keyMenu(KEYS, { binding: { "opencode-go": "a1b2" }, pin: { "opencode-go": "work" } });
   assert.match(pinned, /This conversation uses Work<\/div>/);
   const single = keyMenu({ ...KEYS, credentials: KEYS.credentials.slice(0, 1) }, { binding: {}, pin: {} });
   assert.doesNotMatch(single, /data-picker-keys/);
@@ -293,17 +293,17 @@ test("the model chip is marked, in red, only when its provider cannot answer or 
     return renderToStaticMarkup(h(AgentBadge, { id: "agent", locked: false, provider, model: MODELS.find((m) => m.provider === provider).id }));
   };
   // 92 % used warns in the menu's ring and bars; the chip stays plain.
-  const codex = chip("openai-codex");
+  const codex = chip("opencode-go");
   assert.doesNotMatch(codex, /data-trigger-mark/);
   assert.match(codex, /Talks with you and plans the work/);
   const nearlySpent = (() => {
     globalThis.__queries = { [JSON.stringify(S.PICKER_QUERY_KEY)]: { models: MODELS, providers: {
-      ...PROVIDERS, "openai-codex": state("openai-codex", { attention: true, quota: { limit_key: "primary", label: "5h", left_fraction: 0.03, resets_at: null, tone: "danger", ring: true, warn: true } }),
+      ...PROVIDERS, "opencode-go": state("opencode-go", { attention: true, quota: { limit_key: "primary", label: "5h", left_fraction: 0.03, resets_at: null, tone: "danger", ring: true, warn: true } }),
     } } };
-    return renderToStaticMarkup(h(AgentBadge, { id: "agent", locked: false, provider: "openai-codex", model: "gpt-6.1-sol" }));
+    return renderToStaticMarkup(h(AgentBadge, { id: "agent", locked: false, provider: "opencode-go", model: "gpt-6.1-sol" }));
   })();
   assert.match(nearlySpent, /data-trigger-mark="danger"/);
-  assert.match(nearlySpent, /OpenAI Codex · 5h · 3% left/);
+  assert.match(nearlySpent, /OpenCode Go · 5h · 3% left/);
   // Signed out: the reply cannot go out, so the chip says so in red too.
   assert.match(chip("xai-grok"), /data-trigger-mark="danger"/);
   const kimi = chip("kimi");
@@ -317,15 +317,15 @@ test("the model chip is marked, in red, only when its provider cannot answer or 
 });
 
 test("one way of a company reached several ways is named \"Company · Way\" as soon as the model list arrives; other providers keep their name", () => {
-  const models = [model("openai-codex", "gpt-6.1-sol", "OpenAI Codex"), model("openai", "gpt-6.1", "OpenAI"), model("deepseek", "deepseek-v4", "DeepSeek")];
+  const models = [model("opencode-go", "gpt-6.1-sol", "OpenCode Go"), model("openai", "gpt-6.1", "OpenAI"), model("deepseek", "deepseek-v4", "DeepSeek")];
   const named = (id, name) => state(id, { name, name_zh: name });
-  const providers = { "openai-codex": named("openai-codex", "OpenAI · ChatGPT"), openai: named("openai", "OpenAI · API"), deepseek: named("deepseek", null) };
+  const providers = { "opencode-go": named("opencode-go", "OpenCode · Go"), openai: named("openai", "OpenAI · API"), deepseek: named("deepseek", null) };
   // No status read yet: the names come with the models.
   const html = menu({ models, providers, status: undefined });
-  assert.match(html, />OpenAI · ChatGPT</);
+  assert.match(html, />OpenCode · Go</);
   assert.match(html, />OpenAI · API</);
   assert.match(html, />DeepSeek</);
-  assert.doesNotMatch(html, />OpenAI Codex</);
+  assert.doesNotMatch(html, />OpenCode Go</);
 });
 
 test("in Codex the menu lists Codex's models, then OpenProgram's providers run through it", () => {

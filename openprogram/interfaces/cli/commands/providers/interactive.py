@@ -231,15 +231,6 @@ def _action_scan_and_import() -> None:
         adopted += 1
         _say(f"  + {kept.provider_id}: {_preview(kept)}")
     _say(f"  Imported {adopted}.")
-    # First-run convenience: subscription providers have no list-models API, so
-    # adopting their credentials should also enable their default model set
-    # into config (no-op if the provider already has spec rows).
-    if adopted:
-        from openprogram.models.auth.login.login_enable import seed_default_models_if_logged_in
-        for pid in ("openai-codex",):
-            written = seed_default_models_if_logged_in(pid)
-            if written:
-                _say(f"  enabled default {pid} models: {', '.join(written)}")
 
 
 def _action_pick_provider_and_login() -> None:
@@ -250,10 +241,7 @@ def _action_pick_provider_and_login() -> None:
     # Popular canonical providers, plus anything we already have a pool
     # for (so the user can re-login / add a second credential).
     popular = [
-        ("openai-codex",      "OpenAI via Codex CLI (ChatGPT account)"),
         ("anthropic",         "Anthropic (Claude)"),
-        ("gemini-subscription", "Google Gemini via CLI"),
-        ("github-copilot",    "GitHub Copilot"),
         ("openai",            "OpenAI (raw API key)"),
         ("openrouter",        "OpenRouter"),
         ("google",            "Google Gemini (direct)"),

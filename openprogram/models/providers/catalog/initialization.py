@@ -63,7 +63,7 @@ def _safe_message(exc: BaseException) -> str:
     except Exception:
         return "<message unavailable>"
     try:
-        from ..recording.recording import remove_secret_values
+        from openprogram.state.secret_removal import remove_secret_values
 
         message = remove_secret_values(message)
     except Exception as redact_exc:

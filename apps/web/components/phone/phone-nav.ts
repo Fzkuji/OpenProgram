@@ -4,8 +4,9 @@
  * chats at /chats?project=<id>, a conversation at /s/<id> (a new one at /chat), its details at
  * /s/<id>?details and a page of the details at /s/<id>?details=<page>;
  * every other route is a page pushed over the list with a Back button.
- * Each step is a history entry, so the system's swipe from the left edge
- * (the app's back-forward gesture) and Back both go one page back.
+ * Each step is a history entry, which Framework7's View follows
+ * (phone-router.ts): its Back and its swipe from the left edge both go
+ * one page back.
  */
 
 import { useSessionHistory } from "@/lib/chat/history/session-history";
@@ -26,11 +27,7 @@ export function openDetails(sessionId: string, page?: DetailsPage): void {
   pushUrl(`/s/${encodeURIComponent(sessionId)}?details${page ? `=${page}` : ""}`);
 }
 
-/** One page back; the list when there is nothing to go back to. */
-export function goBack(): void {
-  if (window.history.length > 1) window.history.back();
-  else window.history.replaceState(null, "", "/chats");
-}
+export { goBack } from "./phone-router";
 
 let opening: { id: string; stop: () => void } | null = null;
 

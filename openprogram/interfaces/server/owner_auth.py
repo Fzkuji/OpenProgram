@@ -92,7 +92,7 @@ def _write_private_text(
     path: Path, content: str, *, expected_revision: str | None = None
 ):
     if path.name == "token":
-        from openprogram.models.auth.credentials import _private_atomic_write
+        from openprogram.state.private_files import _private_atomic_write
 
         return _private_atomic_write(
             path,
@@ -245,7 +245,7 @@ class OwnerAuthState:
             )
             return state
         except Exception as exc:
-            from openprogram.models.auth.credentials import PrivateAtomicWriteError
+            from openprogram.state.private_files import PrivateAtomicWriteError
 
             if isinstance(exc, PrivateAtomicWriteError) and exc.committed:
                 if "state" in locals() and state._lock_handle is handle:
@@ -537,6 +537,10 @@ async def _gateway_refusal(send, path: str) -> None:
     message = "Missing or invalid OpenProgram gateway key."
     if path.startswith("/gateway/anthropic/"):
         payload = {"type": "error", "error": {"type": "authentication_error", "message": message}}
+    elif path.startswith("/gateway/gemini/"):
+        payload = {"error": {"code": 401, "message": message, "status": "UNAUTHENTICATED"}}
+    elif path.startswith("/gateway/ollama/api/"):
+        payload = {"error": message}
     else:
         payload = {"error": {"message": message, "type": "authentication_error",
                              "param": None, "code": "invalid_api_key"}}
@@ -691,6 +695,96 @@ def _strict_json(body: bytes):
         return None
 
 
+#: Desktop apps whose plugins call the gateway from the app's own window
+#: (magpie ``internal/gateway/cors.go`` ``appOrigins``, MIT License): an
+#: Origin only that app's window sends.
+GATEWAY_APP_ORIGINS = frozenset({"app://obsidian.md"})
+
+#: The one app window let into the gateway with no key, and the path it is
+#: given (Copilot for Obsidian, gateway ``agents/obsidian.py``): its settings
+#: live in the vault, which is synced and published, so its address holds no
+#: key (magpie ``cors.go``: Obsidian gets in keyless).
+_KEYLESS_APP = ("app://obsidian.md", "/gateway/agent/obsidian/")
+
+
+def _gateway_keyless_app(scope, headers: dict[str, list[str]], origin: str | None) -> bool:
+    """Obsidian's own window on this computer calling its gateway path: an
+    HTTP request from a loopback peer to a loopback Host, nothing forwarded,
+    with Obsidian's Origin."""
+    want_origin, prefix = _KEYLESS_APP
+    if origin != want_origin or scope.get("type") != "http":
+        return False
+    if not str(scope.get("path") or "").startswith(prefix):
+        return False
+    return _direct_from_here(scope, headers)
+
+
+#: Headers a proxy adds: a request carrying any came through one, so it is
+#: not one this computer made straight to the listener.
+_FORWARDED = ("forwarded", "x-forwarded-for", "x-forwarded-host", "x-forwarded-proto", "x-real-ip")
+
+
+def _direct_from_here(scope, headers: dict[str, list[str]]) -> bool:
+    """A request from a loopback peer to one loopback Host, nothing forwarded:
+    what a keyless way into the gateway asks of a caller."""
+    if not _peer_is_loopback(scope):
+        return False
+    if any(name in headers for name in _FORWARDED):
+        return False
+    hosts = headers.get("host", [])
+    if len(hosts) != 1:
+        return False
+    host = hosts[0].strip()
+    name = host[1:host.find("]")] if host.startswith("[") and "]" in host else host.rsplit(":", 1)[0]
+    return is_loopback_host(name)
+
+
+def _rooted_agent(agent_id: str | None, headers: dict[str, list[str]], scope) -> bool:
+    """A request for one of a connected agent's ``root_paths`` (Muse Code's
+    model list, at its endpoint host's root, where the key in its address
+    can't reach): let in with no key from this computer only (a loopback peer
+    and Host, nothing forwarded, as for Obsidian), and from no web page (no
+    ``Origin``, which a browser sends on such a request)."""
+    if not agent_id or headers.get("origin") or not _direct_from_here(scope, headers):
+        return False
+    from openprogram.models.gateway import stash
+    try:
+        return stash.entry(agent_id) is not None
+    except stash.StashUnreadable:
+        return False
+
+
+def _gateway_app_origin(scope, headers: dict[str, list[str]]) -> str | None:
+    if scope.get("type") != "http" or not str(scope.get("path") or "").startswith("/gateway/"):
+        return None
+    origins = headers.get("origin", [])
+    if len(origins) != 1:
+        return None
+    origin = origins[0].strip().rstrip("/").lower()
+    return origin if origin in GATEWAY_APP_ORIGINS else None
+
+
+async def _gateway_preflight(send, origin: str, headers: dict[str, list[str]]) -> None:
+    out = [(b"access-control-allow-origin", origin.encode("latin-1")), (b"vary", b"Origin"),
+           (b"access-control-allow-methods", b"GET, POST, OPTIONS"), (b"access-control-max-age", b"600"),
+           (b"content-length", b"0")]
+    asked = ",".join(headers.get("access-control-request-headers", []))
+    if asked and all(part.strip().replace("-", "").isalnum() for part in asked.split(",") if part.strip()):
+        out.append((b"access-control-allow-headers", asked.encode("latin-1")))
+    await send({"type": "http.response.start", "status": 204, "headers": out})
+    await send({"type": "http.response.body", "body": b""})
+
+
+def _gateway_cors_sender(send, origin: str):
+    async def wrapped(message):
+        if message.get("type") == "http.response.start":
+            message = dict(message)
+            message["headers"] = [*list(message.get("headers") or []),
+                                  (b"access-control-allow-origin", origin.encode("latin-1")), (b"vary", b"Origin")]
+        await send(message)
+    return wrapped
+
+
 class OwnerAuthMiddleware:
     """Authenticate HTTP, SSE, and WebSocket before route dispatch."""
 
@@ -739,6 +833,26 @@ class OwnerAuthMiddleware:
                     return
                 await self.app(scope, receive, send)
                 return
+        gateway_app = _gateway_app_origin(scope, headers)
+        keyless_app = _gateway_keyless_app(scope, headers, gateway_app)
+        if gateway_app is not None:
+            # A desktop app's own window calling the gateway (Copilot for
+            # Obsidian, gateway agents/obsidian.py): its Origin is one only
+            # that app sends, so it is answered CORS; the Host is checked as
+            # for any request. Obsidian's window on this computer, at its own
+            # path, needs no key (_gateway_keyless_app); anything else does.
+            try:
+                _request_origin(scope, {k: v for k, v in headers.items() if k not in {"origin", "sec-fetch-site"}},
+                                self.auth_state)
+            except OwnerAuthError:
+                await _http_response(send, 403, "request_origin_rejected", openai=_openai_path(scope))
+                return
+            if scope.get("method") == "OPTIONS":
+                await _gateway_preflight(send, gateway_app, headers)
+                return
+            headers.pop("origin", None)
+            headers.pop("sec-fetch-site", None)
+            send = _gateway_cors_sender(send, gateway_app)
         try:
             request_origin, origin = _request_origin(scope, headers, self.auth_state)
         except OwnerAuthError:
@@ -772,12 +886,30 @@ class OwnerAuthMiddleware:
             await self.app(scope, receive, _response_sender(send, no_store=True, shell=False))
             return
 
+        rooted = None
+        if scope["type"] == "http" and not path.startswith(("/gateway/", "/api/")):
+            # A path an agent asks for at its endpoint host's root, where its
+            # address's key can't reach (Muse Code's model list), is served
+            # as that agent's own path (gateway/attribution.py root_path).
+            from openprogram.models.gateway.attribution import root_path
+            rooted = root_path(scope)
+            if rooted:
+                path = str(scope.get("path") or "")
+
         if path.startswith("/gateway/"):
-            # The model gateway (models/gateway): harness configs carry the
+            # The model gateway (models/gateway): agent configs carry the
             # gateway key, which outlives this process's owner token. It is
             # accepted here and nowhere else; the owner token works too.
-            if scope["type"] == "http" and self._gateway_authenticated(headers):
-                await self.app(scope, receive, _response_sender(send, no_store=True, shell=False))
+            # ``/gateway/agent/<id>/…`` names the agent calling it and is
+            # served as the rest of the path (gateway/attribution.py).
+            from openprogram.models.gateway.attribution import take_agent_path
+            take_agent_path(scope)
+            path = str(scope.get("path") or "")
+            if keyless_app or _rooted_agent(rooted, headers, scope) or self._gateway_authenticated(headers, scope):
+                if scope["type"] == "websocket":
+                    await self.app(scope, receive, send)
+                else:
+                    await self.app(scope, receive, _response_sender(send, no_store=True, shell=False))
             elif scope["type"] == "websocket":
                 await _websocket_response(send, 401, "authentication_required", scope)
             else:
@@ -864,23 +996,38 @@ class OwnerAuthMiddleware:
             return
         await self.app(scope, receive, sender)
 
-    def _gateway_authenticated(self, headers: dict[str, list[str]]) -> bool:
-        """A gateway request with the gateway key or the owner token, as
-        ``Authorization: Bearer`` or ``x-api-key``."""
+    def _gateway_authenticated(self, headers: dict[str, list[str]], scope=None) -> bool:
+        """A gateway request with the gateway key (or an agent's own,
+        ``keys.token_for``) or the owner token, as ``Authorization: Bearer``,
+        ``x-api-key``, or, as Google's API takes it, ``x-goog-api-key`` or
+        ``?key=`` on a Gemini path. A URL is logged and kept in history, so
+        ``?key=`` takes a gateway key only, never the owner token."""
+        from openprogram.models.gateway.attribution import PATH_KEY_STATE
         from openprogram.models.gateway.keys import verify_gateway_key
 
+        if scope is not None and (scope.get("state") or {}).get(PATH_KEY_STATE):
+            # the agent's own key in its address (gateway/attribution.py):
+            # whatever bearer it sends (Claude Science's Claude sign-in) is
+            # neither checked nor passed on
+            return True
         presented: list[str] = []
         try:
             provided, token = _bearer_token(headers)
             if provided and token:
                 presented.append(token)
-            api_key = _one_header(headers, "x-api-key")
-            if api_key:
-                presented.append(api_key)
+            for name in ("x-api-key", "x-goog-api-key"):
+                api_key = _one_header(headers, name)
+                if api_key:
+                    presented.append(api_key)
         except OwnerAuthError:
             return False
-        return any(verify_gateway_key(value) or self.auth_state.verify_token(value)
-                   for value in presented)
+        if any(verify_gateway_key(value) or self.auth_state.verify_token(value) for value in presented):
+            return True
+        if scope is not None and str(scope.get("path") or "").startswith("/gateway/gemini/"):
+            from urllib.parse import parse_qs
+            query = parse_qs((scope.get("query_string") or b"").decode("latin-1"))
+            return any(verify_gateway_key(value) for value in query.get("key", [])[:1])
+        return False
 
     async def _device_socket(self, scope, receive, send, device_id: str) -> None:
         """Run a paired device's WebSocket; revoking the device closes it."""

@@ -7,6 +7,7 @@ import pytest
 
 from openprogram.host import sandbox
 from openprogram.programs._host import runtime as R
+from openprogram.runtime.agent import tool_execution
 from openprogram.programs._host.runtime import function, reset_registry, restore_registry, snapshot_registry
 from openprogram.host.sandbox import SandboxPolicy, policy_to_dict
 
@@ -14,11 +15,11 @@ from openprogram.host.sandbox import SandboxPolicy, policy_to_dict
 @pytest.fixture(autouse=True)
 def _isolate_registry():
     saved = snapshot_registry()
-    R._cache.clear()
+    tool_execution._cache.clear()
     reset_registry()
     yield
     restore_registry(saved)
-    R._cache.clear()
+    tool_execution._cache.clear()
 
 
 def _run(coro):

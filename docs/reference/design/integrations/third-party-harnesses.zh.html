@@ -3,7 +3,7 @@
 <meta name="covers" content="openprogram/models/usage/harnesses/">
 <h1>第三方 Harness</h1>
 
-<p>Claude Code 和 Codex 把每个会话写进本机文件。OpenProgram 读这些文件，显示会话、Token、估算费用和它们最近记下的套餐额度。</p>
+<p>Claude Code 和 Codex 把每个会话写进本机文件。OpenProgram 读这些文件，显示会话、Token 和估算费用，以及 Codex app-server 最近报告的套餐额度。</p>
 <p>读取不改任何 Harness 的配置，不在请求路径上，也不向任何地方发送。让 Harness 使用 OpenProgram 的模型见<a href="model-gateway.zh.html">模型网关</a>。</p>
 
 <table class="stack fixed">
@@ -29,7 +29,7 @@
 <tr><th scope="row">价格来源</th><td>models.dev</td><td>无</td><td>LiteLLM</td><td>models.dev，OpenProgram 已在用的目录</td></tr>
 <tr><th scope="row">长上下文档位</th><td>忽略</td><td>—</td><td>计入</td><td>计入</td></tr>
 <tr><th scope="row">被删的记录</th><td>丢弃</td><td>—</td><td>保留</td><td>保留 92 天</td></tr>
-<tr><th scope="row">Codex 额度</th><td>实时接口</td><td>实时接口</td><td>实时接口</td><td>Codex 自己文件里最新的值</td></tr>
+<tr><th scope="row">Codex 额度</th><td>实时接口</td><td>实时接口</td><td>实时接口</td><td>Codex 报告的值：app-server 启动时的 <code translate="no">account/rateLimits/read</code>、之后的 <code translate="no">account/rateLimits/updated</code>，或 rollout 文件里的 <code translate="no">rate_limits</code>，取较新的</td></tr>
 <tr><th scope="row">Claude 额度</th><td>实时接口</td><td>Claude Code 的登录</td><td>Claude Code 的登录</td><td>不显示</td></tr>
 <tr><th scope="row">何时读取</th><td>每 10–15 秒轮询</td><td>按需</td><td>按需</td><td>Worker 启动时，之后页面请求时</td></tr>
 <tr><th scope="row">会话由哪个应用启动</th><td>不显示</td><td>不显示</td><td>不显示</td><td>显示</td></tr>
@@ -103,7 +103,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">部分</th><th scope="col">显示</th></tr></thead>
 <tbody>
-<tr><th scope="row">每个 Harness 一张卡片</th><td>30 天的会话数、Token、输出和按 API 价估算的费用；Codex 每个套餐窗口一条进度条，带重置时间、credits 和写入时间</td></tr>
+<tr><th scope="row">每个 Harness 一张卡片</th><td>30 天的会话数、Token、输出和按 API 价估算的费用；Codex 每个套餐窗口一条进度条，带重置时间、credits 和 app-server 报告的时间</td></tr>
 <tr><th scope="row">每日 Token</th><td>堆叠柱状图，每个 Harness 一种颜色</td></tr>
 <tr><th scope="row">会话</th><td>按 Harness 和搜索筛选：标题；文件夹、分支、模型、应用、最近活动；Token 和调用数；估算费用；复制继续命令的按钮。先显示 20 条，再显示全部。</td></tr>
 <tr><th scope="row">按模型、启动来源</th><td>表格，每行标出 Harness</td></tr>

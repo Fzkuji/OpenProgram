@@ -98,10 +98,8 @@ def _run_setup() -> int:
     # --- step 3: manual login for missing popular providers ---------------
     print("\n[2/3] Manual login for providers not yet covered...\n")
     popular = [
-        ("openai-codex", "OpenAI via Codex CLI (ChatGPT account)"),
         ("anthropic",    "Anthropic (Claude)"),
-        ("gemini-subscription", "Google Gemini via CLI"),
-        ("github-copilot", "GitHub Copilot"),
+        ("google",       "Google Gemini (API key)"),
         ("openai",       "OpenAI (raw API key)"),
     ]
     for prov_id, label in popular:

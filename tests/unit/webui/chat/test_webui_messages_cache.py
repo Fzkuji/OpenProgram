@@ -219,7 +219,7 @@ def test_set_active_head_syncs_db_memory_and_cache(server, last_used) -> None:
     srv, db = server
     if last_used:
         from openprogram.models.providers.catalog.last_used import record_last_used_model
-        record_last_used_model("openai-codex", "gpt-5")
+        record_last_used_model("openai", "gpt-5")
     conv = srv._get_or_create_session("c1", agent_id="main")
     srv._append_msg(conv, {"id": "m1", "role": "user", "content": "x",
                             "timestamp": 1.0})
@@ -244,7 +244,7 @@ def test_set_active_head_on_a_record_without_agent(server) -> None:
     """A session whose first record came from a settings write (a draft's
     model pick) has no stored ``agent_id``; switching its head still works."""
     srv, db = server
-    db.update_session("c2", provider_override="openai-codex", model_override="gpt-5")
+    db.update_session("c2", provider_override="openai", model_override="gpt-5")
     db.append_message("c2", {"id": "m1", "role": "user", "content": "x",
                               "timestamp": 1.0, "predecessor": None})
     db.append_message("c2", {"id": "m2", "role": "assistant", "content": "y",

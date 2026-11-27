@@ -236,7 +236,7 @@ usage: 2 min 10 s · 18 tool calls · 41.2k tokens · $0.084
 <tr><th scope="row">Queued in</th><td><code translate="no">&lt;session-repo&gt;/inbox.json</code>; the entry also travels on the Job (<code translate="no">Job.deferred_inbox</code>), so a Worker that dies before or after the write recreates it once</td></tr>
 <tr><th scope="row">Drained</th><td>At turn end and by the 2 s sweep. Deleted only after submission; a Job that already left the queue only removes the entry (<a href="../execution/async-job-lifecycle.html#handoffs">hand-offs across a crash</a>)</td></tr>
 <tr><th scope="row">Full, duplicate</th><td>50 entries, the oldest dropped with a notice to its sender; the same text from the same sender within 60 s is refused and its Job cancelled</td></tr>
-<tr><th scope="row">The sender started the target</th><td>A running helper the sending turn started (same conversation, same parent Job) gets the message as a steer at its next tool boundary (<code translate="no">send_message/steer.py</code>), stored with its execution like the person's "Add instruction" and written into its branch as agent input. The inbox entry is written too, marked with the steer's command id: a steer the turn never reached is delivered at turn end, one it took is dropped.</td></tr>
+<tr><th scope="row">The sender started the target</th><td>A running helper the sending turn started (same conversation, same parent Job) gets the message as a steer at its next tool boundary (<code translate="no">peer_agents/steer.py</code>), stored with its execution like the person's "Add instruction" and written into its branch as agent input. The inbox entry is written too, marked with the steer's command id: a steer the turn never reached is delivered at turn end, one it took is dropped.</td></tr>
 <tr><th scope="row">"Add instruction" on a helper</th><td>A helper's own turn takes steers, so the person's instruction reaches sub-agents too</td></tr>
 </tbody>
 </table>
@@ -308,7 +308,7 @@ usage: 2 min 10 s · 18 tool calls · 41.2k tokens · $0.084
 <tbody>
 <tr><th scope="row">Agent tool</th><td><code translate="no">openprogram/programs/tools/agents/agent/agent/</code></td></tr>
 <tr><th scope="row">Messages, close, steer</th><td><code translate="no">openprogram/programs/tools/agents/send_message/</code> (<code translate="no">steer.py</code>, <code translate="no">dispatch.py</code>)</td></tr>
-<tr><th scope="row">Chain limits</th><td><code translate="no">openprogram/programs/tools/agents/send_message/send_message/depth.py</code></td></tr>
+<tr><th scope="row">Chain limits</th><td><code translate="no">openprogram/runtime/jobs/chain_budgets.py</code></td></tr>
 <tr><th scope="row">Saved Agent settings, Markdown agents</th><td><code translate="no">openprogram/runtime/agent_registry/delegation.py</code>, <code translate="no">markdown_imports.py</code></td></tr>
 <tr><th scope="row">Merge hold</th><td><code translate="no">openprogram/state/worktree/manager.py</code>, <code translate="no">runtime/jobs/execution_hooks.py</code></td></tr>
 <tr><th scope="row">Permission intersection, question route</th><td><code translate="no">openprogram/runtime/permissions/delegation.py</code>, <code translate="no">lifecycle.py</code> (<code translate="no">spawn_question_route</code>), <code translate="no">runtime/jobs/input.py</code></td></tr>

@@ -169,7 +169,7 @@ async def stream_simple(
     api_key = opts.api_key
 
     # The SDK's own retries are off (one attempt): the credential layer
-    # (``models/auth/selection.py``) and the stream's re-send see every
+    # (``models/providers/streaming/credential_failover.py``) and the stream's re-send see every
     # failure once.
     from google.genai.types import HttpRetryOptions
     from openprogram.models.providers.utils.http_transport.http_client import build_google_http_options

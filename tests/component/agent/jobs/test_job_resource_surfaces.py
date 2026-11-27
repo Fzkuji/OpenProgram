@@ -316,7 +316,7 @@ def test_spawn_rejection_transport_preserves_usage_without_inventing_job(
 def test_exhausted_delegation_keeps_owned_results_readable(monkeypatch):
     from openprogram.runtime.execution.run_control.binding import _current_session_id
     from openprogram.programs import agent_tools
-    from openprogram.programs.tools.agents.send_message.send_message import depth
+    from openprogram.runtime.jobs import chain_budgets as depth
 
     job = _job(status=JobStatus.COMPLETED)
     job.result_text = 'existing-result'

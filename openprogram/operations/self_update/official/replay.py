@@ -1,18 +1,20 @@
-"""Carry the owner's own commits over to an official release.
+"""Carry the owner's own commits over to new official code.
 
-The release is a squashed line, so nothing here needs its history: only the new
-release commit and the commits on ``local`` that it does not contain.
+The official line here is one local commit per update taken
+(``repository.import_official``), so nothing needs GitHub's history: only the
+new official commit and the commits on ``local`` that it does not contain.
 
-1. Check the assets and move ``refs/heads/release``.
-2. Make the release's own version ready, from the prebuilt asset when the base
-   is here or carried, otherwise by building it.
+1. Write the new base if the update brings one, and import the source tree as
+   the next commit of ``refs/heads/release``.
+2. Make the official version ready: built here from that commit with the
+   update's prebuilt frontend, so only the Python copy and compile run.
 3. With no commits of the owner's, that version goes to trial as it is.
-4. Otherwise ``work/official-<release>`` starts at the release and picks each
-   commit, oldest first. A commit that conflicts is saved under
-   ``unreplayable/<release>/`` and the rest carry on.
-5. The result is built on top of the release's version, tried and activated.
+4. Otherwise ``work/official-<name>`` starts at the official commit and picks
+   each commit, oldest first. A commit that conflicts is saved under
+   ``unreplayable/<name>/`` and the rest carry on.
+5. The result is built on top of the official version, tried and activated.
 6. If it fails before activation, the newest commit is saved and dropped and
-   the rest are tried again, ending at the unmodified release. After
+   the rest are tried again, ending at the unmodified official version. After
    :data:`MAX_DROP_RETRIES` retries the remaining commits go at once.
 
 The trial and the switch belong to the update controller and are passed in as
@@ -23,6 +25,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 from dataclasses import asdict, dataclass, field
+import functools
 from pathlib import Path
 import shutil
 
@@ -31,16 +34,18 @@ from openprogram.operations.self_update.versions import store
 from openprogram.operations.self_update.versions.build import (
     BuildError, BuildRequest, BuildResult, NotEnoughSpace,
 )
-from openprogram.operations.self_update.versions.layout import Layout
+from openprogram.host._platform.runtime_layout import Layout
 
-from . import assets
-from .assets import LOCAL_REF, Release, ReleaseError, git, git_output
+from . import assemble
+from .assemble import Plan
+from .repository import LOCAL_REF, ReleaseError, git, git_output
 
 MAX_DROP_RETRIES = 5
 ACTIVATED = "activated"
 ABORTED = "aborted"
 ROLLED_BACK = "rolled_back"
 WAITING_FOR_SHELL = "waiting_for_shell"
+WAITING_FOR_RUNTIME = "waiting_for_runtime"
 UP_TO_DATE = "up_to_date"
 CONFLICT = "conflict"
 FAILED_TRIAL = "failed_trial"
@@ -59,6 +64,14 @@ class Lifecycle:
     trial: Callable[[str], Verdict]
     activate: Callable[[str], Verdict]
     build: Callable[[Layout, BuildRequest], BuildResult] = builder.build_version
+
+
+@dataclass(frozen=True)
+class Release:
+    """The official code an update brings: its name and the local commit holding it."""
+
+    name: str
+    commit: str
 
 
 @dataclass(frozen=True)
@@ -114,7 +127,7 @@ def _is_up_to_date(layout: Layout, release_commit: str) -> bool:
 
 
 def _save(layout: Layout, release: Release, commit: OwnCommit, reason: str) -> SavedCommit:
-    directory = layout.unreplayable(release.release)
+    directory = layout.unreplayable(release.name)
     directory.mkdir(parents=True, exist_ok=True)
     patch = directory / f"{commit.sha}.patch"
     result = git(layout.repo, "format-patch", "-1", "--binary", "--stdout", commit.sha, raw=True)
@@ -148,21 +161,23 @@ def _intact(layout: Layout, manifest: dict) -> bool:
         return False
 
 
-def _ready_release_version(
-    layout: Layout, release: Release, lifecycle: Lifecycle, *, update_id: str, parent: str | None,
+def _ready_official(
+    layout: Layout, release: Release, lifecycle: Lifecycle, *, update_id: str, parent: str | None, update: Plan,
 ) -> str:
+    """The official version of ``update``: one already here, or built from its commit and frontend."""
     for manifest in store.list_versions(layout):
-        if manifest.get("commit") == release.commit and _intact(layout, manifest):
+        official = manifest.get("official") or {}
+        if official.get("commit") == update.channel.commit and _intact(layout, manifest):
             return str(manifest["id"])
-    builder.check_space(layout, new_base=not layout.base(release.base).is_dir())
-    assets.install_carried_base(layout, release)
-    if layout.base(release.base).is_dir():
-        return assets.install_version(layout, release, update_id=update_id, parent=parent)
-    # Only a release that carries no base gets here; the machine builds it
-    # from the commit instead.
-    built = lifecycle.build(layout, BuildRequest(
-        update_id, release.commit, parent=parent, built_by=f"official {release.release}",
-    ))
+    frontend = layout.work / f".frontend-{update_id}"
+    try:
+        assemble.assemble_frontend(layout, update, frontend)
+        built = lifecycle.build(layout, BuildRequest(
+            update_id, release.commit, parent=parent, built_by=f"official {release.name}",
+            frontend_dir=frontend, official=assemble.official_fields(update),
+        ))
+    finally:
+        shutil.rmtree(frontend, ignore_errors=True)
     return built.version
 
 
@@ -184,46 +199,51 @@ def _finish(result: ReplayResult, outcome: str, detail: str = "") -> ReplayResul
     return result
 
 
-def replay_release(
-    layout: Layout, directory: Path, lifecycle: Lifecycle, *,
-    update_id: str, parent: str | None = None, platform: str | None = None,
-    trusted_keys: Iterable[str] | None = None,
+def replay_update(
+    layout: Layout, update: Plan, lifecycle: Lifecycle, *, update_id: str, parent: str | None = None,
 ) -> ReplayResult:
-    """Apply the release in ``directory``. Failures come back in the result."""
-    result = ReplayResult(outcome=ABORTED, message="")
+    """Apply a downloaded update (:func:`assemble.download`). Failures come back in the result."""
+    result = ReplayResult(outcome=ABORTED, message="", release=update.channel.name)
     try:
-        release = assets.read_release(directory, platform=platform, trusted_keys=trusted_keys, layout=layout)
-        result.release = release.release
-        waiting = assets.needs_new_shell(layout, release)
-        if waiting is not None:
+        if update.state == assemble.UP_TO_DATE:
+            result.outcome, result.message = UP_TO_DATE, update.detail
+            return result
+        if update.state == assemble.WAITING_FOR_SHELL:
             result.outcome = WAITING_FOR_SHELL
-            result.message = f"{waiting}; it applies once the shell update is installed."
+            result.message = f"{update.detail}; it applies once the shell update is installed."
             return result
-        assets.fetch_release(layout, release)
-        if _is_up_to_date(layout, release.commit):
+        if update.state != assemble.AVAILABLE:
+            result.outcome, result.message = update.state, f"{update.detail}. Nothing was changed."
+            return result
+        builder.check_space(layout, new_base=update.runtime is not None and not layout.base(update.base).is_dir())
+        assemble.assemble_base(layout, update)
+        commit = assemble.import_source(layout, update)
+        if _is_up_to_date(layout, commit):
             result.outcome = UP_TO_DATE
-            result.message = f"This installation already contains {release.release}."
+            result.message = f"This installation already contains {update.channel.name}."
             return result
-        return _apply(layout, release, lifecycle, result, update_id=update_id, parent=parent)
+        ready = functools.partial(_ready_official, update=update)
+        return _apply(layout, Release(update.channel.name, commit), lifecycle, result,
+                      update_id=update_id, parent=parent, ready=ready)
     except (ReleaseError, BuildError, store.SealError, OSError) as exc:
         return _finish(result, ABORTED, str(exc))
 
 
 def _apply(
     layout: Layout, release: Release, lifecycle: Lifecycle, result: ReplayResult, *,
-    update_id: str, parent: str | None,
+    update_id: str, parent: str | None, ready: Callable[..., str],
 ) -> ReplayResult:
+    """Make the official version ready with ``ready``, then carry the owner's commits onto it."""
     commits = own_commits(layout, release.commit)
-    release_version = _ready_release_version(layout, release, lifecycle, update_id=update_id, parent=parent)
+    release_version = ready(layout, release, lifecycle, update_id=update_id, parent=parent)
     if not commits:
         return _try_unmodified(release_version, lifecycle, result)
 
-    worktree = layout.work / f"official-{release.release}"
+    worktree = layout.work / f"official-{release.name}"
     layout.work.mkdir(parents=True, exist_ok=True)
     _remove_worktree(layout, worktree)
     git_output(layout.repo, "worktree", "add", "--detach", "--force", str(worktree), release.commit)
     try:
-        assets.install_carried_toolchain(layout, release)
         stack = _pick_all(layout, release, worktree, commits, result)
         return _try_with_commits(
             layout, release, lifecycle, result, worktree, stack,
@@ -287,7 +307,7 @@ def _try_with_commits(
         try:
             built = lifecycle.build(layout, BuildRequest(
                 update_id, stack[-1].tip, worktree=worktree, parent=release_version,
-                built_by=f"official {release.release}",
+                built_by=f"official {release.name}",
             ))
         except NotEnoughSpace:
             raise  # No commit is to blame, so none is dropped.

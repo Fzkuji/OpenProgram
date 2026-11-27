@@ -121,10 +121,10 @@ def test_a_run_that_could_not_check_gives_its_reason():
 
 
 def test_only_the_third_failure_in_a_row_counts_as_news_and_a_success_clears_it(tmp_path, monkeypatch):
-    from openprogram.programs.tools.jobs.cron import cron
+    from openprogram.runtime.scheduler import store as task_store
     from openprogram.runtime.scheduler import task_runs
 
-    monkeypatch.setattr(cron, "_resolve_path", lambda: str(tmp_path / "tasks.json"))
+    monkeypatch.setattr(task_store, "_resolve_path", lambda: str(tmp_path / "tasks.json"))
     counts = [task_runs.record("t1", task_runs.FAILED, "403") for _ in range(4)]
     assert counts == [1, 2, 3, 4]
     assert task_runs.record("t1", task_runs.QUIET) == 0

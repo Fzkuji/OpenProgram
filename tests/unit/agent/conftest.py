@@ -8,7 +8,7 @@ import pytest
 def _fresh_send_window():
     """Each test starts with an unspent hourly send allowance: the window
     is process memory, and every test sends from the same session ids."""
-    from openprogram.programs.tools.agents.send_message.send_message import depth
+    from openprogram.runtime.jobs import chain_budgets as depth
 
     with depth._send_lock:
         depth._sends.clear()

@@ -19,9 +19,9 @@ from mcp import ClientSession
 
 from openprogram.runtime.permissions.authority import mcp_client_authority
 from openprogram.runtime.permissions.refusal import MCP_GATE_REFUSALS
-from openprogram.extensions.mcp.server.contracts import get_mcp_tools
-from openprogram.extensions.mcp.server.service import MCPClientContext
-from openprogram.extensions.mcp.server.tools import json_result
+from openprogram.interfaces.mcp_server.contracts import get_mcp_tools
+from openprogram.interfaces.mcp_server.service import MCPClientContext
+from openprogram.interfaces.mcp_server.tools import json_result
 
 # Starting Python and importing the CLI can take tens of seconds when every
 # xdist worker does it at once. The limit only bounds a real hang, below the
@@ -55,7 +55,7 @@ from openprogram.models.providers.types import AgentTool, AgentToolResult
 from openprogram.runtime.events import get_event_bus, make_event
 from openprogram.programs._host.runtime import register
 from openprogram.models.providers.types import TextContent
-import openprogram.extensions.mcp.server.service as mcp_service_module
+import openprogram.interfaces.mcp_server.service as mcp_service_module
 
 evidence = Path(os.environ["OPENPROGRAM_MCP_TEST_EVIDENCE"])
 
@@ -493,7 +493,7 @@ def test_real_stdio_subprocess_prompt_cancel_cleanup_and_foreign_ownership(tmp_p
 
 
 def test_build_server_registers_exact_tools_and_explicit_call_handler():
-    from openprogram.extensions.mcp.server.server import build_server
+    from openprogram.interfaces.mcp_server.server import build_server
 
     context = MCPClientContext(
         "0123456789abcdef", mcp_client_authority("0123456789abcdef")
@@ -601,7 +601,7 @@ def test_real_cli_auth_failure_matrix_never_enters_stdio(tmp_path, case):
     lines = completed.stderr.splitlines()
     assert len(lines) == 1
     assert lines[0].endswith(
-        " ERROR openprogram.extensions.mcp.server.server: MCP server authentication failed"
+        " ERROR openprogram.interfaces.mcp_server.server: MCP server authentication failed"
     )
     assert "secret" not in completed.stderr
 
@@ -689,7 +689,7 @@ def test_explicit_handler_routes_sdk_request_id_and_ordered_progress(with_progre
     from mcp.server.lowlevel.server import RequestContext, request_ctx
 
     from openprogram.models.providers.types import AgentToolResult
-    from openprogram.extensions.mcp.server.server import build_server
+    from openprogram.interfaces.mcp_server.server import build_server
     from openprogram.models.providers.types import TextContent
 
     server = build_server(
@@ -753,7 +753,7 @@ def test_explicit_handler_routes_sdk_request_id_and_ordered_progress(with_progre
 
 def test_real_sdk_in_memory_maps_all_six_wrappers_and_method_errors():
     from openprogram.models.providers.types import AgentToolResult
-    from openprogram.extensions.mcp.server.server import build_server
+    from openprogram.interfaces.mcp_server.server import build_server
     from openprogram.models.providers.types import TextContent
 
     server = build_server(
@@ -835,7 +835,7 @@ def test_sdk_cancellation_reaches_prompt_handler_without_application_result():
     from openprogram.runtime.execution.run_control import current_token
     from openprogram.runtime.conversation.turn_runtime import TurnResult
     from openprogram.runtime.events import create_event_bus, make_event
-    from openprogram.extensions.mcp.server.server import build_server
+    from openprogram.interfaces.mcp_server.server import build_server
 
     server = build_server(
         MCPClientContext("0123456789abcdef", mcp_client_authority("0123456789abcdef"))
@@ -963,7 +963,7 @@ def test_tool_call_wire_cancellation_sets_exact_event_and_stops_progress(
 ):
     from mcp.server.lowlevel.server import RequestContext, request_ctx
 
-    from openprogram.extensions.mcp.server.server import build_server
+    from openprogram.interfaces.mcp_server.server import build_server
 
     server = build_server(
         MCPClientContext("0123456789abcdef", mcp_client_authority("0123456789abcdef"))
@@ -1045,7 +1045,7 @@ def test_blocked_progress_does_not_delay_fixed_tool_result(
     from mcp.server.lowlevel.server import RequestContext, request_ctx
 
     from openprogram.models.providers.types import AgentToolResult
-    from openprogram.extensions.mcp.server.server import build_server
+    from openprogram.interfaces.mcp_server.server import build_server
     from openprogram.models.providers.types import TextContent
 
     server = build_server(
@@ -1112,7 +1112,7 @@ def test_handler_cancel_during_progress_timeout_cleanup_is_not_swallowed():
     from mcp.server.lowlevel.server import RequestContext, request_ctx
 
     from openprogram.models.providers.types import AgentToolResult
-    from openprogram.extensions.mcp.server.server import build_server
+    from openprogram.interfaces.mcp_server.server import build_server
     from openprogram.models.providers.types import TextContent
 
     server = build_server(
@@ -1183,7 +1183,7 @@ def test_protocol_tool_error_matrix_and_concurrent_progress_are_isolated():
     from mcp.shared.exceptions import McpError
 
     from openprogram.models.providers.types import AgentToolResult
-    from openprogram.extensions.mcp.server.server import build_server
+    from openprogram.interfaces.mcp_server.server import build_server
     from openprogram.models.providers.types import TextContent
 
     server = build_server(
@@ -1280,7 +1280,7 @@ def test_protocol_tool_error_matrix_and_concurrent_progress_are_isolated():
 
 def test_protocol_prompt_cancel_is_same_connection_only_and_completed_is_false():
     from openprogram.runtime.conversation.turn_runtime import TurnResult
-    from openprogram.extensions.mcp.server.server import build_server
+    from openprogram.interfaces.mcp_server.server import build_server
 
     server = build_server(
         MCPClientContext("0123456789abcdef", mcp_client_authority("0123456789abcdef"))
@@ -1343,7 +1343,7 @@ def test_protocol_prompt_cancel_is_same_connection_only_and_completed_is_false()
 
 def test_foreign_sdk_connection_cannot_cancel_active_prompt():
     from openprogram.runtime.conversation.turn_runtime import TurnResult
-    from openprogram.extensions.mcp.server.server import build_server
+    from openprogram.interfaces.mcp_server.server import build_server
 
     contexts = (
         MCPClientContext("0123456789abcdef", mcp_client_authority("0123456789abcdef")),

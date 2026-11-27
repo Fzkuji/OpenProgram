@@ -196,6 +196,7 @@ def _asyncio_errors(caplog) -> list[str]:
     return [record.getMessage() for record in caplog.records if record.name == "asyncio"]
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize(
     "close_s, bridge_delay_s",
     [

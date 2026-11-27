@@ -132,7 +132,7 @@ def _shadow_root_for(session_id: str, paths: list[str]) -> Optional[str]:
     # drops out of the ordering; the common-ancestor fallback below still
     # produces a root.
     try:
-        from openprogram.state.store.project import project_commit as _pc
+        from openprogram.state import project_commit as _pc
         project = _pc._project_for(session_id)
         if project is not None and project.path:
             candidates.append(project.path)
@@ -540,7 +540,7 @@ def finalize_turn(
     # pre-existing uncommitted work, per Strategy A. Off unless opted in
     # (config ``project_auto_commit`` / env). Best-effort.
     try:
-        from openprogram.state.store.project import project_commit as _pc
+        from openprogram.state import project_commit as _pc
         _commit_sha = _pc.commit_turn_changes(
             req.session_id, req.user_text or "",
             _project_baseline, on_event=on_event,
@@ -641,7 +641,7 @@ def finalize_error_turn(
     # Project auto-commit: the agent may well have edited files before
     # failing, and those edits are just as real as a successful turn's.
     try:
-        from openprogram.state.store.project import project_commit as _pc
+        from openprogram.state import project_commit as _pc
         _pc.commit_turn_changes(
             req.session_id, req.user_text or "",
             _project_baseline, on_event=on_event,

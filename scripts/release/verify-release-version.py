@@ -13,7 +13,14 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
+# The App bundle carries the 3-part version of its installer build; the Python
+# project may be a code-only release on top of it (X.Y.Z or X.Y.Z.W).
 VERSION_PATTERN = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
+PROJECT_VERSION_PATTERN = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:\.[0-9]+)?$")
+
+
+def _parts(version: str) -> tuple[int, ...]:
+    return tuple(int(part) for part in version.split("."))
 
 
 def _installed_app_version(app_path: Path) -> str:
@@ -104,7 +111,7 @@ def _wheel_version(wheel_path: Path) -> str:
     version = metadata.get("Version", "").strip()
     if name != "openprogram":
         raise SystemExit(f"unexpected wheel project: {name or '<missing>'}")
-    if not VERSION_PATTERN.fullmatch(version):
+    if not PROJECT_VERSION_PATTERN.fullmatch(version):
         raise SystemExit(f"invalid OpenProgram wheel version: {version or '<missing>'}")
     return version
 
@@ -134,20 +141,32 @@ def main() -> int:
     ).read_text(encoding="utf-8")
     expected_tag = f"v{python_version}"
     errors = []
-    if desktop_version != python_version:
+    # The installer places hold the 3-part version of the last installer build
+    # in the same X.Y series; a code-only release moves only the Python project.
+    if not (
+        VERSION_PATTERN.fullmatch(desktop_version)
+        and PROJECT_VERSION_PATTERN.fullmatch(python_version)
+        and _parts(desktop_version)[:2] == _parts(python_version)[:2]
+        and _parts(desktop_version) <= _parts(python_version)
+    ):
         errors.append(
-            f"desktop version {desktop_version} != Python version {python_version}"
+            f"desktop version {desktop_version} does not fit Python version {python_version}"
         )
     if args.tag and args.tag != expected_tag:
         errors.append(f"tag {args.tag} != {expected_tag}")
+    if args.tag and args.tag != f"v{desktop_version}":
+        errors.append(
+            f"installers are built for a feature release (vX.Y.0) whose every "
+            f"version place agrees; {args.tag} is a code-only release"
+        )
     expected_default = (
-        f'OPENPROGRAM_VERSION="${{OPENPROGRAM_VERSION:-{python_version}}}"'
+        f'OPENPROGRAM_VERSION="${{OPENPROGRAM_VERSION:-{desktop_version}}}"'
     )
     if expected_default not in installer:
         errors.append("POSIX release installer default version does not match project version")
     windows_default = (
         'if ($env:OPENPROGRAM_VERSION) { $env:OPENPROGRAM_VERSION } '
-        f'else {{ "{python_version}" }}'
+        f'else {{ "{desktop_version}" }}'
     )
     if windows_default not in windows_installer:
         errors.append(
@@ -155,12 +174,10 @@ def main() -> int:
         )
     if args.installed_app is not None:
         installed_version = _installed_app_version(args.installed_app)
-        older = args.allow_upgrade and tuple(map(int, installed_version.split("."))) < tuple(
-            map(int, python_version.split("."))
-        )
-        if args.require_source_match and installed_version != python_version and not older:
+        older = args.allow_upgrade and _parts(installed_version) < _parts(desktop_version)
+        if args.require_source_match and installed_version != desktop_version and not older:
             errors.append(
-                f"source version {python_version} != installed App version "
+                f"source version {desktop_version} != installed App version "
                 f"{installed_version}"
             )
     if args.wheel is not None:

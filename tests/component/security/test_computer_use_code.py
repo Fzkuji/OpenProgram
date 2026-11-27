@@ -9,7 +9,7 @@ from openprogram.runtime.execution.attempts import AttemptStore
 from openprogram.runtime.execution.recovery.effects import EffectStore
 from openprogram.runtime.execution.model import CapabilitySet
 from openprogram.runtime.execution.store import ExecutionStore
-from openprogram.programs._host.execution import ToolReturn
+from openprogram.runtime.agent.tool_execution import ToolReturn
 from openprogram.programs.tools.computer_use.computer_use.code_mode import calls as code
 from openprogram.programs.tools.computer_use.computer_use.contract import Approval
 from tests.support.screen_targets import FakeProvider, app_approval, install

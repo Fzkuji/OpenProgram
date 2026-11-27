@@ -122,7 +122,7 @@ export function SettingsTabsLayout({
 
   return (
     <div className="main">
-      <div className={styles.view}>
+      <div className={styles.view} data-settings-view="">
         <ManagePageHeader
           title={t("settings.title")}
           railToggle={(

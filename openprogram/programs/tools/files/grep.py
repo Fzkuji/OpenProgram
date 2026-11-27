@@ -8,6 +8,7 @@ import shutil
 import subprocess
 
 from openprogram.programs._host.runtime import function
+from openprogram.runtime.permissions import tool_profiles
 
 
 _DESCRIPTION = (
@@ -64,7 +65,7 @@ def _line_path(line: str) -> str:
 def _drop_denied_lines(out: str) -> str:
     """Remove result lines naming a deny-read path. rg runs in-process
     here (no OS sandbox wraps it), so the policy has no other seam."""
-    from .file_safety import read_denier
+    from ._read_denier import read_denier
     denied = read_denier()
     if denied is None or not out:
         return out
@@ -87,7 +88,7 @@ def _run_python_fallback(pattern: str, path: str, glob: str | None,
     content_lines: list[str] = []
     counts: dict[str, int] = {}
 
-    from .file_safety import read_denier
+    from ._read_denier import read_denier
     denied = read_denier()
 
     if os.path.isfile(path):
@@ -173,3 +174,10 @@ def grep(pattern: str,
     else:
         out = _run_python_fallback(pattern, root, glob, output_mode, case_insensitive)
     return f"{outside_warning}\n{out}" if outside_warning else out
+
+
+# Only this implementation reads without effect: a replacement under the same
+# name is not let through as an inspection (``permissions.recovery``).
+tool_profiles.register(grep.name, tool_profiles.ToolProfile(
+    inspects=lambda tool: getattr(tool, "execute", None) is grep.execute,
+))

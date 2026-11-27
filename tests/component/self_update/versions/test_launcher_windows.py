@@ -54,6 +54,7 @@ def test_main_reads_its_arguments_from_the_wide_command_line():
     assert replaced < main.index('strcmp(argv[1], "--root")'), "--root is read before the arguments are replaced"
 
 
+@pytest.mark.slow
 @pytest.mark.skipif(shutil.which("zig") is None, reason="needs zig to cross-compile for Windows")
 @pytest.mark.parametrize("target", ["x86_64-windows-gnu", "aarch64-windows-gnu"])
 def test_the_windows_source_compiles(tmp_path, target):

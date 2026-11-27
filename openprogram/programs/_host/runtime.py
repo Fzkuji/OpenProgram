@@ -62,29 +62,29 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import copy
-import hashlib
 import inspect
-import json
 import re
 import threading
-import time
 import traceback
-from dataclasses import dataclass
 from enum import Enum
-from pathlib import Path
 from typing import Any, Callable, Optional, Union, get_args, get_origin
 
 from openprogram.models.providers.types import AgentTool, AgentToolResult
 from openprogram.models.providers.types import TextContent
+from openprogram.runtime.agent.call_state import (
+    _current_tool_call_id,
+    _tool_call_identity_consumed,
+)
 from openprogram.runtime.permissions.refusal import Refused
 
-from .execution import (
+from openprogram.runtime.agent.tool_execution import (
     DEFAULT_STREAM_CAPACITY_CHARS,
     MIN_STREAM_CAPACITY_CHARS,
     ToolReturn,  # noqa: F401 -- @function authors import ToolReturn from here
+    _cache_get,
+    _cache_key,
+    _cache_set,
     _normalize_result as _normalize_result_impl,
-    _persist_full_result as _persist_full_result_impl,
-    _tool_results_dir as _default_tool_results_dir,
     dispatch_sandbox_error,
     invoke_callable,
     timeout_tool_result,
@@ -92,19 +92,6 @@ from .execution import (
 import logging
 
 _log = logging.getLogger(__name__)
-
-# Re-export names tests and callers import from this module.
-# ``_tool_results_dir`` stays a local function so monkeypatches on
-# ``openprogram.programs._host.runtime._tool_results_dir`` still redirect persist.
-
-
-def _tool_results_dir() -> Path:
-    return _default_tool_results_dir()
-
-
-def _persist_full_result(call_id: str, text: str) -> Path:
-    return _persist_full_result_impl(call_id, text, fallback_dir=lambda: _tool_results_dir())
-
 
 def _normalize_result(raw: Any, *, call_id: str, cap: int | None = None) -> AgentToolResult:
     return _normalize_result_impl(raw, call_id=call_id, cap=cap)
@@ -114,38 +101,8 @@ def _normalize_result(raw: Any, *, call_id: str, cap: int | None = None) -> Agen
 # Registry
 # ---------------------------------------------------------------------------
 
-# The LLM tool_call_id of the tool currently executing, bound in
-# ``_execute`` so tool bodies can correlate side-effects they emit with
-# the block the UI drew for their call. ``task`` uses it to anchor its
-# spawn card on the right execution-timeline row.
-_current_tool_call_id: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
-    "_current_tool_call_id", default=None,
-)
-
-# A provider may reuse its wire ``tool_call_id`` in a later assistant turn.
-# The dispatcher binds this qualified occurrence for DAG identity while the
-# raw id remains available to tools that correlate provider messages.
-_current_tool_call_occurrence_id: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
-    "_current_tool_call_occurrence_id", default=None,
-)
-_tool_call_identity_consumed: contextvars.ContextVar[bool] = contextvars.ContextVar(
-    "_tool_call_identity_consumed", default=False,
-)
-
-
-def current_tool_call_id() -> Optional[str]:
-    """The tool_call_id of the in-flight tool call, or None outside one."""
-    return _current_tool_call_id.get()
-
-
-def current_tool_call_occurrence_id() -> Optional[str]:
-    """The qualified occurrence id of the in-flight provider tool call."""
-    return _current_tool_call_occurrence_id.get()
-
-
-def tool_call_identity_consumed() -> bool:
-    """Whether the current agentic wrapper already consumed its occurrence."""
-    return bool(_tool_call_identity_consumed.get())
+# The provider tool call running in this context is the runtime's
+# (``runtime.agent.call_state``): ``_execute`` binds it around a call.
 
 
 class Tier(str, Enum):
@@ -315,6 +272,15 @@ def current_tool(tool: AgentTool) -> AgentTool:
 def all_tools() -> list[AgentTool]:
     with _registry_lock:
         return list(_registry.values())
+
+
+def unsafe_in_for(tool_name: str) -> set[str]:
+    """Read the live unsafe_in metadata for a single function. Looks at
+    the in-process channel registry that ``@function(unsafe_in=[...])``
+    populates so the answer reflects whatever plugins are loaded right
+    now.
+    """
+    return _unsafe_in_channel.get(tool_name, set())
 
 
 def exposed_names() -> set[str]:
@@ -692,39 +658,6 @@ def _evaluate_approval(
     if isinstance(verdict, str):
         return True, verdict
     return bool(verdict), None
-
-
-# ---------------------------------------------------------------------------
-# Cache
-# ---------------------------------------------------------------------------
-
-@dataclass
-class _CacheEntry:
-    value: AgentToolResult
-    expires_at: float
-
-
-_cache: dict[str, _CacheEntry] = {}
-
-
-def _cache_key(name: str, args: dict[str, Any]) -> str:
-    payload = json.dumps({"name": name, "args": args},
-                         sort_keys=True, default=str)
-    return hashlib.sha256(payload.encode()).hexdigest()
-
-
-def _cache_get(key: str) -> Optional[AgentToolResult]:
-    e = _cache.get(key)
-    if e is None:
-        return None
-    if e.expires_at < time.time():
-        _cache.pop(key, None)
-        return None
-    return e.value
-
-
-def _cache_set(key: str, value: AgentToolResult, ttl: float) -> None:
-    _cache[key] = _CacheEntry(value=value, expires_at=time.time() + ttl)
 
 
 # ---------------------------------------------------------------------------
@@ -1282,6 +1215,11 @@ def install_open_applications(app_ids: Any) -> Any:
     return _open_applications.set(frozenset(app_ids or ()))
 
 
+def reset_open_applications(token: Any) -> None:
+    """Restore the open applications that ``install_open_applications`` replaced."""
+    _open_applications.reset(token)
+
+
 def resident_now(t: Any, loaded: Any = None) -> bool:
     """Whether ``t``'s schema goes into this request's tools array.
 
@@ -1354,6 +1292,16 @@ def schema_not_sent_hint(name: str) -> str:
     not loaded (Claude Code ``buildSchemaNotSentHint``)."""
     return (f"This tool's schema was not sent. Load it with `tool_search select:{name}`, "
             "then retry.")
+
+
+def schema_hint(t: Any, loaded: Any = None) -> str:
+    """What a failed argument check of ``t`` adds: ``schema_not_sent_hint``
+    for a deferred tool the request had not loaded (``loaded``, by default
+    the last request's loaded set), else nothing."""
+    names = set(loaded) if loaded is not None else set(_request_loaded.get())
+    if tool_tier(t) is not Tier.DEFERRED or getattr(t, "name", None) in names:
+        return ""
+    return schema_not_sent_hint(t.name)
 
 
 #: The tools this turn sends with their schema whatever their registered

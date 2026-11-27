@@ -10,9 +10,9 @@ import pytest
 from openprogram.operations.self_update import SelfUpdateStore, UpdatePhase
 from openprogram.operations.self_update.control import official_update, switch
 from openprogram.operations.self_update.official import replay
-from openprogram.operations.self_update.official.assets import ReleaseError
+from openprogram.operations.self_update.official.repository import ReleaseError
 from openprogram.operations.self_update.versions import pointer as pointers
-from openprogram.operations.self_update.versions.layout import Layout
+from openprogram.host._platform.runtime_layout import Layout
 
 from .test_switch import BASE, Host, NEW, OLD, _seal
 
@@ -81,11 +81,11 @@ def test_a_busy_slot_is_not_blamed_on_the_candidate(attempts) -> None:
     assert attempts.store.load(held).state.phase is UpdatePhase.SUCCEEDED
 
 
-def test_apply_release_refuses_while_an_update_is_running(attempts, monkeypatch) -> None:
+def test_apply_plan_refuses_while_an_update_is_running(attempts, monkeypatch) -> None:
     attempts.trial(NEW)
     called = []
-    monkeypatch.setattr(replay, "replay_release", lambda *a, **k: called.append(1))
-    result = official_update.apply_release(Path("/nowhere"), store=attempts.store, host=attempts.host,
+    monkeypatch.setattr(replay, "replay_update", lambda *a, **k: called.append(1))
+    result = official_update.apply_plan(None, store=attempts.store, host=attempts.host,
                                            layout=attempts.layout, controller_version=OLD)
     assert result.outcome == replay.ABORTED and attempts.update_id in result.message and not called
     attempts.activate(NEW)

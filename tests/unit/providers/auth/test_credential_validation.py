@@ -16,7 +16,7 @@ import pytest
 
 from openprogram.models.listing import credentials as cr
 from openprogram.models.providers.settings import storage as st
-import openprogram.models.providers.settings.env_api_keys as ek
+import openprogram.models.auth.env_api_keys as ek
 
 
 # pure classifiers
@@ -25,10 +25,7 @@ import openprogram.models.providers.settings.env_api_keys as ek
     ("openrouter", "openrouter_key"),
     ("anthropic", "anthropic_native"),
     ("google", "google_query"),
-    ("openai-codex", "oauth"),
-    ("gemini-subscription", "oauth"),
-    ("xai-subscription", "oauth"),
-    ("github-copilot", "oauth"),
+    ("claude-code", "oauth"),
     ("amazon-bedrock", "cloud"),
     ("azure-openai-responses", "cloud"),
     ("deepseek", "openai_bearer"),
@@ -303,49 +300,16 @@ def test_oauth_check_reads_auth_value_and_valid_status(monkeypatch):
         "openprogram.models.auth.credential_provider.get_credential_provider",
         lambda: _Provider(),
     )
-    r = cr._oauth_check("openai-codex", "oauth")
+    r = cr._oauth_check("claude-code", "oauth")
     assert r.status == cr.VALID and r.ok
     assert r.via == "CredentialProvider"
-
-
-def test_xai_subscription_check_hits_cli_proxy(monkeypatch):
-    class _Payload:
-        auth_value = "tok_abc"
-
-    class _Cred:
-        status = "valid"
-        payload = _Payload()
-
-    class _Provider:
-        def acquire_sync(self, provider_id, account_id=None):
-            return _Cred()
-
-    monkeypatch.setattr(
-        "openprogram.models.auth.credential_provider.get_credential_provider",
-        lambda: _Provider(),
-    )
-    calls = {}
-
-    def fake_get(url, *, headers=None, params=None, timeout=15.0, configured_url=None):
-        calls["url"] = url
-        calls["headers"] = headers or {}
-        calls["configured_url"] = configured_url
-        return (200, '{"data":[{"id":"grok-4.5"}]}', 12)
-
-    monkeypatch.setattr(cr, "_http_get", fake_get)
-    r = cr._oauth_check("xai-subscription", "oauth")
-    assert r.status == cr.VALID and r.ok
-    assert r.via == "GET /models"
-    assert calls["url"] == "https://cli-chat-proxy.grok.com/v1/models"
-    assert calls["headers"].get("X-XAI-Token-Auth") == "xai-grok-cli"
-    assert calls["headers"].get("Authorization") == "Bearer tok_abc"
 
 
 def test_probe_proves_usable_not_auth_only_models():
     auth_only = cr._result("openai", cr.VALID, kind="openai_bearer", via="GET /models")
     or_key = cr._result("openrouter", cr.VALID, kind="openrouter_key", via="GET /key")
     ping = cr._result("openai", cr.VALID, kind="openai_bearer", via="POST /chat/completions")
-    oauth = cr._result("openai-codex", cr.VALID, kind="oauth", via="CredentialProvider")
+    oauth = cr._result("claude-code", cr.VALID, kind="oauth", via="CredentialProvider")
     assert cr.probe_proves_usable(auth_only) is False
     assert cr.probe_proves_usable(or_key) is True
     assert cr.probe_proves_usable(ping) is True

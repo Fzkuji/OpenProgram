@@ -10,6 +10,13 @@ Importing this package registers the conversation engine with the call core
 (``engine_registration``), so ``Agent.run_turn`` and the core's lookups of
 the running turn reach it, and claims the core's cancellation check
 (``run_control``), so a stopped turn aborts at the next Agent method entry.
+
+Programs sit above conversations and are never imported here. What a
+Program does at a moment of a turn (a chat Goal admitting and settling its
+turns, the task board following a reply, ``send_file`` attaching files) it
+registers with ``turn_hooks``; what a turn asks of the screen tool, the tool
+answers through ``screen_tool``; the tool registry and its policy chain are
+reached through ``openprogram.runtime.program_host``.
 """
 
 # The call core, context and permission packages sit below this one;

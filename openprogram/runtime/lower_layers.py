@@ -1,4 +1,5 @@
-"""What the runtime hands down to models, state and the host when it loads.
+"""What the runtime hands down to models, state, the host and its own lower
+parts when it loads.
 
 ``openprogram.models``, ``openprogram.state`` and ``openprogram.host`` sit
 below the runtime and never import it. The facts they need from it arrive
@@ -9,13 +10,28 @@ through ports they own, filled in here:
   turns, live work on a session, the saved Agents, the claimed Job;
 * ``state.event_sink`` — the event bus;
 * ``host.runtime_facts`` — execution records, the worker stopping, the
-  foreground turn, the running call and tool call, the turn's source and
-  tool policy, a conversation's working directories and App surface, the
-  client broadcast, and loading the built-in Programs;
+  foreground turn, the running call and tool call, the turn's source, a
+  conversation's working directories and App surface and the client
+  broadcast (the turn's tool policy comes from Programs,
+  ``programs._host.lower_layers``);
 * ``models.providers.recording.capture`` — the named sections of a
-  system prompt the runtime composed, for the prompt-cache check;
-* ``host.system_access`` — the operating-system access a tool call needs,
-  which the provider of a ``computer_use`` target answers.
+  system prompt the runtime composed, for the prompt-cache check.
+
+Inside the runtime the parts are ordered too (``agent_registry`` < ``jobs``
+< ``conversation`` < ``scheduler`` < ``harnesses``). What a lower part needs
+of a higher one goes through a link module of the runtime, which imports no
+part and is filled here (the modules stay small, so filling them loads no
+part):
+
+* ``runtime.conversation_link`` — the conversation side of a Job, for
+  ``jobs``: its agent turn and driver, killing its process, the
+  conversation's permission and branch settings, the inbox, idle signals and
+  a spawned agent's card;
+* ``runtime.scheduler_link`` — for ``conversation``: a scheduled run's
+  ending and pages, the scheduled tasks, the system-notification fallback
+  and time limits;
+* ``runtime.harness_link`` — for ``conversation``: the outside agent a turn
+  runs in.
 
 Each provider imports its runtime module when it is called, never here,
 so loading the runtime package stays cheap and a test that replaces a
@@ -199,12 +215,6 @@ def _turn_request_source():
     return getattr(get_turn_request(), "source", None)
 
 
-def _allowed_tool_names():
-    from openprogram.programs._host.runtime import _allowed_tool_names
-
-    return _allowed_tool_names.get()
-
-
 def _session_workdir(session_id: str):
     from openprogram.runtime.conversation.session_settings.workdir import runtime_location_for
 
@@ -236,32 +246,170 @@ def _forget_session_runs(session_id: str) -> None:
     default_store().tables.forget_session(session_id)
 
 
-def _load_programs() -> None:
-    from openprogram.programs._host import services
-
-    services.load_programs()
-
-
 def _system_prompt_parts(text: str):
     from openprogram.runtime.context.prompt_assembly.components import prompt_parts
 
     return prompt_parts(text)
 
 
-def _system_access_operation(tool_name: str, args: dict):
-    if tool_name != "computer_use":
-        return None
-    from openprogram.programs.tools.computer_use.computer_use import tool as screen
+# ── jobs.conversation_link ───────────────────────────────────────────────
 
-    return screen.system_access(args)
+def _agent_driver(executions, **options):
+    from openprogram.runtime.conversation.production_driver import AgentProductionDriver
+
+    return AgentProductionDriver(executions, **options)
+
+
+def _agent_capabilities(payload):
+    from openprogram.runtime.conversation.production_driver import AgentProductionDriver
+
+    return AgentProductionDriver.capabilities_for_payload(payload)
+
+
+def _agent_adapter(**options):
+    from openprogram.runtime.conversation.production_driver import CanonicalAgentAdapter
+
+    return CanonicalAgentAdapter(**options)
+
+
+def _kill_process(session_id: str, *, execution_id: str):
+    from openprogram.runtime.conversation.process_runner import kill_active_subprocess
+
+    return kill_active_subprocess(session_id, execution_id=execution_id)
+
+
+def _unregister_cancel_event(session_id: str, cancel_event, *, execution_id: str) -> None:
+    from openprogram.runtime.conversation.run_control import unregister_cancel_event
+
+    unregister_cancel_event(session_id, cancel_event, execution_id=execution_id)
+
+
+def _conversation_permission(session_id: str, **options):
+    from openprogram.runtime.conversation.session_settings.session_config import conversation_permission
+
+    return conversation_permission(session_id, **options)
+
+
+def _freeze_branch_request(request):
+    from openprogram.runtime.conversation.session_settings.branch_config import freeze_branch_request
+
+    return freeze_branch_request(request)
+
+
+def _branch_holding(session_id: str, message_id):
+    from openprogram.runtime.conversation.session_settings.branch_config import branch_holding
+
+    return branch_holding(session_id, message_id)
+
+
+def _inbox():
+    from openprogram.runtime.conversation.peer_agents import inbox
+
+    return inbox
+
+
+def _subscribe_idle(callback):
+    from openprogram.runtime.conversation.run_control.idle import subscribe_idle
+
+    return subscribe_idle(callback)
+
+
+def _attach_card(db, session_id: str, node_id):
+    from openprogram.runtime.conversation.peer_agents.sub_agent_run import _attach_node
+
+    return _attach_node(db, session_id, node_id)
+
+
+def _write_attach_placeholder(**card):
+    from openprogram.runtime.conversation.peer_agents.sub_agent_run import write_attach_placeholder_for_spawn
+
+    return write_attach_placeholder_for_spawn(**card)
+
+
+# ── conversation.scheduler_link ──────────────────────────────────────────
+
+def _run_ended(executions, execution, result) -> None:
+    from openprogram.runtime.scheduler import run_finish
+
+    run_finish.finish_resumed(executions, execution, result)
+
+
+def _close_run_pages(execution_id: str) -> None:
+    from openprogram.runtime.scheduler import run_finish
+
+    run_finish.close_run_tabs(execution_id)
+
+
+def _scheduled_tasks():
+    from openprogram.runtime.scheduler import service
+
+    return service.list_tasks()
+
+
+def _notify_unless_shown(notice_id: str, title: str, message: str, unless=None) -> None:
+    from openprogram.runtime.scheduler import reminders
+
+    reminders.notify_unless_shown(notice_id, title, message, unless=unless)
+
+
+def _stop_overdue(now: float):
+    from openprogram.runtime.scheduler import time_limits
+
+    return time_limits.stop_overdue(now)
+
+
+def _limited_runs_open() -> bool:
+    from openprogram.runtime.scheduler import time_limits
+
+    return time_limits.limited_runs_open()
+
+
+# ── conversation.harness_link ────────────────────────────────────────────
+
+def _turn_engine(req):
+    from openprogram.runtime.harnesses import turn_engine
+
+    return turn_engine(req)
+
+
+def _runs_in_harness(request) -> bool:
+    from openprogram.runtime.harnesses import is_harness_provider, turn_provider
+
+    return is_harness_provider(turn_provider(request))
+
+
+def _register_runtime_parts() -> None:
+    from openprogram.runtime import conversation_link, harness_link, scheduler_link
+
+    conversation_link.register(
+        agent_driver=_agent_driver,
+        agent_capabilities=_agent_capabilities,
+        agent_adapter=_agent_adapter,
+        kill_process=_kill_process,
+        unregister_cancel_event=_unregister_cancel_event,
+        conversation_permission=_conversation_permission,
+        freeze_branch_request=_freeze_branch_request,
+        branch_holding=_branch_holding,
+        inbox=_inbox,
+        subscribe_idle=_subscribe_idle,
+        attach_card=_attach_card,
+        write_attach_placeholder=_write_attach_placeholder,
+    )
+    scheduler_link.register(
+        run_ended=_run_ended,
+        close_run_pages=_close_run_pages,
+        scheduled_tasks=_scheduled_tasks,
+        notify_unless_shown=_notify_unless_shown,
+        stop_overdue=_stop_overdue,
+        limited_runs_open=_limited_runs_open,
+    )
+    harness_link.register(turn_engine=_turn_engine, runs_in_harness=_runs_in_harness)
 
 
 def register() -> None:
-    from openprogram.host import system_access
     from openprogram.models.providers.recording.capture import register_system_sections
 
     register_system_sections(_system_prompt_parts)
-    system_access.register_operation_source(_system_access_operation)
     register_current_store_resolver(_current_store)
     execution_facts.register(
         current_session_id=_current_session_id,
@@ -287,13 +435,12 @@ def register() -> None:
         current_call_id=_current_call_id,
         current_tool_call_id=_current_tool_call_id,
         turn_request_source=_turn_request_source,
-        allowed_tool_names=_allowed_tool_names,
         session_workdir=_session_workdir,
         session_additional_working_dirs=_session_additional_working_dirs,
         surface_context=_surface_context,
         broadcast=_broadcast,
-        load_programs=_load_programs,
     )
+    _register_runtime_parts()
 
 
 __all__ = ["register"]

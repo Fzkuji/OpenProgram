@@ -182,7 +182,7 @@ def test_bash_starts_in_the_worktree(bound):
 
 
 def test_a_relative_read_is_checked_where_it_is_read(bound, monkeypatch):
-    from openprogram.programs._host import execution
+    from openprogram.runtime.agent import tool_execution as execution
 
     seen = []
     monkeypatch.setattr(sandbox, "validate_read_path", lambda p: seen.append(p))

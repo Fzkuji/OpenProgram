@@ -13,7 +13,7 @@ def _add_provider_args(parser):
     parser.add_argument(
         "--provider", "-p",
         default=None,
-        help="LLM provider: claude-code, openai-codex, gemini-cli, anthropic, openai, gemini. "
+        help="LLM provider: anthropic, openai, gemini, or any connected provider id. "
              "Auto-detected if not specified.",
     )
     parser.add_argument(
@@ -928,17 +928,7 @@ def _add_memory_command(sub):
 
 
 def _add_service_commands(sub):
-    """Add update, worker, the stop/status/restart aliases and upgrade."""
-    # ---- update (auto-update from upstream) -------------------------------
-    p_update = sub.add_parser("update",
-        help="Check for + apply updates from upstream. The worker also "
-             "runs this in the background at startup; this command is "
-             "the manual entry point.")
-    p_update.add_argument("--check", action="store_true",
-        help="Only check; don't apply any update.")
-    p_update.add_argument("--force", action="store_true",
-        help="Bypass the 6-hour throttle.")
-
+    """Add worker, the stop/status/restart aliases and upgrade."""
     # ---- worker (persistent backend process) ------------------------------
     p_worker = sub.add_parser("worker",
         help="Manage the persistent worker process (webui + channels). "
@@ -994,8 +984,8 @@ def _add_service_commands(sub):
         help="Release line to follow (default: stable). Source checkouts "
              "persist it as the `update.channel` setting.")
     p_upgrade.add_argument("--from", dest="release_directory", metavar="DIR",
-        help="Version-store installs: apply the release files in this directory "
-             "(version archive, repo.bundle, SHA256SUMS and the signed manifest).")
+        help="Version-store installs: read the update from a local copy of the "
+             "update files (channel.json, its signature and the packs) in this directory.")
     p_upgrade.add_argument("--dry-run", action="store_true",
         help="Print planned steps without changing checkout, worker, or "
              "upgrade state. A source checkout still persists an explicit "
@@ -1007,6 +997,9 @@ def _add_service_commands(sub):
     p_upgrade.add_argument("--json", action="store_true", help="Emit JSON")
     p_upgrade.add_argument("--check", action="store_true",
         help="Only report whether a stable update is available.")
+    p_upgrade.add_argument("--prepare", action="store_true",
+        help="Version-store installs: download, build and try the update, then "
+             "hold it; the next `openprogram upgrade` switches to it.")
     return p_worker, p_upgrade
 
 
@@ -1263,7 +1256,7 @@ def _add_agents_command(sub):
     p_ag_add.add_argument("--name", default="",
         help="Human-readable name")
     p_ag_add.add_argument("--provider", default="",
-        help="LLM provider (claude-code, openai-codex, anthropic, ...)")
+        help="LLM provider (anthropic, openai, deepseek, ...)")
     p_ag_add.add_argument("--model", default="",
         help="Model id within that provider")
     p_ag_add.add_argument("--effort", default="medium",

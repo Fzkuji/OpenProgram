@@ -33,8 +33,7 @@ from mcp.types import (
 
 from openprogram.models.providers.types import AgentToolResult
 from openprogram.models.providers.types import ImageContent, TextContent
-
-from openprogram.programs._host.runtime import _build_and_register_tool
+from openprogram.runtime import program_host
 
 from .client import MCPClient
 
@@ -104,7 +103,7 @@ def register_remote_tool(client: MCPClient, tool: Tool) -> Optional[str]:
     else:
         search_hint = None
 
-    agent_tool = _build_and_register_tool(
+    agent_tool = program_host.host().build_and_register_tool(
         name=namespaced,
         description=description,
         parameters=parameters,

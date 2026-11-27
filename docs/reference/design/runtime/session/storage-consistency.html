@@ -208,6 +208,7 @@
 <li>Warm rebuilds and first loads capture the disk fingerprint before reading history and metadata.</li>
 <li>The rebuilt index records that captured fingerprint, never a newer one.</li>
 <li>A concurrent atomic replacement changes the fingerprint, so the next public read rebuilds.</li>
+<li>A writer changes a node in the index and appends its log line under the conversation's write lock, the lock a rebuild runs under. A rebuild by another thread of the same process cannot fall between the two and drop the node from that process's index while its line reaches disk.</li>
 </ol>
 <details>
 <summary>Acceptance</summary>

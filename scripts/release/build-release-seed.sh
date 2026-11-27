@@ -53,7 +53,7 @@ import sys
 from pathlib import Path
 
 from openprogram.operations.self_update.versions.build import BuildRequest, build_version
-from openprogram.operations.self_update.versions.layout import Layout
+from openprogram.host._platform.runtime_layout import Layout
 
 store, repository = map(Path, sys.argv[1:])
 commit = subprocess.check_output(["git", "-C", str(repository), "rev-parse", "HEAD"], text=True).strip()

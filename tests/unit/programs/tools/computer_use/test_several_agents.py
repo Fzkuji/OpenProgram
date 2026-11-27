@@ -193,7 +193,7 @@ def test_one_agents_code_keeps_its_interpreter_when_another_agent_runs_code(monk
 
 def test_a_guide_in_a_prompt_from_another_agent_counts_as_read(monkeypatch):
     from openprogram.models.providers.types import TextContent, UserMessage
-    from openprogram.runtime.permissions.authority import render_model_input
+    from openprogram.state.authority import render_model_input
 
     screen_targets.install(monkeypatch, _app())
 

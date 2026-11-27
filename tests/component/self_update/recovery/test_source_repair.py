@@ -245,14 +245,14 @@ def test_partial_materialization_is_retained_and_not_replayed(diagnosis_environm
     from openprogram.operations.self_update.repair import repair_candidate
     store, _, _, update_id = diagnosis_environment
     _turn(diagnosis_environment, monkeypatch)
-    original_git = repair_candidate._git
+    original_git = repair_candidate.git
     attempts = []
     def fail_create(cwd, *args):
         if args[:2] == ("worktree", "add"):
             attempts.append(args)
             raise OSError("simulated worktree creation failure")
         return original_git(cwd, *args)
-    monkeypatch.setattr(repair_candidate, "_git", fail_create)
+    monkeypatch.setattr(repair_candidate, "git", fail_create)
     _start()
     result = _result(diagnosis_environment)
     assert result["status"] == "failed"

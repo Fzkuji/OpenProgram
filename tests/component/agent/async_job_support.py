@@ -39,7 +39,7 @@ def store_fixture(tmp_path, monkeypatch):
         "openprogram.state.store.default_store", lambda: s,
     )
     monkeypatch.setattr(
-        "openprogram.operations.worker.lock.is_held_by", lambda _pid: True,
+        "openprogram.host.worker.lock.is_held_by", lambda _pid: True,
         raising=False,
     )
     s.create_session("p1", "main", title="parent")

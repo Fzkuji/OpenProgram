@@ -3,8 +3,7 @@
   * :mod:`.types`    — dataclasses, errors, events; no dependencies
   * :mod:`.store`    — one ``credentials.json`` per provider, atomic writes
   * :mod:`.carry_over` — the one-time move from the per-account layout
-  * :mod:`.selection` — which credential a request uses, and failover
-  * :mod:`.manage`   — renaming, ordering, checking, removing; the list the web shows
+  * :mod:`.selection` — which credential a request uses, and what a failure marks on it
   * :mod:`.credential_provider` — refresh of sign-ins, per-provider hooks
   * :mod:`.resolver` — a credential to the bearer value a request sends
   * :mod:`.login`, :mod:`.methods`, :mod:`.sources` — adding credentials

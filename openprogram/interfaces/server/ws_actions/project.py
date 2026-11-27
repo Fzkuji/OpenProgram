@@ -561,7 +561,8 @@ def _session_remote_machine(session_id: str):
     project = _projects.project_for_session(session_id)
     if project is None or _projects.folder_is_here(project):
         return None
-    return _projects.project_machine(project)
+    from openprogram.host.machines import resolve_for_project
+    return resolve_for_project(project)
 
 
 def _workdir_problem(session_id: str, path: str) -> tuple[str | None, str]:

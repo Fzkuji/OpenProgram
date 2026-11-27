@@ -1,6 +1,8 @@
 """A Worker asked for a memory sample writes what its memory holds."""
 from __future__ import annotations
 
+import pytest
+
 import sys
 import types
 
@@ -17,6 +19,7 @@ def test_a_request_file_is_answered_with_the_memory_sample(tmp_path):
     assert not (tmp_path / thread_sample.RESULT_NAME).exists()
 
 
+@pytest.mark.slow
 def test_a_sample_names_the_module_level_cache_that_grew_and_no_content(monkeypatch):
     module = types.ModuleType("openprogram._memory_sample_probe")
     secret = "s3cret-" * 20_000

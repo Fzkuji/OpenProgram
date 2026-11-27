@@ -99,7 +99,7 @@ def register(app):
                 return {"ok": True}
         return await guarded(apply)
 
-    # Software of its own (interfaces/standalone/export.py): the window
+    # Software of its own (programs/_host/ui/export.py): the window
     # writes it into a folder the owner chose and may then show it there.
     exported: set[str] = set()
 
@@ -108,7 +108,7 @@ def register(app):
         async def apply():
             import sys
             from pathlib import Path
-            from openprogram.interfaces.standalone.export import export
+            from openprogram.programs._host.ui.export import export
             folder = str(body.get("output") or "").strip() or "~/Downloads"
             if not Path(folder).expanduser().is_dir():
                 raise ValueError(f"{folder} is not a folder")

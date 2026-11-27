@@ -24,7 +24,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { buttonVariants } from "@/components/ui/button";
 import { HoverTip, TipBody } from "@/components/ui/tooltip";
-import { SolarIcon } from "@/components/solar-icons";
 import { MenuRow } from "@/components/ui/menu/menu-parts";
 import {
   GROUP_LABEL,
@@ -54,8 +53,10 @@ import { useBoundChat } from "../bound-chat";
 import { BotIcon } from "@/components/animated-icons";
 import { AgentMark } from "../chips/model-mark";
 
-/** OpenProgram's own engine's glyph. */
-const OPENPROGRAM_GLYPH = "programming";
+/** OpenProgram's own engine: the App's icon, as the outside agents show theirs. */
+function OpenProgramMark() {
+  return <img src="/icon.svg" alt="" width={16} height={16} draggable={false} className="size-4 shrink-0" aria-hidden="true" />;
+}
 
 export interface HarnessState {
   /** The branch's harness (`"codex"`), or null for OpenProgram's own engine. */
@@ -112,7 +113,7 @@ function useExclusiveOpen(): [boolean, (next: boolean) => void] {
 function HarnessMark({ harness }: { harness: string | null }) {
   return harness
     ? <AgentMark harness={harness} />
-    : <SolarIcon name={OPENPROGRAM_GLYPH} size={16} fit="fill" className="shrink-0" aria-hidden="true" />;
+    : <OpenProgramMark />;
 }
 
 export function HarnessBadge({ id }: { id: string }) {
@@ -197,7 +198,7 @@ export function HarnessRows({ state, onPicked }: { state: HarnessState; onPicked
   return (
     <>
         <DropdownMenuItem onSelect={() => void pick(OPENPROGRAM_HARNESS)} className={cn(itemCls(false), MENU_ITEM_STATES)}>
-          <MenuRow glyph={OPENPROGRAM_GLYPH} label="OpenProgram" checked={!state.harness} />
+          <MenuRow icon={<OpenProgramMark />} label="OpenProgram" checked={!state.harness} />
         </DropdownMenuItem>
         {state.harnesses?.length ? <DropdownMenuSeparator className={MENU_SEPARATOR} /> : null}
         {(state.harnesses ?? []).map((h) => (

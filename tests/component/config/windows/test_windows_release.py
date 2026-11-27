@@ -258,7 +258,7 @@ def test_windows_desktop_release_signs_when_it_can_and_keeps_native_checks() -> 
 
 def test_windows_environment_advisories_are_read_only(monkeypatch, tmp_path: Path) -> None:
     from openprogram.host._platform import environment
-    from openprogram.host._platform import terminal as platform_terminal
+    from openprogram.host._platform import processes as platform_processes
 
     outputs = iter([
         "disabled\n",
@@ -271,7 +271,7 @@ def test_windows_environment_advisories_are_read_only(monkeypatch, tmp_path: Pat
         return next(outputs)
 
     monkeypatch.setattr(sys, "platform", "win32")
-    monkeypatch.setattr(platform_terminal, "_windows_powershell", fake_powershell)
+    monkeypatch.setattr(platform_processes, "_windows_powershell", fake_powershell)
 
     rows = environment.platform_environment_advisories(tmp_path)
 

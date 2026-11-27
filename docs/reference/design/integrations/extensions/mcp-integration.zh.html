@@ -98,10 +98,9 @@
 <tr><th scope="row"><code translate="no">oauth_flow.py</code></th><td>OAuth 2.1 PKCE 授权和回环回调</td></tr>
 <tr><th scope="row"><code translate="no">token_storage.py</code></th><td><code translate="no">PersistentOAuthProvider</code>：token、客户端注册、服务元数据</td></tr>
 <tr><th scope="row"><code translate="no">sampling.py</code></th><td>基于已配置宿主模型的采样回调</td></tr>
-<tr><th scope="row"><code translate="no">server/</code></th><td>独立的服务端方向，不复用客户端模块</td></tr>
 </tbody>
 </table>
-<p class="note">属于 extensions 组的核心包，与 <code translate="no">plugins/</code>、<code translate="no">skills/</code> 同级，不在 <code translate="no">openprogram/programs/</code> 下：它适配外部协议，就像 <code translate="no">openprogram/interfaces/channels/</code> 适配消息。opencode（<code translate="no">src/mcp/</code>）也把 MCP 单独放；这一层基本是 opencode 的 Python 翻译。</p>
+<p class="note">属于 extensions 组的核心包，与 <code translate="no">plugins/</code>、<code translate="no">skills/</code> 同级，不在 <code translate="no">openprogram/programs/</code> 下：它适配外部协议，就像 <code translate="no">openprogram/interfaces/channels/</code> 适配消息。opencode（<code translate="no">src/mcp/</code>）也把 MCP 单独放；这一层基本是 opencode 的 Python 翻译。服务端方向是单独的包 <code translate="no">openprogram/interfaces/mcp_server/</code>，不复用客户端模块。</p>
 
 <h2 id="startup">启动与就绪</h2>
 <table class="stack fixed">

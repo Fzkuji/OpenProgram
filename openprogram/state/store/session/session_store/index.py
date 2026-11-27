@@ -1,6 +1,7 @@
 """SessionStore index operations."""
 from __future__ import annotations
 from . import shared
+from .preview import message_preview
 
 
 # A journal row in any other stage means the session may be mid-move.
@@ -135,6 +136,10 @@ class IndexOperations:
                 data = shared.json.loads(shared.read_text_with_retry(p))
                 if isinstance(data, dict):
                     self._index = data
+                    # Previews saved before they were cleaned of wrapping.
+                    for entry in data.values():
+                        if isinstance(entry, dict) and isinstance(entry.get("preview"), str):
+                            entry["preview"] = message_preview(entry["preview"])
                     self._reset_running_status()
                     self._startup_cleanup()
                     self._sweep_deleted_leftovers()
@@ -179,8 +184,7 @@ class IndexOperations:
                 try:
                     text = self.latest_user_text(sid)
                     if text:
-                        text = text.strip().replace("\n", " ")
-                        entry["preview"] = (text[:77] + "…") if len(text) > 80 else text
+                        entry["preview"] = message_preview(text)
                 except Exception as e:  # noqa: BLE001 — preview is cosmetic
                     shared._log.debug("preview backfill failed for %s: %s", sid, e)
                 self._index[sid] = entry

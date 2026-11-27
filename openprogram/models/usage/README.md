@@ -22,8 +22,7 @@ See docs/reference/design/providers/usage-metering.html.
 - **`goal_port.py`** — What usage metering needs from the Goal tool
 - **`ledger.py`** — UsageLedger
 - **`prefix_fingerprint.py`** — Where a request's cached prefix broke, and why
-- **`provider_status.py`** — One status per connected provider: health, quota, 30-day spend, keys
-- **`provider_views.py`** — Provider state where the chat and the detail page need it
+- **`probe_log.py`** — The requests OpenProgram sends a provider on its own behalf
 - **`quota.py`** — Provider quota: how much of a provider's limits is left, per key
 - **`recorder.py`** — UsageRecorder
 - **`request.py`** — Durable Goal request identity and replayable terminal usage receipts

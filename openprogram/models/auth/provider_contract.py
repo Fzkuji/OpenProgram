@@ -70,8 +70,7 @@ def validate_provider_auth_module(module, *, require_import: bool = False) -> No
     - ``PROVIDER_ID`` must be a non-empty string attribute.
     - If the adapter offers a file-import path, it must be reachable as
       either ``import_from_external`` or ``import_from_<source>``. The
-      latter is the legacy-looking shape (``import_from_codex_file``,
-      ``import_from_gemini_cli``, ...); we accept either, but the
+      latter is the legacy-looking shape (``import_from_<cli>_file``, ...); we accept either, but the
       Protocol itself speaks the canonical name.
     - When ``require_import=True``, at least one import helper must
       exist — use this for providers whose only credential source is

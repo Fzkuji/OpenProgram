@@ -54,7 +54,7 @@ def test_registered_execute_code_preserves_remote_backend_outcomes(monkeypatch, 
         def spawn(self, command):
             return Process()
 
-    monkeypatch.setattr('openprogram.host.backend.get_active_backend', Backend)
+    monkeypatch.setattr('openprogram.host.machines.get_active_backend', Backend)
     result = asyncio.run(get_agent_tool('execute_code').execute(
         'remote-code-outcome', {'code': 'print(42)', 'timeout': 1}, None, None,
     ))

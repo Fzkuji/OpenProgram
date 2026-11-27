@@ -4,7 +4,8 @@
 <h1>Harness 引擎</h1>
 
 <p>对话可以交给外部编码智能体运行，而不用 OpenProgram 自己的智能体循环。它自己调用模型、在自己的沙箱里运行自己的工具；OpenProgram 显示它做了什么，把它的审批交给用户，并保存记录。</p>
-<p>现有引擎是 Codex、Claude Code 和（通过 ACP 的）DeepSeek Harness；其他 ACP 智能体沿用同样的结构。</p>
+<p>现有引擎是 Codex、Claude Code，以及（通过 ACP 的）DeepSeek Harness 和 Gemini CLI；其他 ACP 智能体沿用同样的结构。</p>
+<p>用户本人的消息按原文交给智能体。经频道来的消息（包括主人在频道里发的）保留 OpenProgram 的说话人信封，让智能体分得清是谁说的，也没人能冒充主人；智能体自己的 App 里看到的就是信封。</p>
 
 <figure>
 <svg class="fig-wide" viewBox="0 0 680 220" role="img" aria-label="一轮对话照常经过准入、运行槽和流记录。在 run_loop_blocking 处，它要么进入 OpenProgram 的智能体循环，要么进入对话的 Harness 引擎。Codex 引擎通过 JSON-RPC 驱动 codex app-server，把它的条目转成同样的流事件；审批变成在对话里回答的实时等待。">
@@ -48,7 +49,7 @@
 <tbody>
 <tr><th scope="row">在哪里选 Harness</th><td>模型选择器，按 provider 实例</td><td>provider 与模型合在一个选择器</td><td>模型芯片前单独的 Harness 芯片：换 Harness 会同时换模型、思考档位、权限模式、工具和 Agent，而且每个 Harness 都有自己的 Agent 类设置</td></tr>
 <tr><th scope="row">用哪个 Codex</th><td>设置项，默认 PATH 上的 <code translate="no">codex</code>；模型取它列出的，更新的模型标为需要更新</td><td>按 PATH 查找，桌面版取登录 shell 的环境</td><td>沿用：用户自己的 Codex（设置、PATH、登录 shell）及它列出的模型；采用 T3 的更新行，模型清单放在本仓库</td></tr>
-<tr><th scope="row">进程</th><td>共用一个 app-server</td><td>每个 agent 一个；按 Codex 目录排队启动并重试</td><td>采用 Paseo：每个对话一个，空闲 30 分钟释放，按 <code translate="no">CODEX_HOME</code> 串行启动，遇到 SQLite 启动错误重试</td></tr>
+<tr><th scope="row">进程</th><td>共用一个 app-server</td><td>每个 agent 一个；按 Codex 目录排队启动并重试</td><td>每个对话一个，一轮结束就关掉（别的 App 开着的对话，Codex App 不让接着聊），按 <code translate="no">CODEX_HOME</code> 串行启动，遇到 SQLite 启动错误重试</td></tr>
 <tr><th scope="row">会话</th><td>沿用原生 id</td><td>沿用原生 id；可导入</td><td>沿用原生 id，按分支；<code translate="no">codex resume &lt;id&gt;</code> 能接着聊</td></tr>
 <tr><th scope="row">事件</th><td>26 种条目，不丢信息</td><td>较少的时间线</td><td>采用 T3 的条目模型，映射到 OpenProgram 现有卡片</td></tr>
 <tr><th scope="row">权限模式</th><td>原生，绝不模拟</td><td>按 provider 原生</td><td>采用 T3 的规则：Codex 自己的四种模式</td></tr>
@@ -60,7 +61,7 @@
 <table class="stack fixed">
 <thead><tr><th scope="col">芯片</th><th scope="col">OpenProgram</th><th scope="col">Codex</th></tr></thead>
 <tbody>
-<tr><th scope="row">Harness</th><td>默认</td><td>显示版本；在对话所在机器上未安装、无法启动、未登录或没有模型时变灰，与服务器拒绝切换的条件一致。服务器读完一个 Harness 后列表随之重读</td></tr>
+<tr><th scope="row">Harness</th><td>默认</td><td>OpenProgram 显示 App 图标。显示版本；在对话所在机器上未安装、无法启动、未登录或没有模型时变灰，与服务器拒绝切换的条件一致。服务器读完一个 Harness 后列表随之重读</td></tr>
 <tr><th scope="row">模型</th><td>不变</td><td>Codex 自己的模型；有更新的 Codex 时，还有只有新版才列出的模型（变暗）和 <strong>Update Codex</strong>；然后是 <strong>Through OpenProgram</strong> 下的各 provider（<code translate="no">openprogram:&lt;provider&gt;/&lt;model&gt;</code>）</td></tr>
 <tr><th scope="row">思考档位</th><td>不变</td><td>模型的 <code translate="no">supportedReasoningEfforts</code></td></tr>
 <tr><th scope="row">Agent</th><td>不变</td><td>默认、Codex 配置里的 <code translate="no">[profiles.*]</code>，以及模型支持时的性格</td></tr>
@@ -68,8 +69,9 @@
 </tbody>
 </table>
 <dl class="pairs">
-<dt>Claude Code</dt><dd>模型列出它自己的别名；同步来的记录里的完整 id 显示成对应别名。没有 Through OpenProgram。Agent 列出默认和它的具名 agent。权限有跳过授权、自动、自动接受编辑、询问和 Plan；批准它的计划后，菜单回到 Plan 之前的模式，和 OpenProgram 自己的计划模式一样。</dd>
+<dt>Claude Code</dt><dd>模型列出它自己的别名；同步来的记录里的完整 id 显示成对应别名。Through OpenProgram 用 <code translate="no">--settings</code> 加一份指向网关的专用文件启动它。Agent 列出默认和它的具名 agent。权限有跳过授权、自动、自动接受编辑、询问和 Plan；批准它的计划后，菜单回到 Plan 之前的模式，和 OpenProgram 自己的计划模式一样。</dd>
 <dt>DeepSeek Harness</dt><dd>模型列出会话提供的模型，不带 provider 前缀。没有 Through OpenProgram。权限有完全访问和询问。</dd>
+<dt>Gemini CLI</dt><dd>某一轮看到模型后列出会话提供的模型，之前只有 Default。没有 Through OpenProgram，也没有思考强度。权限有完全访问和询问。</dd>
 <dt>力度</dt><dd>没有思考力度档位的 Harness 模型不显示力度控件，也不发送力度。Harness 第一次读取之前控件先等着；读完后刷新每个会话的设置。Codex 和 DeepSeek Harness 的力度跟着线程走，所以选 Auto 时发送模型的默认档位；Codex 的 Default 智能体同样发送 <code translate="no">config.toml</code> 里设的人格。</dd>
 <dt>选项</dt><dd>不提供网页搜索和沙箱，选项的提示也只说添加文件：智能体用自己的方式搜索和运行命令。开了无人值守时，智能体的提问会被告知没人可问。</dd>
 <dt>芯片</dt><dd>Agent 芯片用 Agent 图标，Harness 的标只在 Harness 芯片上。它只显示模型接受的选项，默认和 Codex 的性格按界面语言显示。手机上，对话的设置菜单有 Harness 一行。</dd>
@@ -113,11 +115,14 @@
 </table>
 
 <h2 id="deepseek">通过 ACP 接 DeepSeek Harness</h2>
-<p>DeepSeek Harness 是第二个引擎（<code translate="no">runtime/harnesses/deepseek/</code>）。OpenProgram 作为 Agent Client Protocol 客户端驱动它：<code translate="no">dsh --profile acp</code>，每个对话一个进程，行协议和进程池与 Codex 相同。它的会话和 DeepSeek Harness App 自己的存在一起，用 App 的登录。</p>
+<p>DeepSeek Harness 是第二个引擎（<code translate="no">runtime/harnesses/deepseek/</code>）。OpenProgram 作为 Agent Client Protocol 客户端驱动它：<code translate="no">dsh --profile acp</code>，每个对话一个进程，行协议和进程池与 Codex 相同，一轮结束就关掉：运行中的进程持有会话的 <code translate="no">session.lock</code>，App 就写不进这个会话。</p>
+<p>它的会话和 DeepSeek Harness App 自己的存在一起，用 App 的登录。</p>
+<p>用户自己的 dsh 接到 OpenProgram 网关时，每个进程启动时带一个 <code translate="no">--patch</code> 覆盖层，内容是网关暂存里记下的用户自己的 llm-pi-ai 路由、起始模型和网页搜索条目（用户没有自己的就用 dsh 出厂的搜索）。</p>
+<p>OpenProgram 路由上的模型不会列出也不会被选中，这里的对话不经过网关。</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">ACP</th><th scope="col">OpenProgram</th></tr></thead>
 <tbody>
-<tr><th scope="row">Harness 芯片</th><td>DeepSeek Harness 和它的 App 版本；没装 App 或 <code translate="no">dsh</code> 时显示未安装，没保存凭据时显示未登录</td></tr>
+<tr><th scope="row">Harness 芯片</th><td>DeepSeek Harness 和它的 App 版本；没装 App 或 <code translate="no">dsh</code> 时显示未安装，没保存它自己的凭据时显示未登录（密钥库里 OpenProgram 的网关密钥不算）</td></tr>
 <tr><th scope="row">模型、思考强度</th><td>会话 <code translate="no">configOptions</code> 里给的（<code translate="no">model</code>、<code translate="no">reasoning_effort</code>），每轮用 <code translate="no">session/set_config_option</code> 设置。模型写作 <code translate="no">&lt;provider&gt;:&lt;model&gt;</code>；会话没有的强度换成最接近的一档。列表先从一个开了又删掉的会话读一次，之后用每轮会话给的</td></tr>
 <tr><th scope="row"><code translate="no">agent_thought_chunk</code>、<code translate="no">agent_message_chunk</code></td><td>思考和正文；每条消息单独成段</td></tr>
 <tr><th scope="row"><code translate="no">tool_call</code>、<code translate="no">tool_call_update</code></td><td>以工具名命名的卡片，<code translate="no">rawInput</code> 是输入，内容是结果</td></tr>
@@ -134,15 +139,39 @@
 <dt>图片</dt><dd>DeepSeek Harness 在 <code translate="no">initialize</code> 里说能读图片时，作为图片块发送；否则在消息里注明有几张图片没能送达，让代理告诉用户。</dd>
 </dl>
 
+<h2 id="gemini-cli">通过 ACP 接 Gemini CLI</h2>
+<p>由 Google 的 Gemini CLI 在它自己的 ACP 模式里跑这一轮（<code translate="no">runtime/harnesses/gemini_cli/</code>）：<code translate="no">gemini --acp</code>，Google 给编辑器写明的接口，沿用 DeepSeek Harness 的 ACP 客户端和一轮的处理。Gemini CLI 自己登录、自己调用 Gemini；OpenProgram 不读它的凭据，不替它调用 Google 的接口，也不抓它的终端输出。</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">ACP</th><th scope="col">OpenProgram</th></tr></thead>
+<tbody>
+<tr><th scope="row">用哪个 Gemini CLI</th><td><code translate="no">GEMINI_CLI_BINARY</code>，否则 PATH 或登录 shell 里的 <code translate="no">gemini</code>；启动时把 <code translate="no">gemini</code> 和 <code translate="no">node</code> 所在的文件夹放进 PATH。版本从它的 npm 包读，不启动它</td></tr>
+<tr><th scope="row">登录</th><td>用户自己的设置永远优先：任何一层设置里选的登录方式（包括它的 <code translate="no">/auth</code> 对话框保存的密钥），或用户自己的 <code translate="no">GEMINI_API_KEY</code>（环境变量或 <code translate="no">~/.gemini/.env</code>）。两者都没有时，把模型服务里的 Google API 密钥作为 <code translate="no">GEMINI_API_KEY</code> 交给它。有密钥但没选登录方式时，再加上 OpenProgram 自己的系统默认设置文件（<code translate="no">GEMINI_CLI_SYSTEM_DEFAULTS_PATH</code>，保留原有默认值）选上 <code translate="no">gemini-api-key</code>。每轮都重新检查</td></tr>
+<tr><th scope="row">进程</th><td>每个对话分支一个，一轮结束就关掉，用户自己的 <code translate="no">gemini</code> 就能接着这个会话</td></tr>
+<tr><th scope="row">会话</th><td><code translate="no">session/new</code>，之后在创建它的文件夹里用 <code translate="no">session/load</code> 打开；它重放的历史丢掉。打不开的会话换一个新会话并带上交接记录。提示发出后失败的一轮，消息已留在会话里：它在提示开始时就记下了用户的消息</td></tr>
+<tr><th scope="row">模型</th><td>会话给的 <code translate="no">models</code>，用 <code translate="no">session/set_model</code> 设置。只有会话会列出模型，为列表开会话会写进用户的 <code translate="no">~/.gemini</code> 并启动他们的 MCP 服务，所以列表不启动进程：在某一轮看到模型之前显示 Default（它自己选），看到之后记下来，重启后也在。没有思考强度</td></tr>
+<tr><th scope="row"><code translate="no">tool_call</code>、<code translate="no">tool_call_update</code></td><td>以标题命名的卡片，涉及的文件是输入，文本和改过的文件是结果。权限请求比 <code translate="no">tool_call</code> 先到时，由请求打开卡片</td></tr>
+<tr><th scope="row"><code translate="no">session/request_permission</code></td><td>和 DeepSeek Harness 一样：完全访问直接允许（<code translate="no">proceed_once</code>），询问模式就问；拒绝是 <code translate="no">cancel</code>。不提供“总是允许”</td></tr>
+<tr><th scope="row">用量</th><td><code translate="no">usage_update</code> 给上下文用量；提示返回的 <code translate="no">usage</code> 给这一轮的 token</td></tr>
+<tr><th scope="row">错误</th><td>没登录就按没登录报，并说明怎么登录（在终端运行 <code translate="no">gemini</code>，或添加 Google API 密钥）；限额按限额报</td></tr>
+</tbody>
+</table>
+<dl class="pairs">
+<dt>为什么用默认设置文件</dt><dd>它的 ACP 服务只有选了登录方式才能打开保存的会话。ACP 的 <code translate="no">authenticate</code> 会把选择写进用户的 <code translate="no">~/.gemini/settings.json</code>（换方式时还会清掉缓存的 Google 登录），所以不用；改由最低一层设置来选，用户自己的文件不动。</dd>
+<dt>重放</dt><dd>0.71 起重放在打开会话的回答之前，更早的版本在回答之后。提示要等更新停一会儿再发，只有重放才会发的用户消息和已完成的工具调用直接丢掉。</dd>
+<dt>终端接到网关时</dt><dd>终端里的 Gemini CLI 接到 OpenProgram 网关时（<a href="model-gateway.zh.html#registry">模型网关</a>），这里的对话仍用用户原来的设置：进程拿回原来的地址和密钥，再加 OpenProgram 自己的系统设置文件（<code translate="no">GEMINI_CLI_SYSTEM_SETTINGS_PATH</code>）放回原来的登录方式和模型。</dd>
+<dt>它自己的对话</dt><dd>Gemini CLI 写明了会话存在哪里，但没有写明格式，所以不同步到这里。</dd>
+</dl>
+
 <h2 id="claude-code">Claude Code</h2>
 <p>由用户自己的 Claude Code 跑这一轮（<code translate="no">runtime/harnesses/claude_code/</code>）：stream-JSON 模式的 <code translate="no">claude -p</code>，也就是 Anthropic 的 Agent SDK 和它说话用的协议。Claude Code 自己登录、自己调用模型；OpenProgram 不读它的凭据，也不替它调用 Anthropic。</p>
+<p>它自己没有登录时，启动时交给它模型服务里设置的 Anthropic API 密钥，按那个 API 账户计费。每一轮都重新检查：运行 <code translate="no">claude auth login</code> 之后，或者密钥变了，这个对话的 Claude Code 会重新启动，不再带密钥或换成新密钥。</p>
 <table class="stack">
 <thead><tr><th scope="col">问题</th><th scope="col">T3 Code</th><th scope="col">Paseo</th><th scope="col">magpie</th><th scope="col">OpenProgram</th></tr></thead>
 <tbody>
 <tr><th scope="row">接入方式</th><td>Agent SDK</td><td>Agent SDK</td><td>CLI stream-JSON</td><td>CLI stream-JSON（Python 服务没有 Node SDK）；消息和控制请求与 SDK 相同</td></tr>
 <tr><th scope="row">用哪个 Claude Code</th><td>PATH 上的 <code translate="no">claude</code></td><td>PATH 上的 <code translate="no">claude</code></td><td>找到的或下载的</td><td><code translate="no">OPENPROGRAM_CLAUDE_BINARY</code>、Claude App 装的最新版、<code translate="no">~/.claude/local</code>、<code translate="no">~/.local/bin</code>、PATH</td></tr>
-<tr><th scope="row">登录</th><td>用户自己的</td><td>用户自己的</td><td>读取并切换登录</td><td>T3 和 Paseo 的做法：用户自己的；运行 <code translate="no">claude auth login</code> 之前显示未登录。不拿 Claude App 自己的登录</td></tr>
-<tr><th scope="row">进程</th><td>每个对话一个，空闲 2 分钟</td><td>每个智能体一个，空闲 60 分钟</td><td>每个调用方一个</td><td>每个对话分支一个，空闲 30 分钟；换会话、文件夹或智能体就另起一个</td></tr>
+<tr><th scope="row">登录</th><td>用户自己的</td><td>用户自己的</td><td>读取并切换登录</td><td>T3 和 Paseo 的做法：用户自己的；运行 <code translate="no">claude auth login</code> 或在模型服务里添加 Anthropic API 密钥之前显示未登录。不拿 Claude App 自己的登录；登录被拒时提示怎么登录，而不是检查密钥</td></tr>
+<tr><th scope="row">进程</th><td>每个对话一个，空闲 2 分钟</td><td>每个智能体一个，空闲 60 分钟</td><td>每个调用方一个</td><td>每个对话分支一个，一轮结束就关掉：运行中的进程会在 <code translate="no">~/.claude/sessions</code> 登记占用这个对话，Claude App 不接着聊被别的进程占着的对话；换会话、文件夹或智能体就另起一个</td></tr>
 <tr><th scope="row">模型、强度、模式</th><td><code translate="no">setModel</code>、<code translate="no">applyFlagSettings</code>；策略变了重启</td><td>同上，加 <code translate="no">setPermissionMode</code></td><td>设置文件</td><td>Paseo 的做法：三样都在运行中的进程里改；启动时允许之后切到完全访问</td></tr>
 <tr><th scope="row">模型、智能体列表</th><td>清单加 <code translate="no">initialize</code></td><td><code translate="no">supportedModels()</code> 加清单</td><td>不适用</td><td><code translate="no">initialize</code> 的回答，不跑任何一轮：模型、各自的强度，以及 Agent 芯片里的智能体（<code translate="no">--agent</code>）</td></tr>
 <tr><th scope="row">思考</th><td>自适应，摘要显示</td><td>自适应，摘要显示</td><td>不适用</td><td>相同</td></tr>
@@ -173,11 +202,11 @@
 <thead><tr><th scope="col">问题</th><th scope="col">决定</th><th scope="col">来源</th></tr></thead>
 <tbody>
 <tr><th scope="row">哪些线程</th><td>Codex 的状态库（<code translate="no">state_&lt;n&gt;.sqlite</code> 的 <code translate="no">threads</code> 表）：App 和终端里没归档、有用户消息的线程；<code translate="no">exec</code>、MCP 和子智能体线程不算。状态库一变就重新读</td><td>magpie、Paseo 的导入</td></tr>
-<tr><th scope="row">打开</th><td>每一轮写成 OpenProgram 的消息和工具卡片；对话的 Harness 是 Codex，模型是线程的模型，放进文件夹包含它的已有项目（不新建项目）</td><td>Paseo 的导入</td></tr>
+<tr><th scope="row">打开</th><td>每一轮写成 OpenProgram 的消息和工具卡片；对话的 Harness 是 Codex，模型是线程的模型，放进它所在文件夹的项目，没有就像导入一样新建；App 为单个对话建的文件夹和临时文件夹留在默认项目</td><td>Paseo 的导入</td></tr>
 <tr><th scope="row">维持在 Codex 里聊</th><td>下一轮接着同一个线程（共享的线程记录），App 里也看得到；App 之后加的轮次会同步过来。OpenProgram 自己跑的轮次按 Codex 的 turn id 认出，不重复写；App 往前走了的已加载线程先重新加载</td><td>T3 Code 的原生 id</td></tr>
 <tr><th scope="row">搬到 OpenProgram 聊</th><td>把 Harness 芯片切到 OpenProgram。之后在 App 里说的仍会同步过来，接在这里说的之后</td><td>T3 Code 的交接</td></tr>
 <tr><th scope="row">App 的历史</th><td>Codex 只按线程保存时的 provider 列出和恢复线程，所以打开“也在终端里”时把 App 的线程移到 OpenProgram provider，关掉时移回去；单个线程跟着它这一轮的模型走</td><td>magpie 的 provider 迁移</td></tr>
-<tr><th scope="row">侧边栏</th><td>状态点和频道 logo 不变；行尾是智能体自己的彩色 logo，表示这个对话现在在那个智能体里跑，悬停时让位给 ⋯ 按钮。悬停卡片写模型和智能体、项目、时间，以及同步来的对话也在哪个 App 里。OpenProgram 自己的对话没有标</td><td>T3 Code 的 provider 标</td></tr>
+<tr><th scope="row">侧边栏</th><td>状态点和频道 logo 不变；行尾是智能体自己的 logo（Codex 用 ChatGPT 的，它现在在 ChatGPT App 里），表示这个对话现在在那个智能体里跑，悬停时让位给 ⋯ 按钮。悬停卡片写模型和智能体、项目、时间，以及同步来的对话也在哪个 App 里。OpenProgram 自己的对话没有标</td><td>T3 Code 的 provider 标</td></tr>
 <tr><th scope="row">Claude App 和 DeepSeek Harness</th><td>它们的对话也同样进来（<code translate="no">app_sync.py</code>）：Claude App Code 标签页的列表（<code translate="no">claude-code-sessions/**/local_*.json</code>，每条指向一份 Claude Code 记录）和 DeepSeek Harness 的工作区（<code translate="no">~/.dsh</code>，每个对话一份 zstd 事件日志），归档的不算。终端里用 <code translate="no">claude</code> 开的对话也进来；通过 SDK 或 <code translate="no">claude -p</code> 跑的不进来，和 Codex 的 <code translate="no">exec</code> 线程一样。每个对话都在它那个智能体的引擎上接着原会话聊</td><td>Paseo 的导入</td></tr>
 <tr><th scope="row">互不重复</th><td>引擎在这里新建或分叉的会话不会再作为另一个对话导入。引擎正在跑一轮的会话，等这一轮结束再读；还在写入的，停几秒后再读。App 里回退时，这里已有的内容不变。App 后来生成的标题会替换最初的标题，除非这里改过名</td><td>Codex 的自有轮次 id</td></tr>
 <tr><th scope="row">App 轮次的去处</th><td>DeepSeek Harness 引擎在这里新建的会话里，App 之后的轮次接到持有它的对话里；Claude Code 的分叉开头复制了这里已有的轮次，不读。显示的是另一个分支时，接在这个线程自己的分支上，显示的分支不变</td><td>Codex 在这里开的线程</td></tr>
@@ -186,5 +215,5 @@
 </table>
 
 <h2 id="status">实现状态</h2>
-<p>Codex 已能运行对话，用它自己的模型或 OpenProgram 的模型；Codex App 的对话双向同步。DeepSeek Harness 通过 ACP 运行对话，它 App 里的对话接着各自的会话聊。</p>
-<p>Claude Code 用用户自己的登录运行对话，Claude App 和终端里的对话接着各自的会话聊。下一步，引擎结构相同：其他 ACP 智能体（Gemini CLI、OpenCode）。</p>
+<p>Codex 已能运行对话，用它自己的模型或 OpenProgram 的模型；Codex App 的对话双向同步。DeepSeek Harness 通过 ACP 运行对话，它 App 里的对话接着各自的会话聊。Gemini CLI 通过 ACP 运行对话，用它自己的登录或模型服务里的密钥；已用模拟的 ACP 服务验证，还没在登录了的 Gemini CLI 上验证。</p>
+<p>Claude Code 用用户自己的登录运行对话，Claude App 和终端里的对话接着各自的会话聊。下一步，引擎结构相同：其他 ACP 智能体（OpenCode）。</p>

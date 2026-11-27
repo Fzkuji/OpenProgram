@@ -128,6 +128,7 @@ def advance_probe_waits(monkeypatch):
     ))
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("confirmation", ["no", "changed", "eof"])
 def test_confirmation_refusal_or_stale_plan_does_not_authorize(recoverable, monkeypatch, confirmation):
     v = recoverable
@@ -148,6 +149,7 @@ def test_confirmation_refusal_or_stale_plan_does_not_authorize(recoverable, monk
     assert v.commands == []
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("damage", ["expired", "journal", "app", "doctor", "missing_controller"])
 def test_approved_repair_fails_closed_without_clearing_maintenance(recoverable, monkeypatch, damage):
     from openprogram.operations.self_update.repair import owner_repair as repair
@@ -234,6 +236,7 @@ def test_interrupted_success_cleanup_does_not_repeat_app_or_worker_action(recove
     assert repair.read_result(v.v.store, request) == original
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("outcome", ["recovered", "failed", "expired"])
 def test_startup_waits_for_approved_repair_without_new_job(recoverable, monkeypatch, outcome):
     from openprogram.operations.self_update.repair import owner_repair as repair
@@ -407,6 +410,7 @@ def test_deterministic_launch_failure_requires_new_consent_unless_controller_is_
     assert repair.load_repair(v.v.store, v.v.store.load(v.v.request.update_id)) == request
 
 
+@pytest.mark.slow
 def test_public_repair_waits_for_restarted_worker_web_readiness(recoverable, monkeypatch):
     from openprogram.operations.self_update.repair import owner_repair
     from openprogram.operations.self_update.verification import system_probe
@@ -417,7 +421,7 @@ def test_public_repair_waits_for_restarted_worker_web_readiness(recoverable, mon
     lock_path, ready_path = v.tmp / "inert-child.lock", v.tmp / "inert-child.web-ready"
     child_code = (
         "from pathlib import Path; import sys,time; "
-        "from openprogram.operations.worker.lock import WorkerLock; "
+        "from openprogram.host.worker.lock import WorkerLock; "
         "lock=WorkerLock(); lock.path=Path(sys.argv[1]); assert lock.try_acquire(); "
         "time.sleep(2); Path(sys.argv[2]).touch(); time.sleep(30)"
     )

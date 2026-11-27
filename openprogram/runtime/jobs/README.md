@@ -26,6 +26,7 @@ state transition rewrites ``jobs.json``, a line in the session's log.
 
 - **`agent_result.py`** — The one shape every agent result comes back in
 - **`agent_status.py`** — What Activity shows for one agent: its status and what its work cost
+- **`chain_budgets.py`** — The budgets that bound one collaboration chain
 - **`delegation_watch.py`** — Default bounds on delegated agents: spend, stall and runtime
 - **`execution_hooks.py`** — The Jobs engine's registrations with the execution control plane
 - **`handoff.py`** — Hand-offs between a parent and the sub-agent it asked for, kept across a crash

@@ -446,6 +446,7 @@ def test_expired_snapshot_removes_cursor_and_returns_stale(project_root, monkeyp
     assert cursor not in ws_files._QUERY_CURSORS
 
 
+@pytest.mark.slow
 def test_tree_limit_stops_after_maximum_entry_probe(project_root):
     for index in range(ws_files._QUERY_MAX_SNAPSHOT_ITEMS + 1):
         (project_root / f"large-{index:05d}.txt").write_text("x", encoding="utf-8")
@@ -539,6 +540,7 @@ def test_query_path_nul_is_invalid_request(project_root):
         assert data[field] == []
 
 
+@pytest.mark.slow
 def test_zero_match_search_counts_full_candidate_basis_and_evicts_old_snapshot(
     project_root, monkeypatch,
 ):

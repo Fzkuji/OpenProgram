@@ -5,11 +5,11 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Current design</th></tr></thead>
 <tbody>
-<tr><th scope="row">Vendors</th><td>One adapter directory per vendor under <code translate="no">openprogram/models/providers/adapters/</code>, with a <code translate="no">provider.json</code> declaring models, wire API and login methods. Anthropic, OpenAI, Google Gemini, Amazon Bedrock, Azure OpenAI, xAI, DeepSeek, Mistral, Groq, OpenRouter, GitHub Copilot and others, plus local Ollama, LM Studio, vLLM and llama.cpp.</td></tr>
+<tr><th scope="row">Vendors</th><td>One adapter directory per vendor under <code translate="no">openprogram/models/providers/adapters/</code>, with a <code translate="no">provider.json</code> declaring models, wire API and login methods. Anthropic, OpenAI, Google Gemini, Amazon Bedrock, Azure OpenAI, xAI, DeepSeek, Mistral, Groq, OpenRouter and others, plus local Ollama, LM Studio, vLLM and llama.cpp.</td></tr>
 <tr><th scope="row">Request</th><td>The runtime hands over a ready <code translate="no">Context</code> (system, messages, tools). The adapter translates it to the wire request and applies that vendor's prompt caching. Nothing above knows vendor formats.</td></tr>
 <tr><th scope="row">Keys</th><td>One ordered list of keys and sign-ins per provider. A conversation keeps one; a limited or refused one gives way to the next.</td></tr>
 <tr><th scope="row">Failures</th><td>Every error maps to one taxonomy, is retried or failed over by class, bounded by timeouts, and reaches the UI as a structured error.</td></tr>
-<tr><th scope="row">Catalog</th><td>From <code translate="no">provider.json</code>, subscription catalogs and models.dev. Thinking effort and the Fast tier are declared per provider.</td></tr>
+<tr><th scope="row">Catalog</th><td>From <code translate="no">provider.json</code> and models.dev. Thinking effort and the Fast tier are declared per provider.</td></tr>
 <tr><th scope="row">Manage</th><td><code translate="no">openprogram providers</code> (<code translate="no">login</code>, <code translate="no">list</code>, <code translate="no">use</code>, <code translate="no">status</code>, <code translate="no">doctor</code>, <code translate="no">accounts</code>), or Settings → Model Services</td></tr>
 </tbody>
 </table>
@@ -24,7 +24,6 @@
 <tr><th scope="row"><a href="requests/request-redaction.html">Request redaction</a></th><td>Placeholders for secrets and email before sending, restored in the reply</td></tr>
 <tr><th scope="row"><a href="requests/web-search.html">Web search</a></th><td>Provider search or local <code translate="no">web_search</code>; citations in the transcript</td></tr>
 <tr><th scope="row"><a href="requests/record-replay.html">Record and replay</a></th><td>Redacted JSONL recordings replayed offline for deterministic tests</td></tr>
-<tr><th scope="row"><a href="requests/codex-transport.html">Codex transport</a></th><td>Kept WebSocket sending only new input; zstd-compressed HTTP otherwise</td></tr>
 <tr><th scope="row"><a href="provider-quota.html">Provider quota</a></th><td>Plan windows, balances and rate limits per provider; 30-day spend; failure causes</td></tr>
 <tr><th scope="row"><a href="../context/composition.html">Context composition</a></th><td>Upstream: how content is layered and assembled (L0, L1, L2)</td></tr>
 </tbody>
@@ -40,6 +39,7 @@
 <tr><th scope="row"><a href="auth/api-key-resolution-unification.html">API key resolution</a></th><td>Where a key comes from</td></tr>
 <tr><th scope="row"><a href="auth/unified-auth-storage.html">Auth storage</a></th><td>Self-contained storage</td></tr>
 <tr><th scope="row"><a href="auth/unified-account-management.html">Provider keys and failover</a></th><td>The list, the choice per conversation, what a failure does</td></tr>
+<tr><th scope="row"><a href="auth/subscription-policy.html">Subscription policy</a></th><td>Plans only through the vendor's own program; what was withdrawn and why</td></tr>
 </tbody>
 </table>
 

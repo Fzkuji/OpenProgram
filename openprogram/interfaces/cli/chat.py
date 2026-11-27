@@ -461,6 +461,7 @@ def _run_oneshot_held(session_id: str | None, text: str, *, new_session: bool,
     from openprogram.interfaces.cli.print_mode.print_session import PrintSessionError, resolve_target
     from openprogram.interfaces.cli.print_mode.worker_turn import resolve_worker
     from openprogram.runtime.conversation.turn_admission import local_commands
+    from openprogram.state.store.project.project_store import working_directory_project
 
     fmt = output_format or "text"
     run = _print_turn.PrintRun(session_id=session_id or "", model=model, effort=effort,
@@ -509,7 +510,7 @@ def _run_oneshot_held(session_id: str | None, text: str, *, new_session: bool,
                 return
             if endpoint is not None:
                 run.transport = _print_turn.TRANSPORT_WORKER
-                project_id = (_print_turn.working_directory_project(os.getcwd())
+                project_id = (working_directory_project(os.getcwd())
                               if target.new and not no_project_binding else None)
                 _print_oneshot_via_worker(
                     endpoint, session_id, text, response_format=response_format,

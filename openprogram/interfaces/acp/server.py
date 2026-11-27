@@ -22,7 +22,7 @@ than as the user's words. ``resource_link`` becomes a bare path mention.
 **Working directory.** The session's first ``session/prompt`` creates the
 conversation bound to the client's ``cwd`` as its project, the way
 ``openprogram --print`` binds the directory it runs in
-(``working_directory_project``), so tools start there. Binding registers the
+(``state.store.project.project_store.working_directory_project``), so tools start there. Binding registers the
 folder as a project (shown again if it was hidden) and writes its identity
 marker, ``<cwd>/.openprogram/project.json``; a thread opened and never
 prompted leaves nothing behind. The home folder needs no binding; a folder
@@ -285,7 +285,7 @@ class ACPServer:
         The binding is the one ``openprogram --print`` makes for the
         directory it runs in, so the session's tools start in ``cwd``.
         """
-        from openprogram.interfaces.cli.print_mode.print_turn import working_directory_project
+        from openprogram.state.store.project.project_store import working_directory_project
         from openprogram.runtime.context.session_db import default_db
 
         project_id = working_directory_project(cwd)

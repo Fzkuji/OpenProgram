@@ -34,7 +34,7 @@ export function usePhoneViewport(): boolean {
  *  checks this instead. */
 export const TOUCH_PHONE_QUERY = `${PHONE_QUERY} and (pointer: coarse)`;
 
-function isTouchPhone(): boolean {
+export function isTouchPhone(): boolean {
   return typeof window !== "undefined" && window.matchMedia?.(TOUCH_PHONE_QUERY).matches === true;
 }
 

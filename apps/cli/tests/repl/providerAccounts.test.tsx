@@ -56,10 +56,10 @@ function makeCtx(over: Partial<PickerCtx> = {}): PickerCtx {
 // A sign-in provider: its accounts come from the shared /login/* flow.
 function loginCtx(over: Partial<PickerCtx> = {}): PickerCtx {
   return makeCtx({
-    accountsProviderId: 'github-copilot',
+    accountsProviderId: 'qwen',
     accountsState: {
-      ...KEYS, provider: 'github-copilot', active: null,
-      auth: { methods: [{ id: 'device_code', label: 'Sign in with GitHub' }], env_vars: [], check: null },
+      ...KEYS, provider: 'qwen', active: null,
+      auth: { methods: [{ id: 'import_from_cli', label: 'Import existing login' }], env_vars: [], check: null },
       credentials: [],
     },
     ...over,
@@ -91,7 +91,7 @@ describe('Provider credentials panel — list', () => {
     const el = buildProviderAccountsPicker(loginCtx(), 'acct_list')!;
     expect(el.props.title).toContain('none yet');
     expect(labels(el).some((l) => l.includes('Order'))).toBe(false);
-    expect(items(el).at(-1)?.description).toBe('Sign in with GitHub');
+    expect(items(el).at(-1)?.description).toBe('Import existing login');
   });
 });
 
@@ -130,7 +130,7 @@ describe('Provider credentials panel — add', () => {
   it('a single sign-in way skips the method picker', () => {
     const ctx = loginCtx();
     buildProviderAccountsPicker(ctx, 'acct_login_name')!.props.onSubmit('work');
-    expect(ctx.setAccountLogin).toHaveBeenCalledWith({ name: 'work', method: 'device_code' });
+    expect(ctx.setAccountLogin).toHaveBeenCalledWith({ name: 'work', method: 'import_from_cli' });
     expect(ctx.setPickerKind).toHaveBeenCalledWith('acct_login');
   });
 

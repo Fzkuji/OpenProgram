@@ -12,12 +12,12 @@ def test_read_pin_from_memory(monkeypatch):
     monkeypatch.setattr(
         server,
         "_sessions",
-        {"s1": {"provider_override": "openai-codex", "model_override": "gpt-5.6-sol"}},
+        {"s1": {"provider_override": "openai", "model_override": "gpt-5.6-sol"}},
         raising=False,
     )
-    monkeypatch.setattr(sm, "new_session_chat_model", lambda agent_id=None: ("xai-subscription", "grok-4.6"))
-    assert sm.read_session_chat_model("s1") == ("openai-codex", "gpt-5.6-sol")
-    assert sm.ensure_session_chat_model("s1") == ("openai-codex", "gpt-5.6-sol")
+    monkeypatch.setattr(sm, "new_session_chat_model", lambda agent_id=None: ("xai", "grok-4.6"))
+    assert sm.read_session_chat_model("s1") == ("openai", "gpt-5.6-sol")
+    assert sm.ensure_session_chat_model("s1") == ("openai", "gpt-5.6-sol")
 
 
 def test_a_branch_without_its_own_model_follows_the_agent_and_is_never_pinned(monkeypatch):
@@ -25,7 +25,7 @@ def test_a_branch_without_its_own_model_follows_the_agent_and_is_never_pinned(mo
 
     conv = {}
     monkeypatch.setattr(server, "_sessions", {"s2": conv}, raising=False)
-    monkeypatch.setattr(sm, "new_session_chat_model", lambda agent_id=None: ("xai-subscription", "grok-4.6"))
+    monkeypatch.setattr(sm, "new_session_chat_model", lambda agent_id=None: ("xai", "grok-4.6"))
     monkeypatch.setattr(sm, "_read_db_pin", lambda sid: (None, None))
     writes = []
     monkeypatch.setattr(
@@ -35,7 +35,7 @@ def test_a_branch_without_its_own_model_follows_the_agent_and_is_never_pinned(mo
             provider_override=p, model_override=m
         ),
     )
-    assert sm.ensure_session_chat_model("s2") == ("xai-subscription", "grok-4.6")
+    assert sm.ensure_session_chat_model("s2") == ("xai", "grok-4.6")
     # Nothing is written: the next turn reads the Agent's model again.
     assert writes == [] and conv == {}
     monkeypatch.setattr(sm, "new_session_chat_model", lambda agent_id=None: ("anthropic", "claude-y"))
@@ -48,12 +48,12 @@ def test_sol_pin_never_falls_back_to_grok(monkeypatch):
     monkeypatch.setattr(
         server,
         "_sessions",
-        {"s3": {"provider_override": "openai-codex", "model_override": "gpt-5.6-sol"}},
+        {"s3": {"provider_override": "openai", "model_override": "gpt-5.6-sol"}},
         raising=False,
     )
-    monkeypatch.setattr(sm, "new_session_chat_model", lambda agent_id=None: ("xai-subscription", "grok-4.6"))
-    assert sm.ensure_session_chat_model("s3") == ("openai-codex", "gpt-5.6-sol")
-    assert sm.override_string(*sm.ensure_session_chat_model("s3")) == "openai-codex/gpt-5.6-sol"
+    monkeypatch.setattr(sm, "new_session_chat_model", lambda agent_id=None: ("xai", "grok-4.6"))
+    assert sm.ensure_session_chat_model("s3") == ("openai", "gpt-5.6-sol")
+    assert sm.override_string(*sm.ensure_session_chat_model("s3")) == "openai/gpt-5.6-sol"
 
 
 def test_write_pin_raises_when_persist_fails(monkeypatch):
@@ -68,7 +68,7 @@ def test_write_pin_raises_when_persist_fails(monkeypatch):
     import openprogram.runtime.context.session_db as session_db
     monkeypatch.setattr(session_db, "default_db", lambda: DB())
     with pytest.raises(RuntimeError, match="db down"):
-        sm.write_session_chat_model("s4", "openai-codex", "gpt-5.6-sol")
+        sm.write_session_chat_model("s4", "openai", "gpt-5.6-sol")
 
 
 def test_new_session_uses_agent_model_then_last_used_then_nothing(monkeypatch):
@@ -82,7 +82,7 @@ def test_new_session_uses_agent_model_then_last_used_then_nothing(monkeypatch):
     monkeypatch.setattr(last_used, "read_last_used_model", lambda: used[0] if used else None)
 
     assert sm.new_session_chat_model("main") == (None, None)
-    used.append(("openai-codex", "gpt-6.1-sol"))
-    assert sm.new_session_chat_model("main") == ("openai-codex", "gpt-6.1-sol")
+    used.append(("openai", "gpt-6.1-sol"))
+    assert sm.new_session_chat_model("main") == ("openai", "gpt-6.1-sol")
     agent_model.provider, agent_model.id = "anthropic", "claude-x"
     assert sm.new_session_chat_model("bot") == ("anthropic", "claude-x")

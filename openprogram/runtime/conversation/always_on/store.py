@@ -38,11 +38,6 @@ PREFERENCE_MAX = 500
 #: The pending inbox may have changed (``pending.py``): every window reads it
 #: again (``host/_platform/changes.py``). Keyed by the conversation.
 INBOX_TOPIC = "inbox"
-#: A conversation's wake state or an Agent's always-on state changed: the
-#: always-on ticker (``ticker.py``) looks again and sleeps until the next
-#: wake. Signalled only when what is saved differs, so the ticker's own
-#: rewrites of the same state do not wake it again.
-WAKES_TOPIC = "always_on"
 
 _locks: dict[str, threading.RLock] = {}
 _locks_master = threading.Lock()
@@ -129,7 +124,8 @@ def update_state(session_id: str, **changes: Any) -> dict[str, Any]:
 
 def _wakes_changed(key: str) -> None:
     from openprogram.host._platform import changes as _changes
-    _changes.signal(WAKES_TOPIC, key)
+    from openprogram.runtime.agent_registry.manager import ALWAYS_ON_WAKES_TOPIC
+    _changes.signal(ALWAYS_ON_WAKES_TOPIC, key)
 
 
 def _handoffs_path() -> Path:
@@ -296,7 +292,7 @@ def add_report(session_id: str, *, title: str, body: str, links: Any = None,
     # A report is posted as a message from the Agent. A marker in what the
     # model wrote is not a file a tool call recorded, so it reads as the
     # name: only ``attached_files`` get a card (send_file.with_attachments).
-    from openprogram.state.attachments import markers_as_names
+    from openprogram.state.attachment_markers import markers_as_names
     attached_files = list(attached_files or ())
     title = markers_as_names(str(title or ""), attached_files).strip()
     body = markers_as_names(str(body or ""), attached_files)

@@ -207,7 +207,7 @@ def test_plans_are_admitted_on_a_sealed_version_with_no_installed_app(monkeypatc
 
 
 def test_a_sealed_runtime_is_readable_by_a_required_test(tmp_path, monkeypatch):
-    from openprogram.operations.self_update.versions import layout as paths
+    from openprogram.host._platform import runtime_layout as paths
 
     root = tmp_path / "runtime"
     venv = root / "versions" / "v1" / "venv"

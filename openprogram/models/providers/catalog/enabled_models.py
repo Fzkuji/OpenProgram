@@ -18,7 +18,14 @@ An empty/missing config is a legal fresh-install state → empty registry.
 """
 from __future__ import annotations
 
+from openprogram.models import part_ports
+
 from ..types import Model
+
+#: This module's port: ``catalog_changed`` is told after every reload. The
+#: gateway (above the catalogue) keeps outside agents' model lists and picks
+#: in step with it; the Worker fills it as it starts (``interfaces/server/server.py``).
+_port = part_ports.filled(__name__)
 
 
 # 高速档声明表（用户裁决 2026-07-12：支持的写出来，其他的不写）。
@@ -101,9 +108,9 @@ def _load() -> dict[str, Model]:
     except Exception:
         return merged
     cfg = providers_cfg or {}
-    from openprogram.models.auth.provider_policy import UNSUPPORTED_PROVIDERS
+    from openprogram.models.auth.provider_policy import UNSUPPORTED_PROVIDERS, is_withdrawn
     for provider_id, pcfg in cfg.items():
-        if provider_id in UNSUPPORTED_PROVIDERS:
+        if provider_id in UNSUPPORTED_PROVIDERS or is_withdrawn(provider_id):
             continue
         if not isinstance(pcfg, dict):
             continue
@@ -163,6 +170,14 @@ def reload() -> dict[str, Model]:
     fresh = _load()
     ENABLED_MODELS.clear()
     ENABLED_MODELS.update(fresh)
+    # Outside agents connected to the model gateway keep a copy of the model
+    # list and a picked model; both follow the change (through this module's port).
+    changed = _port.get("catalog_changed")
+    if changed is not None:
+        try:
+            changed()
+        except Exception:  # noqa: BLE001 - the registry is rebuilt either way
+            pass
     return ENABLED_MODELS
 
 
@@ -190,8 +205,8 @@ def register_model_from_config(provider: str, model_id: str) -> bool:
     except Exception:
         return False
 
-    from openprogram.models.auth.provider_policy import UNSUPPORTED_PROVIDERS
-    if provider in UNSUPPORTED_PROVIDERS:
+    from openprogram.models.auth.provider_policy import UNSUPPORTED_PROVIDERS, is_withdrawn
+    if provider in UNSUPPORTED_PROVIDERS or is_withdrawn(provider):
         return False
     cfg_pcfg = _read_providers_cfg().get(provider, {})
 
@@ -286,7 +301,7 @@ def use_model_in_process(provider: str, model_id: str) -> bool:
     if get_model(provider, model_id) is not None or register_model_from_config(provider, model_id):
         return True
     try:
-        from openprogram.models.listing.listing import spec_row_for
+        from .listed_models import spec_row_for
         from .metadata import provider_endpoints
 
         spec = spec_row_for(provider, model_id)

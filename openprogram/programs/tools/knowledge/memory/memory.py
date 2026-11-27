@@ -30,6 +30,7 @@ from openprogram.state.memory.management import MemoryWorkspace
 from openprogram.state.memory.management.config import load_memory_config
 from openprogram.state.memory.management.transaction import TransactionError
 from openprogram.state.memory.backend import sanitize_context
+from openprogram.state.memory.tool_names import GET_NAME, SEARCH_NAME, UPDATE_NAME
 
 MAX_SNIPPETS = 8
 
@@ -72,7 +73,6 @@ def _turn() -> tuple[str, str]:
 
 # -- search ----------------------------------------------------------------
 
-SEARCH_NAME = "memory_search"
 SEARCH_DESC = (
     "Search memory and return the matching paragraphs with their file "
     "paths, stable anchors and the chat messages they cite. By default it "
@@ -168,7 +168,6 @@ def _grep(query: str, prefix: str) -> str:
 
 # -- read ------------------------------------------------------------------
 
-GET_NAME = "memory_get"
 GET_DESC = (
     "Read memory. Without `path` it lists the files memory holds and the "
     "writer's health. With a file path, pass `heading` for one section or "
@@ -284,7 +283,6 @@ def _overview() -> str:
 
 # -- update ----------------------------------------------------------------
 
-UPDATE_NAME = "memory_update"
 UPDATE_DESC = (
     "Correct or add something in memory. Conversation is written up in the "
     "background, so use this only for what the user asked you to remember "
@@ -513,9 +511,9 @@ def _project_layer(root):
 
 
 __all__ = [
-    "SEARCH_NAME", "SEARCH_SPEC", "memory_search",
-    "GET_NAME", "GET_SPEC", "memory_get",
-    "UPDATE_NAME", "UPDATE_SPEC", "memory_update",
+    "SEARCH_SPEC", "memory_search",
+    "GET_SPEC", "memory_get",
+    "UPDATE_SPEC", "memory_update",
 ]
 
 # A registry filter is not an execution boundary: Python function calls and

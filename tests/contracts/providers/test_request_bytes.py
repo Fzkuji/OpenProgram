@@ -90,6 +90,7 @@ def _no_memory(monkeypatch):
     monkeypatch.setattr("openprogram.state.memory.get_backend", lambda: Nothing())
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("case,wire", [_case(name, wire) for name in CASES for wire in WIRES])
 def test_the_next_turn_resends_what_the_turn_sent(case, wire, monkeypatch, tmp_path):
     bench = install_bench(monkeypatch, tmp_path, wire, TOOLS)
@@ -164,11 +165,10 @@ def test_every_adapter_reports_the_body_it_sends(monkeypatch, tmp_path):
         assert request.settings()["model"] == model.id
 
 
-#: Every built-in wire format besides the benches' four, with the provider
+#: Every built-in wire format besides the benches' three, with the provider
 #: and endpoint its adapter is built for.
 OTHER_APIS = {
     "google-generative-ai": ("google", "https://generativelanguage.googleapis.com/v1beta"),
-    "gemini-subscription": ("google-gemini-cli", "https://cloudcode-pa.googleapis.com"),
     "azure-openai-responses": ("azure-openai-responses", "https://x.openai.azure.com/openai/v1"),
 }
 

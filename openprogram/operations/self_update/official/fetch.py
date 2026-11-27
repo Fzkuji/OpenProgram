@@ -1,49 +1,45 @@
-"""Find the latest official release and bring it here over the network.
+"""What ``openprogram upgrade`` does on a version store: read the pointer, fetch, apply.
 
-The order is what keeps a bad server harmless:
+The order keeps a bad server harmless:
 
-1. Ask which release is latest (``github_release.github``).
-2. Read ``update-manifest.json``, its signature and ``SHA256SUMS``, and check
-   them in memory. Nothing is written until they pass.
-3. Download only the files this machine lacks for its platform into a staging
-   directory, each held to the size in the signed manifest and the hash in the
-   signed sums. A download that stops resumes on the next run.
-4. Hand the directory to the update controller, which checks everything again.
+1. Read ``channel.json`` and its signature (``channel``) and check them in
+   memory; refuse a sequence lower than one seen before.
+2. Read the layer manifests the pointer names, and work out what this machine
+   lacks (``assemble.plan``). Nothing is written but verified objects.
+3. Fetch the missing objects as byte ranges, each checked by its name.
+4. When the update brings an App shell newer than the running App, assemble
+   it beside the App and check its signature (``assemble.stage_shell``);
+   Restart to update swaps it in. When that is all it brings (the code is
+   here already), the update stops here, prepared. So it does when the code
+   needs the new App and the update is not being prepared for a restart
+   (``upgrade --prepare``): that code first runs in the new App, after the swap.
+5. Hand the plan to the update controller, which assembles, builds, tries and
+   switches (``control.official_update``).
 
-A refusal removes what was downloaded and changes nothing else.
+A download that stops leaves its verified objects for the next run.
 """
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from contextlib import contextmanager
 from dataclasses import dataclass
 import importlib.metadata
 from pathlib import Path
-import re
-import shutil
-import sys
-from typing import Iterator
 
-from openprogram.host._platform import locking
-from openprogram.operations.self_update.github_release import github
-from openprogram.operations.self_update.versions.layout import Layout, current_runtime, disk_shortfall
+from openprogram.host._platform.runtime_layout import Layout, current_runtime, preparing_for_restart
 
-from . import assets, replay
-from .assets import Release, ReleaseError
+from . import assemble, replay
+from . import channel as channels
+from .assemble import Plan
+from .channel import Channel, Transport
+from .repository import ReleaseError
 
-DISK_FACTOR = 3  # The archives, plus what they unpack to.
-GIB = 1024 ** 3
+SHELL_READY = "prepared"  # As ``control.official_update.PREPARED``: ready for Restart to update.
 PROXY_HINT = "Check your connection (behind a proxy, set HTTPS_PROXY) and run `openprogram upgrade` again."
-_VERSION = re.compile(r"(\d+)\.(\d+)\.(\d+)")
-
-
-@dataclass(frozen=True)
-class Latest:
-    """The newest release and where its files are."""
-
-    release: str
-    source: dict
-    notes: str
+_OUTCOMES = {
+    assemble.UP_TO_DATE: replay.UP_TO_DATE,
+    assemble.WAITING_FOR_SHELL: replay.WAITING_FOR_SHELL,
+    assemble.WAITING_FOR_RUNTIME: replay.WAITING_FOR_RUNTIME,
+}
 
 
 def installed_version() -> str | None:
@@ -51,204 +47,168 @@ def installed_version() -> str | None:
         version = importlib.metadata.version("openprogram")
     except importlib.metadata.PackageNotFoundError:
         return None
-    return version if _VERSION.fullmatch(version) else None
+    return version if channels.VERSION.fullmatch(version) else None
 
 
-def is_newer(candidate: str, current: str | None) -> bool:
-    """Whether ``candidate`` is ahead; an unknown current version counts as behind."""
-    if current is None:
-        return True
-    return tuple(map(int, candidate.split("."))) > tuple(map(int, current.split(".")))
+def kind(published: Channel) -> str:
+    """``stable`` for an announced release, ``daily`` for a quiet publish."""
+    return "stable" if published.announce else "daily"
 
 
-def find_latest() -> Latest:
-    found = github.latest_release()
-    if found is None:
-        raise ReleaseError(f"The latest release could not be read. {PROXY_HINT}")
-    return Latest(str(found["tag_name"])[1:], github.release_source(found), str(found.get("body") or ""))
+@dataclass(frozen=True)
+class Discovery:
+    """What ``openprogram upgrade`` would install, found without downloading it.
+
+    ``done`` is set when there is nothing to install now (up to date, or
+    waiting for a shell or a runtime); otherwise ``plan`` says what to fetch.
+    """
+
+    transport: Transport
+    published: Channel | None = None
+    plan: Plan | None = None
+    done: replay.ReplayResult | None = None
+
+    @property
+    def target(self) -> str:
+        return self.published.name if self.published else ""
+
+    @property
+    def channel(self) -> str:
+        return kind(self.published) if self.published else ""
+
+    @property
+    def latest_version(self) -> str:
+        return self.published.version if self.published else ""
+
+    def about(self) -> dict:
+        """``channel``, ``latest_version`` and ``announce`` for the command's report."""
+        if self.published is None:
+            return {"channel": "", "latest_version": "", "announce": False}
+        return {"channel": self.channel, "latest_version": self.latest_version, "announce": self.published.announce}
+
+    def hold(self) -> dict:
+        """The marks of an update prepared from this discovery and held for a restart."""
+        return {"held": True, "target": self.target, **self.about()}
 
 
-def _small_file(latest: Latest, name: str) -> bytes:
-    content = github.release_file(latest.source, latest.release, name)
-    if content is None:
-        raise ReleaseError(
-            f"Release {latest.release} has no {name} that could be read, so it cannot be applied here. "
-            f"If it was just published, its files may still be uploading. {PROXY_HINT}"
-        )
-    return content
+def _runtime_layout(layout: Layout | None) -> Layout:
+    if layout is not None:
+        return layout
+    runtime = current_runtime()
+    if runtime is None:
+        raise ReleaseError("this installation does not run from the version store")
+    return runtime.layout
 
 
-def _inspect(
-    latest: Latest, directory: Path, *, platform: str | None, trusted_keys: Iterable[str] | None,
-) -> tuple[Release, bytes, bytes, bytes]:
-    data = _small_file(latest, assets.MANIFEST_FILE)
-    if len(data) > assets.MAX_MANIFEST_BYTES:
-        raise ReleaseError("the release manifest is too large")
-    signature = _small_file(latest, assets.SIGNATURE_FILE)
-    sums = _small_file(latest, assets.SUMS_FILE)
-    release = assets.inspect_release(
-        data, signature.decode("ascii", "replace"), sums,
-        directory=directory, platform=platform, trusted_keys=trusted_keys,
-    )
-    if release.release != latest.release:
-        raise ReleaseError(f"the files of release {latest.release} describe release {release.release}")
-    for name in release.files:
-        if name not in release.asset_bytes:
-            raise ReleaseError(f"the release manifest does not give the size of {name}")
-    return release, data, signature, sums
+def _days_since(moment: str) -> int:
+    """How old the published pointer is: information only, an old one is still taken."""
+    from datetime import datetime, timezone
+
+    published = datetime.strptime(moment, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    return max(0, (datetime.now(timezone.utc) - published).days)
+
+
+def discover(
+    *, layout: Layout | None = None, transport: Transport | None = None, platform: str | None = None,
+    trusted_keys: Iterable[str] | None = None,
+) -> Discovery:
+    """The published update and what applying it here takes."""
+    layout = _runtime_layout(layout)
+    transport = transport or channels.HttpTransport()
+    published = channels.read(transport, trusted_keys=trusted_keys)
+    if published is None:
+        return Discovery(transport, done=replay.ReplayResult(
+            outcome=replay.UP_TO_DATE, message="No update is published right now; the next check looks again."))
+    channels.note_seen(layout, published)
+    update = assemble.plan(layout, published, transport, platform=platform)
+    if update.state != assemble.AVAILABLE:
+        message = update.detail if update.state == assemble.UP_TO_DATE else f"{update.detail}. Nothing was changed."
+        return Discovery(transport, published, update, replay.ReplayResult(
+            outcome=_OUTCOMES[update.state], release=published.name, message=message))
+    return Discovery(transport, published, update)
 
 
 def check(
-    *, layout: Layout | None = None, platform: str | None = None, trusted_keys: Iterable[str] | None = None,
+    *, layout: Layout | None = None, transport: Transport | None = None, platform: str | None = None,
+    trusted_keys: Iterable[str] | None = None,
 ) -> dict:
-    """What ``openprogram upgrade --check`` reports. Downloads only the small files."""
-    latest = find_latest()
-    current = installed_version()
+    """What ``openprogram upgrade --check`` reports. Downloads only the pointer and layer manifests."""
     status = {
-        "current_version": current,
-        "latest_version": latest.release,
-        "update_available": is_newer(latest.release, current),
-        "can_apply": False,
-        "detail": "",
-        "download_bytes": 0,
-        "found_through": latest.source["via"],
-        "release_notes": latest.notes,
+        "current_version": installed_version(), "latest_version": None, "update_available": False,
+        "can_apply": False, "detail": "", "download_bytes": 0, "release_notes": "", "channel": "",
+        "announce": False, "found_through": "updates",
     }
-    if not status["update_available"]:
+    found = discover(layout=layout, transport=transport, platform=platform, trusted_keys=trusted_keys)
+    if found.published is None:
+        status["detail"] = found.done.message if found.done else ""
         return status
-    if layout is None:
-        runtime = current_runtime()
-        layout = runtime.layout if runtime else None
-    try:
-        release, *_ = _inspect(latest, Path("."), platform=platform, trusted_keys=trusted_keys)
-        waiting = assets.needs_new_shell(layout, release) if layout else None
-    except ReleaseError as exc:
-        status["detail"] = str(exc)
-        return status
-    names = assets.assets_to_download(layout, release) if layout else release.files
-    status["download_bytes"] = sum(release.asset_bytes[name] for name in names)
-    status["can_apply"] = waiting is None
-    status["detail"] = waiting or ""
+    published = found.published
+    status.update({
+        "latest_version": published.version, "channel": kind(published), "announce": published.announce,
+        "commit": published.build, "published_at": published.published_at, "sequence": published.sequence,
+        "published_days_ago": _days_since(published.published_at),
+        "release_notes": published.notes if published.announce else "",
+    })
+    state = found.plan.state if found.plan else assemble.UP_TO_DATE
+    status["update_available"] = state != assemble.UP_TO_DATE
+    status["can_apply"] = state == assemble.AVAILABLE
+    status["detail"] = found.done.message if found.done and state != assemble.UP_TO_DATE else ""
+    if found.plan is not None and state == assemble.AVAILABLE:
+        status["download_bytes"] = found.plan.download_bytes
     return status
 
 
-def _downloads(layout: Layout) -> Path:
-    return layout.root / "downloads"
-
-
-def _free_bytes(path: Path) -> int:
-    return shutil.disk_usage(path).free
-
-
-@contextmanager
-def _download_lock(layout: Layout) -> Iterator[None]:
-    with open(layout.root / "downloads.lock", "a+b") as stream:
-        try:
-            locking.flock(stream.fileno(), locking.LOCK_EX | locking.LOCK_NB)
-        except BlockingIOError as exc:
-            raise ReleaseError("Another update is downloading; try again when it finishes.") from exc
-        try:
-            yield
-        finally:
-            locking.flock(stream.fileno(), locking.LOCK_UN)
-
-
-def _discard(directory: Path) -> None:
-    shutil.rmtree(directory, ignore_errors=True)
-    try:
-        directory.parent.rmdir()  # Only when it holds nothing else.
-    except OSError:
-        pass
-
-
-def _check_space(layout: Layout, release: Release) -> None:
-    required = sum(release.asset_bytes[name] for name in assets.assets_to_download(layout, release)) * DISK_FACTOR
-    free = _free_bytes(layout.root)
-    if free < required:
-        raise ReleaseError(
-            f"Not enough disk space for this update: it needs about {required / GIB:.1f} GB and "
-            f"{free / GIB:.1f} GB is free, {disk_shortfall(required, free)} short. "
-            "Free some space and run `openprogram upgrade` again."
-        )
-
-
-def _fetch_asset(latest: Latest, release: Release, directory: Path, name: str, *, say) -> None:
-    target = directory / name
-    size, digest = release.asset_bytes[name], release.sums[name]
-    if target.is_file():
-        if target.stat().st_size == size and assets.sha256_file(target) == digest:
-            return
-        target.unlink()
-    if say is not None:
-        say(f"Downloading {name} ({size / (1024 ** 2):.1f} MB)")
-    github.download_release_file(
-        github.release_file_url(latest.source, latest.release, name), target, size=size,
-        progress=say is not None and sys.stderr.isatty(),
-    )
-    if assets.sha256_file(target) != digest:
-        target.unlink()
-        raise github.DownloadFailed(f"{name} does not match its checksum", permanent=True)
-
-
-def download(
-    latest: Latest, layout: Layout, *, platform: str | None = None,
-    trusted_keys: Iterable[str] | None = None, say: Callable[[str], None] | None = None,
-) -> Path:
-    """Verified files of ``latest`` in a staging directory, ready for the controller."""
-    directory = _downloads(layout) / latest.release
-    release, data, signature, sums = _inspect(latest, directory, platform=platform, trusted_keys=trusted_keys)
-    _check_space(layout, release)
-    with _download_lock(layout):
-        if _downloads(layout).is_dir():
-            for other in _downloads(layout).iterdir():
-                if other.name != latest.release:
-                    shutil.rmtree(other, ignore_errors=True)
-        directory.mkdir(parents=True, exist_ok=True)
-        (directory / assets.MANIFEST_FILE).write_bytes(data)
-        (directory / assets.SIGNATURE_FILE).write_bytes(signature)
-        (directory / assets.SUMS_FILE).write_bytes(sums)
-        try:
-            for name in assets.assets_to_download(layout, release):
-                _fetch_asset(latest, release, directory, name, say=say)
-        except github.DownloadFailed as exc:
-            if exc.permanent:
-                _discard(directory)
-                raise ReleaseError(f"Release {latest.release} was refused: {exc}. Nothing was changed.") from exc
-            raise ReleaseError(f"The download stopped: {exc}. {PROXY_HINT} It resumes from where it stopped.") from exc
-        except OSError as exc:
-            raise ReleaseError(f"The download could not be saved: {exc}. Nothing was changed.") from exc
-    return directory
-
-
 def update(
-    *, layout: Layout | None = None, apply: Callable[[Path], replay.ReplayResult] | None = None,
-    platform: str | None = None, trusted_keys: Iterable[str] | None = None,
-    say: Callable[[str], None] | None = None,
+    *, layout: Layout | None = None, transport: Transport | None = None, platform: str | None = None,
+    trusted_keys: Iterable[str] | None = None, say: Callable[[str], None] | None = None,
+    found: Discovery | None = None, hold: bool = False,
+    apply: Callable[[Plan, dict | None], replay.ReplayResult] | None = None,
 ) -> replay.ReplayResult:
-    """Bring this installation to the latest release, if it is behind."""
-    if layout is None:
-        runtime = current_runtime()
-        if runtime is None:
-            raise ReleaseError("this installation does not run from the version store")
-        layout = runtime.layout
-    latest = find_latest()
-    current = installed_version()
-    if not is_newer(latest.release, current):
-        return replay.ReplayResult(
-            outcome=replay.UP_TO_DATE, release=latest.release,
-            message=f"OpenProgram {current} is the latest version.",
-        )
-    directory = download(latest, layout, platform=platform, trusted_keys=trusted_keys, say=say)
-    if apply is None:
-        from openprogram.operations.self_update.control.official_update import apply_release
+    """Bring this installation to the published update, if it is behind.
 
-        apply = lambda files: apply_release(files, platform=platform, trusted_keys=trusted_keys)  # noqa: E731
-    result = apply(directory)
-    # Kept when the same files are still wanted: another update was running,
-    # or the release is waiting for a new shell.
-    if result.release is not None and result.outcome != replay.WAITING_FOR_SHELL:
-        _discard(directory)
+    With ``hold`` the update is prepared and tried, then held in ``ready``
+    for a restart instead of switched to (``official_update.activate_held``).
+    """
+    layout = _runtime_layout(layout)
+    if found is None:
+        found = discover(layout=layout, transport=transport, platform=platform, trusted_keys=trusted_keys)
+    if found.done is not None:
+        return found.done
+    plan = found.plan
+    assert plan is not None
+    assemble.check_space(layout, plan)
+    try:
+        assemble.download(layout, plan, found.transport, say=say)
+    except ReleaseError as exc:
+        raise ReleaseError(f"The download stopped: {exc}. {PROXY_HINT} It resumes from where it stopped.") from exc
+    except OSError as exc:
+        raise ReleaseError(f"The download could not be saved: {exc}. Nothing was changed.") from exc
+    try:
+        assemble.stage_shell(layout, plan, found.transport)
+    except OSError as exc:
+        raise ReleaseError(f"The new App could not be assembled: {exc}. Nothing was changed.") from exc
+    except ReleaseError as exc:
+        raise ReleaseError(f"The new App could not be assembled: {exc}. Nothing was changed.") from exc
+    if plan.shell_only or (plan.needs_swap and not hold):
+        return replay.ReplayResult(outcome=SHELL_READY, release=plan.channel.name,
+                                   message=f"The new App of {plan.channel.name} is ready; restart to update.")
+    if apply is None:
+        from openprogram.operations.self_update.control.official_update import apply_plan
+
+        apply = lambda planned, marks: apply_plan(planned, hold=marks)  # noqa: E731
+    if hold:
+        with preparing_for_restart():
+            result = apply(plan, found.hold())
+    else:
+        result = apply(plan, None)
+    if result.outcome in (replay.ACTIVATED, replay.UP_TO_DATE, "prepared"):
+        assemble.object_store(layout).prune(plan.keep())
     return result
 
 
-__all__ = ["Latest", "check", "download", "find_latest", "installed_version", "is_newer", "update"]
+def from_directory(directory: Path) -> Transport:
+    """A local copy of the update files, for ``openprogram upgrade --from DIR``."""
+    return channels.DirectoryTransport(directory)
+
+
+__all__ = ["Discovery", "check", "discover", "from_directory", "installed_version", "kind", "update"]

@@ -23,13 +23,13 @@ from openprogram.runtime.permissions.refusal import Refused
 
 
 def require_owner(request: Request, session_id: str = "") -> None:
-    from openprogram.programs.tools.system.self_update import _require_local_owner
+    from openprogram.operations.self_update.candidate_source import require_local_owner
 
     authority = getattr(request.state, "authority", None)
     if not isinstance(authority, dict):
         raise ProjectionAccessError("owner authentication required")
     try:
-        _require_local_owner(SimpleNamespace(**authority, source="web", session_id=session_id))
+        require_local_owner(SimpleNamespace(**authority, source="web", session_id=session_id))
     except (ValueError, RuntimeError, Refused):
         raise ProjectionAccessError("owner authentication required") from None
 

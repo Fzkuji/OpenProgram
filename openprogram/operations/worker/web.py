@@ -25,7 +25,7 @@ import threading
 from pathlib import Path
 from typing import Optional
 
-from openprogram.operations.worker.ports import (
+from openprogram.host.worker.ports import (
     pids_on_port as _pids_on_port,
     process_cmdline as _process_cmdline,
 )

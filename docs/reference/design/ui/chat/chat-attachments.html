@@ -5,7 +5,7 @@
 
 <p>One text marker carries every file in a message:</p>
 <pre translate="no"><code>[attachment: notes.txt (txt, 18 KB, 4210 lines) @json "/abs/path/notes.txt"]</code></pre>
-<p class="note">Written only by <code translate="no">format_marker</code> in <code translate="no">openprogram/state/attachments.py</code>; a fifth source calls it too. Read on the web only by <code translate="no">parseAttachments</code>. An optional <code translate="no">@previewjson</code> names a saved preview. The older <code translate="no">@ /abs/path</code> spelling stays readable. How content enters model context: <a href="attachment-handling.html">Attachment handling</a>.</p>
+<p class="note">Written only by <code translate="no">format_marker</code> in <code translate="no">openprogram/state/attachment_markers.py</code>; a fifth source calls it too. Read on the web only by <code translate="no">parseAttachments</code>. An optional <code translate="no">@previewjson</code> names a saved preview. The older <code translate="no">@ /abs/path</code> spelling stays readable. How content enters model context: <a href="attachment-handling.html">Attachment handling</a>.</p>
 
 <h2 id="now-in">Inbound</h2>
 <table class="stack">
@@ -327,7 +327,7 @@
 <details>
 <summary>Code locations</summary>
 <dl class="pairs">
-<dt>Marker, roots</dt><dd><code translate="no">openprogram/state/attachments.py</code></dd>
+<dt>Marker, roots</dt><dd><code translate="no">openprogram/state/attachment_markers.py</code>, <code translate="no">openprogram/state/attachments.py</code></dd>
 <dt>Web persistence</dt><dd><code translate="no">openprogram/interfaces/server/ws_actions/chat/attachments.py</code></dd>
 <dt>Channel inbound</dt><dd><code translate="no">openprogram/interfaces/channels/inbound/_attachments.py</code></dd>
 <dt>Channel delivery</dt><dd><code translate="no">openprogram/interfaces/channels/inbound/_conversation.py</code>, <code translate="no">_transport.py</code></dd>

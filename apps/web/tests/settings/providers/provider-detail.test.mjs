@@ -101,7 +101,7 @@ describe("header", () => {
     assert.match(view.container.querySelector("h2").textContent, /OpenRouter/);
     assert.match(view.container.querySelector("[data-state]").textContent, /^Rate limited · \d\d:\d\d$/);
     assert.match(view.container.textContent, /Updated 2 min ago/);
-    await view.act(() => button(view.container, "Model services").click());
+    await view.act(() => button(view.container, "Model Services").click());
     await view.act(() => button(view.container, "Refresh").click());
     const toggle = view.container.querySelector('[aria-label="Enable this provider"]');
     assert.equal(toggle.getAttribute("aria-checked"), "true");

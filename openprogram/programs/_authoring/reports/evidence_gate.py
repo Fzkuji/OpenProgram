@@ -52,7 +52,8 @@ class EvidenceGate:
     """Keep source capabilities local to one composition; never trust model source text."""
 
     def __init__(self, task, audience):
-        from openprogram.programs.tools.knowledge.read_conversation import read_conversation
+        from openprogram.programs._authoring.reports import tool_port
+        read_conversation = tool_port.read_conversation()
         # A unique explicit ISO week also applies inside a natural-language task.
         # Multiple audiences with different periods still require semantic resolution.
         weeks = set(re.findall(r'(?<![A-Za-z0-9_-])\d{4}-W\d{2}(?![A-Za-z0-9_-])', task))
@@ -95,8 +96,9 @@ class EvidenceGate:
         from openprogram.runtime.agent.runtime_scope import runtime_scope
         from openprogram.runtime.agent.runtime.shared import _run_async, _current_tool_policy
         from openprogram.runtime.permissions.attended import denied_ask_tools
-        from openprogram.programs import apply_tool_policy
-        from openprogram.programs.tools.agents.send_message.list_agents import list_agents
+        from openprogram.programs._authoring.reports import tool_port
+        apply_tool_policy = tool_port.apply_tool_policy
+        list_agents = tool_port.list_agents()
         with runtime_scope() as runtime:
             # A standalone run (CLI `programs run`, tests) gets the lazy
             # scope runtime, which has no session or tool gate until it is
@@ -254,7 +256,7 @@ class EvidenceGate:
 
     async def execute(self, call_id, args, signal, update):
         from openprogram.runtime.context.session_db import default_db
-        from openprogram.programs.tools.knowledge.read_conversation import _current_session
+        from openprogram.programs._authoring.reports.tool_port import conversation_session as _current_session
         from openprogram.state.store.session.reading.transcript import (
             render_session_transcript, session_read_violation, MAX_TEXT_CHARS, MAX_RESULT_CHARS,
         )

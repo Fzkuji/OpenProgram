@@ -13,284 +13,33 @@ effect immediately (``"live"``) or only on the next worker/web start
 (``"next_start"``), so the editor can tell the user the truth instead of
 implying everything is instant.
 
+A value only a layer above state can judge (a bind host, the outbound URL
+policy, a replay recording) is checked through the rules that layer
+registers in ``state.setting_rules``; the Providers status rows come from
+``state.model_facts``.
+
 See ``docs/design/cli/redesign.md``.
 """
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 import re
 import sys
 from decimal import Decimal, InvalidOperation
-import ipaddress
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Literal, Optional
-from urllib.parse import urlsplit
+from typing import Any, Callable, Optional
 
-from pydantic import (
-    BaseModel,
-    ConfigDict,
-    Field,
-    StrictBool,
-    field_validator,
-    model_validator,
-)
-
-from openprogram.state import config as user_config, preferences
+from openprogram.state import config as user_config, preferences, sandbox_settings, setting_rules
+from openprogram.state import model_facts
 
 _log = logging.getLogger(__name__)
-
-if TYPE_CHECKING:
-    from openprogram.host.security.safe_http import OutboundSecurityConfig
 
 # openclaw's isBlockedObjectKey — never let a dot-path write reach these.
 _BLOCKED_KEYS = frozenset({"__proto__", "constructor", "prototype"})
 
 APPLY_LIVE = "live"
 APPLY_NEXT_START = "next_start"
-
-_METADATA_ADDRESSES = tuple(
-    ipaddress.ip_address(value)
-    for value in (
-        "100.100.100.200",
-        "169.254.169.254",
-        "169.254.170.2",
-        "fd00:ec2::254",
-    )
-)
-_METADATA_HOSTS = frozenset(
-    {
-        "metadata.google.internal",
-        "metadata.azure.internal",
-        "instance-data.ec2.internal",
-    }
-)
-_LINK_LOCAL_NETWORKS = (
-    ipaddress.ip_network("169.254.0.0/16"),
-    ipaddress.ip_network("fe80::/10"),
-)
-
-
-class OwnerURLExceptionSetting(BaseModel):
-    """One owner-approved, consumer-scoped private-network exception."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    consumer: str = Field(min_length=1, max_length=128)
-    origin: str | None = Field(default=None, max_length=2048)
-    cidr: str | None = Field(default=None, max_length=64)
-
-    @field_validator("consumer")
-    @classmethod
-    def _registered_exception_consumer(cls, value: str) -> str:
-        from openprogram.host.security.safe_http import CONSUMER_REGISTRY
-
-        spec = CONSUMER_REGISTRY.get(value)
-        if spec is None or not spec.allow_owner_exceptions:
-            raise ValueError("consumer does not allow owner URL exceptions")
-        return value
-
-    @field_validator("origin")
-    @classmethod
-    def _exact_origin(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        from openprogram.host.security.url_policy import normalize_url
-
-        parsed = urlsplit(value)
-        normalized = normalize_url(value)
-        if (
-            parsed.username is not None
-            or parsed.password is not None
-            or parsed.path
-            or parsed.query
-            or parsed.fragment
-            or value.strip().startswith(".")
-            or "*" in value
-        ):
-            raise ValueError("origin must contain only an exact authority")
-        if normalized.hostname in _METADATA_HOSTS:
-            raise ValueError("metadata origin is forbidden")
-        try:
-            address = ipaddress.ip_address(normalized.hostname)
-        except ValueError:
-            pass
-        else:
-            if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped:
-                address = address.ipv4_mapped
-            if address.is_link_local or address in _METADATA_ADDRESSES:
-                raise ValueError("metadata or link-local origin is forbidden")
-        return normalized.origin
-
-    @field_validator("cidr")
-    @classmethod
-    def _bounded_network(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        try:
-            network = ipaddress.ip_network(value, strict=False)
-        except ValueError as exc:
-            raise ValueError("invalid CIDR") from exc
-        if network.prefixlen == 0:
-            raise ValueError("default-route CIDR is forbidden")
-        if network.is_global or network.is_multicast:
-            raise ValueError("owner CIDR must be private or local")
-        if any(
-            network.version == blocked.version and network.overlaps(blocked)
-            for blocked in _LINK_LOCAL_NETWORKS
-        ):
-            raise ValueError("link-local CIDR is forbidden")
-        if any(
-            address.version == network.version and address in network
-            for address in _METADATA_ADDRESSES
-        ):
-            raise ValueError("metadata CIDR is forbidden")
-        return network.with_prefixlen
-
-    @model_validator(mode="after")
-    def _exactly_one_target(self):
-        if (self.origin is None) == (self.cidr is None):
-            raise ValueError("exception requires exactly one of origin or cidr")
-        return self
-
-
-class PolicyProxySetting(BaseModel):
-    """Owner assertion for a proxy that enforces target URL policy."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    url: str = Field(max_length=2048)
-    enforces_target_policy: StrictBool
-
-    @field_validator("url")
-    @classmethod
-    def _exact_proxy_origin(cls, value: str) -> str:
-        from openprogram.host.security.url_policy import normalize_url
-
-        parsed = urlsplit(value)
-        normalized = normalize_url(value)
-        if (
-            parsed.username is not None
-            or parsed.password is not None
-            or parsed.path
-            or parsed.query
-            or parsed.fragment
-        ):
-            raise ValueError("proxy URL must contain only an exact authority")
-        if normalized.hostname in _METADATA_HOSTS:
-            raise ValueError("metadata proxy is forbidden")
-        try:
-            address = ipaddress.ip_address(normalized.hostname)
-        except ValueError:
-            pass
-        else:
-            if address.is_link_local or address in _METADATA_ADDRESSES:
-                raise ValueError("metadata or link-local proxy is forbidden")
-        return normalized.origin
-
-    @model_validator(mode="after")
-    def _requires_enforcement_assertion(self):
-        if self.enforces_target_policy is not True:
-            raise ValueError("policy proxy must assert target-policy enforcement")
-        return self
-
-
-class OutboundURLSettings(BaseModel):
-    """Strict, immutable owner configuration for Runtime URL access."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    exceptions: tuple[OwnerURLExceptionSetting, ...] = Field(
-        default=(), max_length=64
-    )
-    policy_proxy: PolicyProxySetting | None = None
-    model_tools: Literal["open", "strict"] = "open"
-
-    @model_validator(mode="after")
-    def _unique_exceptions(self):
-        keys = {
-            (item.consumer, item.origin, item.cidr)
-            for item in self.exceptions
-        }
-        if len(keys) != len(self.exceptions):
-            raise ValueError("duplicate owner URL exception")
-        return self
-
-    def security_for(self, consumer: str) -> OutboundSecurityConfig:
-        from openprogram.host.security.safe_http import (
-            CONSUMER_REGISTRY,
-            OutboundSecurityConfig,
-            PolicyProxyConfig,
-        )
-        from openprogram.host.security.url_policy import OwnerURLException
-
-        if consumer not in CONSUMER_REGISTRY:
-            raise KeyError(consumer)
-        exceptions = tuple(
-            OwnerURLException(
-                consumer=item.consumer,
-                origin=item.origin,
-                network=(
-                    ipaddress.ip_network(item.cidr)
-                    if item.cidr is not None
-                    else None
-                ),
-            )
-            for item in self.exceptions
-            if item.consumer == consumer
-        )
-        if self.policy_proxy is not None:
-            exceptions += (
-                OwnerURLException(
-                    consumer="runtime.local_probe",
-                    origin=self.policy_proxy.url,
-                ),
-            )
-        proxy = (
-            PolicyProxyConfig(
-                url=self.policy_proxy.url,
-                enforces_target_policy=True,
-            )
-            if self.policy_proxy is not None
-            else None
-        )
-        return OutboundSecurityConfig(
-            owner_exceptions=exceptions,
-            policy_proxy=proxy,
-        )
-
-
-def parse_outbound_url_settings(value: Any) -> OutboundURLSettings:
-    """Parse owner URL policy without reflecting rejected input in errors."""
-
-    try:
-        return OutboundURLSettings.model_validate(value)
-    except Exception:
-        raise ValueError("invalid outbound URL security configuration") from None
-
-
-def load_outbound_security_config(
-    consumer: str,
-    *,
-    config: dict[str, Any] | None = None,
-) -> OutboundSecurityConfig:
-    cfg = user_config.read_config() if config is None else config
-    security = cfg.get("security", {})
-    if not isinstance(security, dict):
-        raise ValueError("invalid outbound URL security configuration")
-    raw = security.get("outbound_url", {})
-    result = parse_outbound_url_settings(raw).security_for(consumer)
-    from openprogram.host.security.safe_http import uses_ambient_proxy
-
-    if uses_ambient_proxy(consumer) and result.policy_proxy is None:
-        from openprogram.models.providers.utils.http_transport.http_proxy import get_proxy_mounts
-
-        result = replace(
-            result,
-            service_proxy_mounts=tuple(sorted((get_proxy_mounts() or {}).items())),
-        )
-    return result
-
 
 @dataclass(frozen=True)
 class SettingSpec:
@@ -321,21 +70,6 @@ def _validate_port(v: Any) -> Optional[str]:
     return None
 
 
-def _validate_web_origins(value: Any) -> Optional[str]:
-    if not isinstance(value, list) or not all(
-        isinstance(origin, str) for origin in value
-    ):
-        return "must be a JSON list of Origin strings"
-    from openprogram.host.security.backend_endpoint import OwnerAuthError, canonicalize_origin
-
-    for origin in value:
-        try:
-            canonicalize_origin(origin)
-        except OwnerAuthError as exc:
-            return f"invalid Origin {origin!r}: {exc}"
-    return None
-
-
 def _validate_mcp_exposed_tools(value: Any) -> Optional[str]:
     if not isinstance(value, list) or not all(
         isinstance(name, str) for name in value
@@ -350,16 +84,6 @@ def _validate_fallback_models(value: Any) -> Optional[str]:
         for spec in value
     ):
         return 'must be a JSON list of "provider/model" strings'
-    return None
-
-
-def _validate_web_bind_host(value: Any) -> Optional[str]:
-    from openprogram.host.security.backend_endpoint import OwnerAuthError, canonicalize_bind_host
-
-    try:
-        canonicalize_bind_host(str(value))
-    except OwnerAuthError as exc:
-        return str(exc)
     return None
 
 
@@ -389,26 +113,6 @@ def _update_channels() -> list[str]:
     """The channel names ``update.channel`` may take."""
     from openprogram.state.update_channels import CHANNELS
     return sorted(CHANNELS)
-
-
-def _sandbox_modes() -> tuple[str, ...]:
-    from openprogram.host.sandbox import MODES
-    return MODES
-
-
-def _sandbox_unavailable_policy() -> tuple[str, ...]:
-    from openprogram.host.sandbox import UNAVAILABLE_POLICY
-    return UNAVAILABLE_POLICY
-
-
-def _sandbox_default_deny_read() -> tuple[str, ...]:
-    from openprogram.host.sandbox import DEFAULT_DENY_READ
-    return DEFAULT_DENY_READ
-
-
-def _sandbox_default_deny_write() -> tuple[str, ...]:
-    from openprogram.host.sandbox import DEFAULT_DENY_WRITE
-    return DEFAULT_DENY_WRITE
 
 
 def _coerce(widget: str, value: Any) -> Any:
@@ -531,14 +235,6 @@ def _validate_hooks(v: Any) -> Optional[str]:
     return None
 
 
-def _validate_outbound_url_settings(value: Any) -> Optional[str]:
-    try:
-        parse_outbound_url_settings(value)
-    except ValueError:
-        return "invalid outbound URL security configuration"
-    return None
-
-
 # the registry
 
 SETTINGS: list[SettingSpec] = [
@@ -597,7 +293,7 @@ SETTINGS: list[SettingSpec] = [
         key="web.host", path=("web", "host"), group="Ports",
         label="Bind address", widget="text",
         apply=APPLY_NEXT_START, default="127.0.0.1",
-        validate=_validate_web_bind_host,
+        validate=setting_rules.validator("web.host"),
         help="Network interface the server listens on. The default only "
              "accepts connections from this machine. Setting 0.0.0.0 exposes "
              "the authenticated UI to other interfaces and requires at least "
@@ -608,7 +304,7 @@ SETTINGS: list[SettingSpec] = [
         key="web.allowed_origins", path=("web", "allowed_origins"),
         group="Ports", label="Allowed browser origins", widget="json",
         apply=APPLY_NEXT_START, default=[],
-        validate=_validate_web_origins,
+        validate=setting_rules.validator("web.allowed_origins"),
         help="Exact browser Origins allowed to address this OpenProgram "
              "instance. Each value is scheme://host[:port], such as "
              "https://agent.example.com. This is a request-Origin and Host "
@@ -645,7 +341,7 @@ SETTINGS: list[SettingSpec] = [
         widget="json",
         apply=APPLY_LIVE,
         default={"exceptions": []},
-        validate=_validate_outbound_url_settings,
+        validate=setting_rules.validator("security.outbound_url"),
         help="Owner-only exact Origin or CIDR exceptions for declared "
              "configured-service consumers, plus an optional policy proxy "
              "that explicitly asserts target-policy enforcement.",
@@ -909,6 +605,20 @@ SETTINGS: list[SettingSpec] = [
         help="Whether ~/.codex/config.toml points Codex at OpenProgram's model.",
     ),
     SettingSpec(
+        key="harnesses.codex.tiers", path=("harnesses", "codex", "tiers"),
+        group="Harness Models", label="Codex subagent and memory models, what it applies to, and background compaction", widget="json",
+        apply=APPLY_LIVE, default={},
+        validate=lambda v: (None if isinstance(v, dict) and all(
+            (k in {"subagent", "memories"} and not _validate_model_ref(m)) or (k == "scope" and m == "profile")
+            or (k == "async" and m in {"on", "50", "75", "85"})
+            for k, m in v.items())
+            else "must map subagent and memories to provider/model refs, scope to profile, "
+                 "and async to on, 50, 75 or 85"),
+        help="The model Codex's subagents start on and the one it writes its memories with, each "
+             "left out for Codex's own; scope profile wires only `codex -p openprogram`; async turns on "
+             "Codex's background compaction, at its own 65% of the window or at the share given.",
+    ),
+    SettingSpec(
         key="harnesses.claude_code.model", path=("harnesses", "claude_code", "model"),
         group="Harness Models", label="Claude Code model", widget="text",
         apply=APPLY_LIVE, default="", validate=lambda v: _validate_model_ref(v),
@@ -916,12 +626,12 @@ SETTINGS: list[SettingSpec] = [
     ),
     SettingSpec(
         key="harnesses.claude_code.tiers", path=("harnesses", "claude_code", "tiers"),
-        group="Harness Models", label="Claude Code Opus, Sonnet and Haiku models", widget="json",
+        group="Harness Models", label="Claude Code Opus, Sonnet, Haiku and subagent models", widget="json",
         apply=APPLY_LIVE, default={},
         validate=lambda v: (None if isinstance(v, dict) and all(
-            k in {"opus", "sonnet", "haiku"} and not _validate_model_ref(m) for k, m in v.items())
-            else "must map opus, sonnet and haiku to provider/model refs"),
-        help="The model each Claude Code tier runs on; a tier left out uses the Claude Code model.",
+            k in {"opus", "sonnet", "haiku", "subagent"} and not _validate_model_ref(m) for k, m in v.items())
+            else "must map opus, sonnet, haiku and subagent to provider/model refs"),
+        help="The model each Claude Code tier and its subagents run on; one left out uses the Claude Code model.",
     ),
     SettingSpec(
         key="harnesses.claude_code.terminal", path=("harnesses", "claude_code", "terminal"),
@@ -1074,7 +784,7 @@ SETTINGS: list[SettingSpec] = [
     SettingSpec(
         key="sandbox.mode", path=("sandbox", "mode"), group="Sandbox",
         label="Sandbox mode", widget="enum", apply=APPLY_LIVE,
-        default="off", choices=lambda: list(_sandbox_modes()),
+        default="off", choices=lambda: list(sandbox_settings.MODES),
         help="`off` (the default) runs local commands without a sandbox "
              "unless a conversation turns Sandbox on in its composer menu, "
              "which then uses the backend when it is available. "
@@ -1104,7 +814,7 @@ SETTINGS: list[SettingSpec] = [
     SettingSpec(
         key="sandbox.deny_read", path=("sandbox", "deny_read"),
         group="Sandbox", label="Blocked read paths", widget="json",
-        apply=APPLY_LIVE, default=list(_sandbox_default_deny_read()),
+        apply=APPLY_LIVE, default=list(sandbox_settings.DEFAULT_DENY_READ),
         validate=lambda v: (None if isinstance(v, list)
                             and all(isinstance(x, str) for x in v)
                             else "must be a JSON list of glob patterns"),
@@ -1135,7 +845,7 @@ SETTINGS: list[SettingSpec] = [
     SettingSpec(
         key="sandbox.deny_write", path=("sandbox", "deny_write"),
         group="Sandbox", label="Blocked write paths", widget="json",
-        apply=APPLY_LIVE, default=list(_sandbox_default_deny_write()),
+        apply=APPLY_LIVE, default=list(sandbox_settings.DEFAULT_DENY_WRITE),
         validate=lambda v: (None if isinstance(v, list)
                             and all(isinstance(x, str) for x in v)
                             else "must be a JSON list of glob patterns"),
@@ -1158,7 +868,7 @@ SETTINGS: list[SettingSpec] = [
     SettingSpec(
         key="sandbox.network_domains", path=("sandbox", "network_domains"), group="Sandbox",
         label="Allowed and denied network domains", widget="json", apply=APPLY_LIVE, default=None,
-        validate=lambda value: __import__("openprogram.host.sandbox.network_policy", fromlist=["validation_error"]).validation_error(value),
+        validate=setting_rules.validator("sandbox.network_domains"),
         help="Optional macOS-only domain map, for example {\"example.com\": \"allow\", \"*.example.org\": \"deny\"}. "
              "Requires network enabled. Null preserves ordinary network mode; an empty map denies all. "
              "Deny wins. Only public HTTP port 80 and HTTPS CONNECT port 443 are supported. "
@@ -1180,7 +890,7 @@ SETTINGS: list[SettingSpec] = [
         key="sandbox.unavailable_policy", path=("sandbox", "unavailable_policy"),
         group="Sandbox", label="When the sandbox cannot run", widget="enum",
         apply=APPLY_LIVE, default="warn" if sys.platform == "win32" else "refuse",
-        choices=lambda: list(_sandbox_unavailable_policy()),
+        choices=lambda: list(sandbox_settings.UNAVAILABLE_POLICY),
         help="What happens when the mode is on but the platform backend is "
              "missing or cannot create its required isolation. `refuse` "
              "fails the command and says why. `warn` "
@@ -1320,14 +1030,13 @@ def get_settings(
         rows.append(row)
 
     # Providers are read-only status rows (✓ configured / ✗ not) with an
-    # action — selecting one runs ``/login``. check_providers() is cheap
+    # action — selecting one runs ``/login``. The provider status is cheap
     # (~1ms; env + which checks). The web already has a full Providers tab;
     # this is the at-a-glance status for the TUI/CLI.
     if key_prefix is not None:
         return rows
     try:
-        from openprogram.models.providers.catalog.registry import check_providers
-        for name, st in check_providers().items():
+        for name, st in model_facts.provider_status().items():
             ok = bool(st.get("available"))
             rows.append({
                 "key": f"providers.{name}",
@@ -1476,19 +1185,15 @@ def set_setting(key: str, value: Any) -> dict:
             or "\\" in str(candidate_file)
         ):
             return {"error": "record mode requires a managed recording ID"}
-        if candidate_mode == "replay":
-            try:
-                from openprogram.models.providers.recording.recording import resolve_recording_selector
-                from openprogram.models.providers.recording.replay import ReplayProvider
 
-                ReplayProvider(resolve_recording_selector(str(candidate_file)))
-            except (OSError, ValueError, RuntimeError) as exc:
-                return {"error": f"invalid replay recording: {exc}"}
+    if setting_rules.has(spec.key, "check"):
+        candidate = user_config.read_config()
+        _set_at(candidate, spec.path, coerced)
+        err = setting_rules.check(spec.key, coerced, candidate)
+        if err:
+            return {"error": err}
 
-    if spec.key == "security.outbound_url":
-        coerced = parse_outbound_url_settings(coerced).model_dump(
-            mode="json", exclude_none=True
-        )
+    coerced = setting_rules.normalize(spec.key, coerced)
 
     # route to the typed writer that already owns this key, else dot-path
     if spec.key == "ui.web_port":
@@ -1499,11 +1204,7 @@ def set_setting(key: str, value: Any) -> dict:
         preferences.write_search_default_provider(None if coerced == "auto" else coerced)
     else:
         user_config.update_config(lambda cfg: _set_at(cfg, spec.path, coerced))
-    if spec.key == "models.prompt_cache_ttl":
-        # Every conversation's next request changes its cache lifetime on
-        # purpose: the prompt-cache check records it as expected.
-        from openprogram.models.usage.prefix_fingerprint import expect_break_everywhere
-        expect_break_everywhere("ttl_switch")
+    setting_rules.after_write(spec.key, coerced)
 
     result: dict = {"applied": spec.apply, "value": coerced}
 

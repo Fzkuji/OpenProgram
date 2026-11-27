@@ -7,11 +7,8 @@ from pathlib import Path
 import pytest
 
 from openprogram.interfaces.cli.commands.maintenance.doctor import _cmd_doctor_credentials
-from openprogram.models.auth.credentials import (
-    _private_atomic_write,
-    _read_private_bytes,
-    audit_credentials,
-)
+from openprogram.models.auth.credentials import audit_credentials
+from openprogram.state.private_files import _private_atomic_write, _read_private_bytes
 
 
 def test_runtime_uses_ordinary_file_io(tmp_path: Path) -> None:

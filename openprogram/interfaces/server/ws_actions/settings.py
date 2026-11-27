@@ -36,7 +36,7 @@ def _settings_rows(session_id: str | None):
 
 
 async def handle_set_setting(ws, cmd: dict):
-    from openprogram.operations.worker.ports import with_port_owner_note
+    from openprogram.host.worker.ports import with_port_owner_note
     from openprogram.state.settings import set_setting
     key = cmd.get("key") or ""
     value = cmd.get("value")

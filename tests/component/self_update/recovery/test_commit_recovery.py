@@ -136,6 +136,7 @@ def test_deadline_is_checked_after_durable_decision_before_first_native_commit(a
     assert phase(v.transaction) == "rolled_back" and version(v.target) == "0.6.1"
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("damage", ["missing_decision", "decision", "grant", "result", "journal", "symlink"])
 def test_irreversible_commit_requires_original_decision_and_bound_evidence(accepted, monkeypatch, damage):
     v = accepted
@@ -161,6 +162,7 @@ def test_irreversible_commit_requires_original_decision_and_bound_evidence(accep
     assert phase(v.transaction) == "committed"
 
 
+@pytest.mark.slow
 def test_completed_commit_with_failed_fresh_system_probe_keeps_maintenance(accepted, monkeypatch):
     v = accepted
     interrupt(v, monkeypatch)

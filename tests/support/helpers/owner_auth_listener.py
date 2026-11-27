@@ -60,8 +60,10 @@ def main() -> None:
     import uvicorn
 
     port = _free_port()
+    # Uvicorn turns SIGTERM into a normal shutdown, so the finally below runs.
+    state_dir = tempfile.TemporaryDirectory(prefix="owner-auth-listener-")
     state = OwnerAuthState.start(
-        state_dir=Path(tempfile.mkdtemp()),
+        state_dir=Path(state_dir.name),
         bind_host="127.0.0.1",
         port=port,
         allowed_origins=(),
@@ -92,6 +94,7 @@ def main() -> None:
         pass
     finally:
         state.close()
+        state_dir.cleanup()
 
 
 if __name__ == "__main__":

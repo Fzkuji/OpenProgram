@@ -143,7 +143,7 @@
 <details>
 <summary>The Web Search switch and backend selection</summary>
 <ul>
-<li>Per message. Providers with their own search (ChatGPT subscription, OpenAI Responses API, Anthropic) search through the provider: one "Searched the web" step per search with sources, a sources row on the answer, and no local <code translate="no">web_search</code>.</li>
+<li>Per message. Providers with their own search (OpenAI Responses API, Anthropic) search through the provider: one "Searched the web" step per search with sources, a sources row on the answer, and no local <code translate="no">web_search</code>.</li>
 <li>Other providers, Gemini included (its grounding cannot combine with function tools), get the local tool.</li>
 <li>Off excludes both, even in automatic tool mode. On makes the schema available immediately, including when Tools is off, and still respects disabled tools and permissions. Tool profiles belong to each conversation and survive tab changes and refreshes.</li>
 <li>Keys apply to the next call without restart. An unavailable saved default falls back; a named unavailable provider gives the reason and lists usable ones.</li>

@@ -247,6 +247,7 @@ def test_self_update_builds_docs_in_quarantine(tmp_path: Path, monkeypatch: pyte
 # --------------------------------------------------------------- selector
 
 
+@pytest.mark.slow
 def test_the_real_repository_runs_contracts_for_a_web_only_change() -> None:
     selection = select(["apps/web/lib/utils.ts"], ROOT)
 

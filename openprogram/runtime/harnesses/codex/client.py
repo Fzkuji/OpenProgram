@@ -1,8 +1,9 @@
 """``codex app-server``: one JSON-RPC process per conversation.
 
 Each conversation gets its own process (a crash ends one conversation's
-turn, not every one's), started when its first turn needs it and released
-after thirty idle minutes. Starts are serialised per ``CODEX_HOME`` and a
+turn, not every one's), started when a turn needs it and closed when the
+turn ends: while it runs, the Codex app shows the thread as open in another
+app and will not go on with it. Starts are serialised per ``CODEX_HOME`` and a
 start that fails on Codex's SQLite state setup is tried again: two
 processes opening the same state database at once can trip it.
 """
@@ -25,8 +26,11 @@ _log = logging.getLogger(__name__)
 
 #: The name a session Codex records says started it.
 CLIENT_NAME = "OpenProgram"
-#: A conversation's process is released after this long without a turn.
-IDLE_RELEASE_SECONDS = 30 * 60
+#: A conversation's Codex process is closed this long after its turn ends: at once, so
+#: the Codex app can go on with the thread (it refuses one another app has open).
+IDLE_RELEASE_SECONDS = 0.0
+#: How long a process closed at its turn's end may take to exit before it is ended.
+TURN_END_GRACE_SECONDS = 15.0
 #: How long one request may wait for its answer.
 REQUEST_TIMEOUT_SECONDS = 60.0
 #: Attempts at a start that failed on Codex's state database.
@@ -179,8 +183,9 @@ class AppServer:
     def stderr_tail(self) -> str:
         return "\n".join(self._stderr)
 
-    def close(self) -> None:
-        """Stop the process and every command it started."""
+    def close(self, grace: float = 2.0) -> None:
+        """Stop the process and every command it started: its input is closed and it
+        gets ``grace`` seconds to finish what it writes before it is ended."""
         process = self._process
         if process is None:
             return
@@ -191,7 +196,7 @@ class AppServer:
             except OSError:
                 pass
             try:
-                process.wait(timeout=2)
+                process.wait(timeout=grace)
             except subprocess.TimeoutExpired:
                 from openprogram.host._platform.processes import kill_process_tree
                 kill_process_tree(process.pid)
@@ -395,6 +400,8 @@ def start_app_server(extra_args: Optional[list[str]] = None,
             server = AppServer(argv, env=env)
             try:
                 server.start()
+                from .rate_limits import watch
+                watch(server)
                 return server
             except (AppServerError, OSError) as exc:
                 tail = server.stderr_tail()
@@ -410,9 +417,10 @@ def start_app_server(extra_args: Optional[list[str]] = None,
 # -- one process per conversation -------------------------------------------
 
 class ProcessPool:
-    """The app-server of each conversation, released when idle."""
+    """The app-server of each conversation, released when idle (``idle_seconds``;
+    0 closes it as soon as its turn ends)."""
 
-    def __init__(self, *, idle_seconds: float = IDLE_RELEASE_SECONDS,
+    def __init__(self, *, idle_seconds: float = 30 * 60,
                  starter: Optional[Callable[[list[str], dict[str, str]], "AppServer"]] = None) -> None:
         self.idle_seconds = idle_seconds
         # How a process is started: ``codex app-server`` unless another
@@ -420,8 +428,40 @@ class ProcessPool:
         self.starter = starter
         self._entries: dict[str, dict] = {}
         self._loose: set = set()  # processes started for one turn while another held the key
+        # A conversation's process closing after its turn: the next start waits for it, as a
+        # session another process still holds cannot be resumed (DeepSeek's lock).
+        self._closing: dict[str, set[threading.Thread]] = {}
         self._lock = threading.Lock()
         self._reaper: Optional[threading.Thread] = None
+
+    def _close_later(self, key: str, close: Callable[[], None]) -> None:
+        """Run ``close`` off the turn's path, recorded under ``key`` until it is done so the
+        conversation's next start waits for it. Called under the lock."""
+        def run() -> None:
+            try:
+                close()
+            finally:
+                with self._lock:
+                    closers = self._closing.get(key)
+                    if closers is not None:
+                        closers.discard(thread)
+                        if not closers:
+                            self._closing.pop(key, None)
+
+        thread = threading.Thread(target=run, name="app-server-close", daemon=True)
+        self._closing.setdefault(key, set()).add(thread)
+        thread.start()
+
+    def wait_closed(self, key: str, cancel: Optional[threading.Event] = None) -> None:
+        """Wait for the conversation's previous processes to finish closing: a session
+        another process still holds cannot be taken over. Ends early on ``cancel``."""
+        deadline = time.monotonic() + TURN_END_GRACE_SECONDS + 10
+        while True:
+            with self._lock:
+                closers = list(self._closing.get(key, ()))
+            if not closers or time.monotonic() >= deadline or (cancel is not None and cancel.is_set()):
+                return
+            closers[0].join(0.25)
 
     def acquire(self, key: str, *, extra_args: list[str], env: dict[str, str]) -> tuple[AppServer, bool]:
         """The conversation's process, started (or restarted) as needed.
@@ -452,6 +492,8 @@ class ProcessPool:
                 return entry["server"], False
         if stale is not None:
             stale.close()
+        if not loose:
+            self.wait_closed(key)
         server = (self.starter or start_app_server)(extra_args, env)
         if loose:
             with self._lock:
@@ -480,6 +522,11 @@ class ProcessPool:
             if entry is not None and entry["server"] is server:
                 entry["busy"] = max(0, entry["busy"] - 1)
                 entry["used"] = time.monotonic()
+                if entry["busy"] == 0 and self.idle_seconds <= 0:
+                    # Off the turn's path, with time to finish writing the thread's record
+                    # (its last lines are what the next turn and the Codex app read back).
+                    closing = self._entries.pop(key)["server"]
+                    self._close_later(key, lambda: closing.close(grace=TURN_END_GRACE_SECONDS))
 
     def discard(self, key: str, server: AppServer) -> None:
         """Forget and stop a process that failed; the next turn starts another."""
@@ -513,14 +560,13 @@ class ProcessPool:
         with self._lock:
             idle = [key for key, entry in self._entries.items()
                     if entry["busy"] == 0 and now - entry["used"] >= self.idle_seconds]
-            servers = [self._entries.pop(key)["server"] for key in idle]
-        for server in servers:
-            server.close()
+            for key in idle:
+                self._close_later(key, self._entries.pop(key)["server"].close)
 
     def _ensure_reaper(self) -> None:
         # Called under the lock; a reaper leaving clears itself under it too.
-        if self._reaper is not None:
-            return
+        if self._reaper is not None or self.idle_seconds <= 0:
+            return  # running, or none needed: a process closes when its turn ends
 
         def run() -> None:
             try:
@@ -549,7 +595,7 @@ def pool() -> ProcessPool:
     global _pool
     with _pool_lock:
         if _pool is None:
-            _pool = ProcessPool()
+            _pool = ProcessPool(idle_seconds=IDLE_RELEASE_SECONDS)
             import atexit
             atexit.register(_pool.close_all)
         return _pool

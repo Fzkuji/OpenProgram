@@ -76,7 +76,7 @@
 <tr><th scope="row">bash</th><td>每次在新子进程中从工作树开始。<code translate="no">cd ..</code> 可以离开：这是默认位置，不是沙箱。硬隔离用 docker 后端</td></tr>
 <tr><th scope="row">read、write、edit、list、apply_patch（<code translate="no">path_resolve.py</code>）</th><td>相对路径按工作树解析。工作树外的绝对路径得到 <code translate="no">[outside worktree]</code> 警告，不阻止</td></tr>
 <tr><th scope="row">glob、grep</th><td>不传 <code translate="no">path</code> 时搜索工作树；相对路径在工作树内解析（<code translate="no">resolve_root</code>）</td></tr>
-<tr><th scope="row">分发时的路径检查（<code translate="no">_host/execution.py</code>）</th><td>读写路径先锚定到工作树再做沙箱检查，检查的就是工具要打开的文件</td></tr>
+<tr><th scope="row">分发时的路径检查（<code translate="no">runtime/agent/tool_execution.py</code>）</th><td>读写路径先锚定到工作树再做沙箱检查，检查的就是工具要打开的文件</td></tr>
 <tr><th scope="row">terminal_use</th><td><code translate="no">workdir</code> 相对于工作树</td></tr>
 <tr><th scope="row">Runtime 子进程（<code translate="no">--cd</code>）</th><td>优先使用工作树，其次会话工作目录</td></tr>
 <tr><th scope="row">系统提示（<code translate="no">environment_block</code>）</th><td>写明工作树、它的源工作目录和分支，并说明之前的路径按相对路径对应这里的同一文件，编辑前先重新读取</td></tr>

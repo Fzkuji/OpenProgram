@@ -3,6 +3,14 @@
 Always-on is part of an Agent's configuration; the conversations that use
 the Agent are what wake. Each keeps its own Goal, check-ins and reports.
 
+The Goal is a Program above the runtime (``openprogram.programs.tools
+.planning.goal``), so this module never touches it: a wake first asks the
+standing work registered for the ``wake`` turn moment (the chat Goal's
+``goal.standing``) whether it takes the wake (starts, resumes or keeps
+running the Goal), and only a wake nothing took becomes a check-in. Stopping
+and restoring a conversation, a check-in that left work behind and the
+status line ask the same provider; without one there is no standing work.
+
 A check-in runs beside the conversation, on a side branch of it, so the
 owner sees nothing of it unless it reports; a report reaches the
 conversation as an ordinary message from the Agent.
@@ -32,15 +40,6 @@ OWNER_SOURCES = {None, "", "web", "always_on"}
 TURN_SOURCE = "web"
 RECALL_MESSAGE_CHARS = 500
 
-# Goals the runtime may replace. ``goal.chat.create`` refuses any other status.
-GOAL_ENDED = {"achieved", "cancelled", "cleared", "impossible"}
-# Goals a wake starts when nothing is running them: every one not typed by a person.
-UNATTENDED_GOAL_ORIGINS = ("always_on", "check_in", "handoff", "scheduled")
-# Unfinished Goals nothing moves on its own: failed, stalled, out of budget or blocked.
-# ``paused`` is a person's own pause, and the waiting statuses belong to a Workflow Goal.
-GOAL_STUCK = {"paused_recoverable", "blocked", "stalled", "budget_exhausted", "capped", "error", "failed"}
-# Restarts of a failed automatic Goal in a row before a person is asked.
-AUTOMATIC_GOAL_RESUMES = 3
 # Stop reasons, recorded on the Goal a stop pauses.
 ARCHIVED_STOP = "conversation_archived"
 OFF_STOP = "always_on_off"
@@ -65,8 +64,6 @@ SELF_WAKE_RANGE_MINUTES = (5, 30 * 24 * 60)
 BUSY_RETRY_MINUTES = 5
 # Conversations looked through for an Agent's running check-in.
 AGENT_SESSIONS_SCANNED = 500
-# A chat turn still has not settled its Goal this long after it ended: it never will.
-GOAL_SETTLE_GRACE_S = 60.0
 # Earlier reports quoted in a check-in's prompt, newest first. Every line has
 # its share, so a long report cannot push the others out.
 PRIOR_REPORTS = 20
@@ -159,9 +156,17 @@ def agent_for_session(session_id: str) -> str | None:
     return spec.id if spec is not None and (spec.always_on or {}).get("enabled") else None
 
 
-def _goal(session_id: str) -> dict | None:
-    import openprogram.programs.tools.planning.goal as goals
-    return goals.load_goal(session_id)
+def _standing_work() -> Any | None:
+    """The standing work of always-on conversations (the ``wake`` turn moment), if a Program registered it."""
+    from openprogram.runtime.conversation import turn_hooks
+    return turn_hooks.provider("wake")
+
+
+def stop_automatic_goal(session_id: str, reason: str, *, wait_seconds: float = 0.0) -> bool:
+    """Pause the conversation's unattended standing work; ``reason`` is recorded on it.
+    Raises the standing work's conflict when its lock stays held for ``wait_seconds``."""
+    work = _standing_work()
+    return work is not None and work.stop(session_id, reason, wait_seconds=wait_seconds)
 
 
 def _turn_running(session_id: str) -> bool:
@@ -386,17 +391,11 @@ def _nothing_to_check(session_id: str, config: dict, state: dict) -> bool:
     if not isinstance(last, (int, float)):
         return False
     try:
-        from openprogram.runtime.conversation import open_work
-        from openprogram.programs.tools.planning.todo import shared as todos
+        from openprogram.runtime.conversation import open_work, turn_hooks
         if open_work.open_items(session_id):
             return False
-        # Steps of a closed task are nobody's to finish: a task that never
-        # advanced ends with its steps as they were, and a sub-agent's run
-        # that stopped leaves its own behind.
-        open_tasks = {str(task.get("id")) for task in todos.load_tasks(session_id)
-                      if task.get("status") == "open" and not task.get("scope")}
-        if any(str(item.get("plan") or "") in open_tasks and item.get("status") in todos.UNFINISHED
-               for item in todos.load(session_id)):
+        # What Programs say is left unfinished (the task board's open steps).
+        if any(unfinished(session_id) for unfinished in turn_hooks.handlers("unfinished_work")):
             return False
         return _last_message_at(session_id) <= last
     except Exception:  # noqa: BLE001 - when in doubt, look
@@ -451,27 +450,10 @@ def _decide_wake(session_id: str, reason: str, now: float) -> dict[str, Any]:
             return _record(session_id, spec.id, config, now, reason, "busy",
                            next_at=schedule.next_allowed(now + BUSY_RETRY_MINUTES * 60, config),
                            keep_reason=True, keep_last_wake=_check_in_running(state))
-        goal = _goal(session_id)
-        standing = (config.get("goal") or "").strip()
-        applied = (state.get("applied_goal") or {}).get("text")
-        unfinished = goal is not None and goal.get("status") not in GOAL_ENDED
-        if standing and standing != applied and not unfinished:
-            from openprogram.programs.tools.planning.goal import chat
-            created = chat.create(session_id, standing, origin="always_on")
-            store.update_state(session_id, applied_goal={"text": standing, "goal_id": created.get("goal_id")})
-            return _start_goal(session_id, spec, config, created, now, reason)
-        if _goal_has_no_runner(goal):
-            return _start_goal(session_id, spec, config, goal, now, reason)
-        if _goal_stuck(goal):
-            started = (_resume_goal(session_id, spec, config, goal, now, reason)
-                       if _resumes_by_itself(session_id, goal) else None)
-            if started is not None:
-                return started
-            _report_stuck_goal(session_id, _goal(session_id))
-        elif unfinished:
-            status_text = str(goal.get("status") or "")
-            outcome = "goal_paused" if status_text.startswith("paused") or goal.get("stop_requested") else "goal_in_progress"
-            return _record(session_id, spec.id, config, now, reason, outcome)
+        work = _standing_work()
+        taken = work.decide(session_id, spec, config, state, now, reason) if work is not None else None
+        if taken is not None:
+            return taken
         if not config.get("research", True):
             return _record(session_id, spec.id, config, now, reason, "idle")
         if not session.get("head_id"):
@@ -493,123 +475,6 @@ def _decide_wake(session_id: str, reason: str, now: float) -> dict[str, Any]:
                                next_at=schedule.next_allowed(now + BUSY_RETRY_MINUTES * 60, config),
                                keep_reason=True)
         return _start_check_in(session_id, spec, config, state, now, reason)
-
-
-def _execution_ended(execution_id: str) -> bool:
-    """Whether the turn is over with nothing left to carry its Goal on.
-
-    Asked only when no check-in is running, so a check-in's row with no ending
-    yet is one a restart or crash cut off; recovery closes it later. A chat
-    turn's end settles its Goal itself, in the moments after its row turns
-    terminal: starting the Goal in that gap would take the turn from it.
-    """
-    from openprogram.programs.tools.planning.goal.chat import settled_at_turn_end
-    from openprogram.runtime.execution import default_store
-    from openprogram.runtime.execution.model import TERMINAL_EXECUTION_STATUSES
-    from openprogram.runtime.execution.recovery.restart import is_check_in
-    executions = default_store()
-    execution = executions.get_execution(execution_id)
-    if execution is None or is_check_in(executions, execution_id):
-        return True
-    if execution.status not in TERMINAL_EXECUTION_STATUSES:
-        return False
-    request = (executions.get_agent_turn_input(execution_id) or {}).get("request") or {}
-    if not settled_at_turn_end(request):
-        return True
-    return time.time() - (execution.terminal_at or execution.updated_at) >= GOAL_SETTLE_GRACE_S
-
-
-def _goal_has_no_runner(goal: dict | None, *, ended: str | None = None) -> bool:
-    """An active unattended Goal nothing will continue. ``ended`` names a turn
-    known to be over, for the moment its row may not say so yet. A Goal turn
-    that finished and was accounted is continued by the Goal itself."""
-    if (not goal or goal.get("status") != "active" or goal.get("stop_requested")
-            or goal.get("origin") not in UNATTENDED_GOAL_ORIGINS
-            or goal.get("continuation_restart") is not None):
-        return False
-    execution_id = goal.get("execution_id")
-    if not execution_id or execution_id == ended:
-        return True
-    return goal.get("accounted_execution_id") != execution_id and _execution_ended(execution_id)
-
-
-def _goal_stuck(goal: dict | None) -> bool:
-    """An unfinished Goal that only someone's decision moves. A stop's own undo restores
-    the Goals it paused, and a person's pause is theirs: neither is stuck."""
-    from openprogram.programs.tools.planning.goal.chat import STOP_REASONS
-    return bool(goal) and goal.get("status") in GOAL_STUCK and goal.get("pause_reason") not in STOP_REASONS
-
-
-def _resumes_by_itself(session_id: str, goal: dict) -> bool:
-    """An automatic Goal cut short by a failure or a restart, not yet restarted too often.
-    A turn someone stopped is saved as a failure too, and a restart must not undo the Stop.
-    A turn whose record is gone fails resume's check every time, so retrying would block for good."""
-    import openprogram.programs.tools.planning.goal as goals
-    from openprogram.programs.tools.planning.goal.chat import AUTOMATIC_RESUME_REASONS
-    return (goal.get("origin") in UNATTENDED_GOAL_ORIGINS and goal.get("status") == "paused_recoverable"
-            and goal.get("pause_reason") in AUTOMATIC_RESUME_REASONS
-            and int(goal.get("automatic_resumes") or 0) < AUTOMATIC_GOAL_RESUMES
-            and not goals.budget_exhausted(goal)
-            and goals.goal_execution_state(goal, session_id)["status"] not in ("cancelled", "unavailable"))
-
-
-def _resume_goal(session_id: str, spec, config: dict, goal: dict, now: float,
-                 reason: str) -> dict[str, Any] | None:
-    """Restart a stuck automatic Goal; ``None`` when it turns out it cannot be."""
-    import openprogram.programs.tools.planning.goal as goals
-    from openprogram.programs.tools.planning.goal import chat
-    from openprogram.runtime.permissions.identity import AUTOMATIC_GOAL_ORIGINS
-    if goal.get("origin") in AUTOMATIC_GOAL_ORIGINS and _budget_left(spec, now) == 0:
-        return _record(session_id, spec.id, config, now, reason, "budget",
-                       next_at=schedule.next_allowed(_next_day(now), config), keep_reason=True)
-    try:
-        resumed = chat.resume_unattended(session_id)
-    except (goals.GoalConflictError, goals.GoalStateUnavailable):
-        return _record(session_id, spec.id, config, now, reason, "busy",
-                       next_at=schedule.next_allowed(now + BUSY_RETRY_MINUTES * 60, config),
-                       keep_reason=True)
-    except ValueError:
-        return None
-    return _start_goal(session_id, spec, config, resumed, now, reason)
-
-
-def _stuck_goal_reason(session_id: str, goal: dict) -> str:
-    import openprogram.programs.tools.planning.goal as goals
-    status, pause = goal.get("status"), goal.get("pause_reason")
-    if status in ("budget_exhausted", "capped"):
-        return "It used up its limit."
-    if status == "stalled":
-        return "Its automatic turns stopped doing any work."
-    if status == "blocked":
-        return "It reported a blocker it could not get past."
-    if pause == "execution_failed" and goals.goal_execution_state(goal, session_id)["status"] == "cancelled":
-        return "Its turn was stopped, so it waits for you."
-    if pause == "execution_failed":
-        return "Its turn failed, and it cannot be restarted on its own."
-    if pause == "restart_policy":
-        return "A restart cut it off, and it cannot be restarted on its own."
-    if pause == "plan_mode":
-        return "It stopped because the conversation is in plan mode."
-    return "It stopped and cannot continue on its own."
-
-
-def _report_stuck_goal(session_id: str, goal: dict | None) -> None:
-    """Tell the user once per stop that an automatic Goal needs them. A person's own Goal is
-    left to its panel. A failed report is retried at the next wake; the check-in runs either way."""
-    if not _goal_stuck(goal) or goal.get("origin") not in UNATTENDED_GOAL_ORIGINS:
-        return
-    stop = ":".join(str(goal.get(key) or "") for key in ("goal_id", "run_id", "status", "pause_reason"))
-    if store.load_state(session_id).get("stuck_goal_reported") == stop:
-        return
-    detail = " ".join(str(goal.get("last_reason") or "").split())
-    body = " ".join(filter(None, (_stuck_goal_reason(session_id, goal), f"Last reason: {detail}." if detail else "",
-                                  "Resume, change or clear it from its Goal controls. "
-                                  "Check-ins keep running meanwhile.")))
-    try:
-        report(session_id, "Goal stopped: " + " ".join(str(goal.get("text") or "").split()), body, kind="approval")
-        store.update_state(session_id, stuck_goal_reported=stop)
-    except Exception as exc:  # noqa: BLE001 - see above
-        _log.warning("stuck Goal report for %s failed: %s: %s", session_id, type(exc).__name__, exc)
 
 
 def _budget_left(spec, now: float) -> float | None:
@@ -639,34 +504,6 @@ def add_goal_turn_spend(session_id: str, execution_id: str, now: float | None = 
     usd = (_cost(execution_id) or {}).get("usd") if agent_id else None
     if usd:
         store.add_spend(agent_id, _today(time.time() if now is None else now), usd)
-
-
-def _start_goal(session_id: str, spec, config: dict, goal: dict, now: float, reason: str) -> dict[str, Any]:
-    """Start ``goal`` as a turn of the conversation itself."""
-    import openprogram.programs.tools.planning.goal as goals
-    from openprogram.programs.tools.planning.goal import chat
-    from openprogram.runtime.permissions.identity import AUTOMATIC_GOAL_ORIGINS
-    if goal.get("origin") in AUTOMATIC_GOAL_ORIGINS:
-        left = _budget_left(spec, now)
-        if left == 0:
-            return _record(session_id, spec.id, config, now, reason, "budget",
-                           next_at=schedule.next_allowed(_next_day(now), config), keep_reason=True)
-        if left is not None and reason != "manual" and _agent_check_in_running(spec.id):
-            # What is left today is not known until that check-in ends.
-            return _record(session_id, spec.id, config, now, reason, "busy",
-                           next_at=schedule.next_allowed(now + BUSY_RETRY_MINUTES * 60, config),
-                           keep_reason=True)
-    try:
-        if goals.budget_exhausted(goal):
-            # Admission would refuse it at every wake, and only a turn's end closes it otherwise.
-            chat.close_exhausted(session_id)
-            return _record(session_id, spec.id, config, now, reason, "budget")
-        chat.start_from_controls(session_id, source=TURN_SOURCE)
-    except goals.GoalConflictError:
-        return _record(session_id, spec.id, config, now, reason, "busy",
-                       next_at=schedule.next_allowed(now + BUSY_RETRY_MINUTES * 60, config),
-                       keep_reason=True)
-    return _record(session_id, spec.id, config, now, reason, "goal_started")
 
 
 def _start_check_in(session_id: str, spec, config: dict, state: dict, now: float,
@@ -728,6 +565,9 @@ def _conversation_model(session: dict) -> str | None:
         except ValueError:
             meta = {}
     provider, model = meta.get("provider_override"), meta.get("model_override")
+    from openprogram.models.auth.provider_policy import is_withdrawn
+    if is_withdrawn(provider or ""):
+        return None
     if provider and model:
         return f"{provider}/{model}"
     return model or None
@@ -760,7 +600,8 @@ def _run_turn(session_id: str, agent_id: str, text: str, tools: list[str], model
     from openprogram.runtime.agent.turn_request import TurnRequest
     from openprogram.runtime.conversation.production_driver import CanonicalAgentAdapter
     from openprogram.runtime.conversation.session_settings.session_config import load_session_run_config, resolved_permission_mode
-    from openprogram.runtime.permissions.authority import local_owner_authority, runtime_authority
+    from openprogram.runtime.permissions.authority import local_owner_authority
+    from openprogram.state.authority import runtime_authority
     from openprogram.runtime.permissions.rule import load_merged_rules
 
     head = (_db().get_session(session_id) or {}).get("head_id")
@@ -802,8 +643,8 @@ def _cut_off_by_restart(execution_id: str | None, result: Any) -> bool:
     Worker would count the check-in as running until it next starts.
     """
     from openprogram.runtime.execution import default_store
+    from openprogram.runtime.conversation.turn_endings import has_ended
     from openprogram.runtime.execution.recovery.restart import stopped_by_a_restart
-    from openprogram.runtime.scheduler.run_finish import has_ended
 
     if has_ended(result, None):
         return False
@@ -816,7 +657,7 @@ def _cut_off_by_restart(execution_id: str | None, result: Any) -> bool:
 
 def _stopped_at_time_limit(execution_id: Any) -> bool:
     from openprogram.runtime.execution import default_store
-    from openprogram.runtime.scheduler.time_limits import stopped_by_limit
+    from openprogram.runtime.execution.run_control.stop_reasons import stopped_by_limit
 
     try:
         return bool(execution_id) and stopped_by_limit(default_store().get_execution(str(execution_id)))
@@ -937,7 +778,8 @@ def finish_check_in(session_id: str, agent_id: str, msg_id: str, *, execution_id
         tell_user = False
         if error:
             changes, tell_user = _after_failed_check_in(state, check_in, error_reason, counts_as_failure, reported)
-        if _goal_has_no_runner(_goal(session_id), ended=execution_id):
+        work = _standing_work()
+        if work is not None and work.left_behind(session_id, execution_id):
             # The check-in left a Goal behind: the next tick starts it, and
             # a later wake the agent set for itself comes back after that.
             changes["next_wake_at"] = time.time()
@@ -1136,24 +978,6 @@ def note_user_turn(session_id: str, now: float | None = None) -> None:
     _broadcast({"type": "always_on_update", "data": {"session_id": session_id, "agent_id": spec.id}})
 
 
-def _waiting_for_goal_lock(action: Callable[[], bool], wait_seconds: float) -> bool:
-    import openprogram.programs.tools.planning.goal as goals
-    deadline = time.monotonic() + wait_seconds
-    while True:
-        try:
-            return action()
-        except goals.GoalConflictError:
-            if time.monotonic() >= deadline:
-                raise
-            time.sleep(0.05)
-
-
-def stop_automatic_goal(session_id: str, reason: str, *, wait_seconds: float = 0.0) -> bool:
-    """Pause the conversation's unattended Goal. Raises ``GoalConflictError`` if the lock stays held."""
-    from openprogram.programs.tools.planning.goal import chat
-    return _waiting_for_goal_lock(lambda: chat.pause_always_on(session_id, reason), wait_seconds)
-
-
 def _stops_with_always_on(session_id: str) -> bool:
     """Whether always-on governs this conversation, archived or not. An ordinary Agent's
     or a sub-agent's never is: no wake would start a Goal stopped there again.
@@ -1171,16 +995,16 @@ def restore_conversation(session_id: str, now: float | None = None, *, turned_on
     """A stop was undone: its Goal runs at the next tick, and a wake that came due meanwhile is not owed.
 
     On ``turned_on`` the tick itself restarts the count of every conversation that is not restored here."""
-    from openprogram.programs.tools.planning.goal import chat
+    work = _standing_work()
     _session, spec = _session_and_agent(session_id)
     config = dict(spec.always_on or {}) if spec is not None else {}
     if not config.get("enabled"):
         # Still stopped some other way; the last undo restores it.
-        if spec is not None:
-            _waiting_for_goal_lock(lambda: chat.relabel_stop(session_id, OFF_STOP), STOP_LOCK_WAIT_SECONDS)
+        if spec is not None and work is not None:
+            work.relabel(session_id, OFF_STOP, wait_seconds=STOP_LOCK_WAIT_SECONDS)
         return False
     now = time.time() if now is None else now
-    restored = _waiting_for_goal_lock(lambda: chat.restore_always_on(session_id), STOP_LOCK_WAIT_SECONDS)
+    restored = work is not None and work.restore(session_id, wait_seconds=STOP_LOCK_WAIT_SECONDS)
     with store.lock(session_id):
         state = store.load_state(session_id)
         planned = state.get("next_wake_at")
@@ -1299,7 +1123,8 @@ def status(session_id: str, *, report_limit: int = 20) -> dict[str, Any]:
     config = dict(spec.always_on or {}) if spec is not None else {}
     enabled = bool(config.get("enabled"))
     state = reap_interrupted(session_id) if enabled else store.load_state(session_id)
-    goal = _goal(session_id) if enabled else None
+    work = _standing_work() if enabled else None
+    goal = work.summary(session_id) if work is not None else None
     next_wake = state.get("next_wake_at") if enabled else None
     if isinstance(next_wake, (int, float)):
         # A wake saved before quiet hours were set is skipped to their end.
@@ -1312,7 +1137,7 @@ def status(session_id: str, *, report_limit: int = 20) -> dict[str, Any]:
         "enabled": enabled,
         "config": {key: config.get(key) for key in STATUS_CONFIG_KEYS} if enabled else None,
         "running": enabled and (_turn_running(session_id) or _check_in_running(state)),
-        "goal": {"text": goal.get("text"), "status": goal.get("status")} if goal else None,
+        "goal": goal,
         "last_wake": state.get("last_wake"),
         "wake_health": _wake_health(session_id, time.time()) if enabled else None,
         "next_wake_at": next_wake,
@@ -1354,10 +1179,10 @@ def _system_notification_fallback(session_id: str, name: str, row: dict[str, Any
     """A desktop App posts the notification and says so; without that answer
     the worker posts it, unless the conversation is on screen by then."""
     from openprogram.runtime import interface_link
-    from openprogram.runtime.scheduler import reminders
+    from openprogram.runtime import scheduler_link
 
     text = str(row.get("title") or row.get("body") or "New report")[:200]
-    reminders.notify_unless_shown(str(row["id"]), name, text,
+    scheduler_link.notify_unless_shown(str(row["id"]), name, text,
                                   unless=lambda: interface_link.session_on_screen(session_id))
 
 
@@ -1415,7 +1240,7 @@ def report(session_id: str, title: str, body: str, links: Any = None,
 
 def _body_with_files(text: str) -> str:
     """``text`` cut to fit a report, its attachment markers kept whole at the end."""
-    from openprogram.state.attachments import find_markers, strip_markers
+    from openprogram.state.attachment_markers import find_markers, strip_markers
 
     markers = "\n".join(dict.fromkeys(whole for whole, _name, _path in find_markers(text)))
     if not markers:

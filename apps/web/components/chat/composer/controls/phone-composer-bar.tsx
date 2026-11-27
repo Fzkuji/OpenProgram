@@ -4,54 +4,54 @@
  * The composer's controls on a touch phone (components/phone/): one row in
  * the input box, `+` to attach, one button naming the model, effort and
  * permission, and the mic and send that the box already has. The button
- * opens every setting of the turn in one sheet, a row each; a row with a
- * › opens its choices as a page of the same sheet with a Back row (the
- * menu engine's sheets, ui/menu/phone-sheet.tsx). Paseo folds its
+ * opens every setting of the turn in one Framework7 popup: a list a row
+ * each, a row with choices opening them as a page of the popup (its smart
+ * select), switches for the tools; the list's dock opens the same popup
+ * for the next new chat (PhoneNewChatSettings). Paseo folds its
  * composer's controls the same way on a phone; the desktop keeps its two
  * rows of chips (controls-cluster.tsx).
  */
 
-import { memo, useState } from "react";
-import { Plus } from "lucide-react";
+import { createContext, memo, useContext, useRef, useState } from "react";
+import type { SmartSelect } from "framework7/types";
+import { ChevronDown, Plus } from "lucide-react";
+import {
+  Block,
+  BlockTitle,
+  Button,
+  Link,
+  List,
+  ListItem,
+  Navbar,
+  Page,
+  Popup,
+  Segmented,
+  Toggle,
+  View,
+} from "framework7-react";
 
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { MenuRow } from "@/components/ui/menu/menu-parts";
-import { MenuCheck } from "@/components/ui/menu/menu-check";
-import {
-  CHECK_SLOT_PAD,
-  GROUP_LABEL,
-  ITEM_DESC,
-  ITEM_TITLE,
-  ITEM_TWO_LINE,
-  MENU_ITEM_STATES,
-  MENU_PANEL,
-  itemCls,
-} from "@/components/ui/menu/menu-styles";
-import { ChatModelMenuBody, useChatModel } from "@/components/chat/top-bar";
+import { useChatModel } from "@/components/chat/top-bar";
 import { ModelMark } from "@/components/chat/top-bar/chips/model-mark";
-import { ChatAgentMenuRows, useChatAgent } from "@/components/chat/top-bar/menus/agent-config-menu";
-import {
-  HarnessAgentRows, harnessAgentLabel, harnessName, harnessNote, HarnessRows, useHarness, useHarnessAgents, useHarnessPick,
-} from "@/components/chat/top-bar/menus/harness-menu";
 import { useModelPicker } from "@/components/chat/top-bar/menus/agent-selector";
-import { harnessProvider, listedModel, unavailable } from "@/lib/models/harnesses";
-import { nativeMenus, openNativeMenu, type NativeMenuItem } from "@/lib/mobile/native-menu";
-import { navigate } from "@/lib/nav/navigate";
+import { useChatAgent } from "@/components/chat/top-bar/menus/agent-config-menu";
+import { harnessNote, useHarness, useHarnessAgents, useHarnessPick } from "@/components/chat/top-bar/menus/harness-menu";
+import { PhonePortal } from "@/components/phone/phone-portal";
 import { formatEffortLabel } from "@/lib/effort/effort-color";
 import { useTranslation } from "@/lib/i18n";
 import { haptic } from "@/lib/mobile/bridge";
+import { navigate } from "@/lib/nav/navigate";
 import { SolarIcon } from "@/components/solar-icons";
-import { cn } from "@/lib/utils";
+import { OPENPROGRAM_HARNESS, harnessProvider, isHarnessProvider, listedModel, unavailable } from "@/lib/models/harnesses";
+import { useScopedSessionId, useSessionScope } from "@/lib/session-store/session-scope";
 
+import { useThinkingEffort } from "./effort/use-thinking-effort";
+import { useBoundSetComposerSettings } from "../state/use-composer-settings";
+import { useSessionAgentSettings } from "../state/use-session-agent-settings";
+import { useModelAvailability } from "./toggles/use-model-availability";
 import { usePermissionMode } from "./toggles/use-permission-mode";
+import { useSandboxToggle } from "./toggles/use-sandbox-toggle";
+import { useToolsToggles } from "./toggles/use-tools-toggles";
+import { useUnattendedMode } from "./toggles/use-unattended-mode";
 import type { ControlsClusterProps } from "./controls-cluster";
 
 type Props = Pick<ControlsClusterProps,
@@ -61,9 +61,11 @@ type Props = Pick<ControlsClusterProps,
   | "unattended" | "toggleUnattended"
   | "sandboxEnabled" | "sandboxAvailable" | "toggleSandbox"
   | "chatAgent" | "chatModel" | "noEnabledModels"
-  | "thinking" | "thinkingOptions" | "setThinking">;
-
-const ROW = cn(itemCls(false), MENU_ITEM_STATES);
+  | "thinking" | "thinkingOptions" | "setThinking"> & {
+  /** False while a saved chat is still being read: its settings are not
+   *  known yet, so the chips show nothing rather than a new chat's. */
+  settled: boolean;
+};
 
 export const PhoneComposerBar = memo(function PhoneComposerBar(props: Props) {
   const { text } = useTranslation();
@@ -79,308 +81,332 @@ export const PhoneComposerBar = memo(function PhoneComposerBar(props: Props) {
   const summary = `${modelText} · ${permissionLabel}`;
 
   return (
-    <div className="phone-composer-bar">
-      <button
-        type="button"
-        className="phone-composer-plus"
-        aria-label={text("Add photos or files", "添加照片或文件")}
-        onClick={props.onPickImages}
+    // Framework7's parts again, inside the app's own composer.
+    <div className="phone-composer-bar" data-f7 data-settling={props.settled && model.ready ? undefined : ""}>
+      <Link iconOnly className="phone-composer-plus" aria-label={text("Add photos or files", "添加照片或文件")} onClick={props.onPickImages}>
+        <Plus size={24} aria-hidden="true" />
+      </Link>
+      <Button
+        tonal
+        round
+        small
+        className="phone-composer-settings"
+        disabled={!!props.chatAgent.locked}
+        aria-label={text(`Settings: ${summary}`, `设置：${summary}`)}
+        onClick={() => setOpen(true)}
       >
-        <Plus size={20} strokeWidth={1.8} aria-hidden="true" />
-      </button>
-      {nativeMenus() ? (
-        <NativeSettings {...props} model={model} permission={permission} permissionLabel={permissionLabel}
-          showEffort={showEffort} modelText={modelText} summary={summary} />
-      ) : (
-      <DropdownMenu open={open} onOpenChange={setOpen}>
-        <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            className="phone-composer-settings"
-            disabled={!!props.chatAgent.locked}
-            aria-label={text(`Settings: ${summary}`, `设置：${summary}`)}
-          >
-            {/* Two chips, one sheet: the model and its effort, then the
-                permission, so neither truncates the other away (Happy's
-                composer row). */}
-            <span className="phone-composer-chip phone-composer-chip-model">
-              <ModelMark provider={model.markProvider} />
-              <span className="phone-composer-settings-text">{modelText}</span>
-            </span>
-            {/* The permission as its shield alone: its name would take the
-                model's room; the sheet names it. Full access shows in the
-                accent, as a warning. */}
-            <span className="phone-composer-chip phone-composer-chip-permission" data-mode={permission.mode}>
-              <SolarIcon name="shield-check" size={17} aria-hidden="true" />
-            </span>
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent className={MENU_PANEL} onCloseAutoFocus={(e) => e.preventDefault()}>
-          <PhoneSettingsRows {...props} model={model} permission={permission} permissionLabel={permissionLabel}
-            showEffort={showEffort} close={() => setOpen(false)} />
-        </DropdownMenuContent>
-      </DropdownMenu>
-      )}
+        <span className="phone-composer-mark" data-not-f7><ModelMark provider={model.markProvider} /></span>
+        <span className="phone-composer-settings-text">{modelText}</span>
+        {/* The permission as its shield alone: the popup names it. Full
+            access shows in red, as a warning. */}
+        <span className="phone-composer-permission" data-mode={permission.mode} data-not-f7>
+          <SolarIcon name="shield-check" size={16} aria-hidden="true" />
+        </span>
+        <ChevronDown size={14} aria-hidden="true" />
+      </Button>
+      <PhoneSettingsPopup {...props} open={open} setOpen={setOpen} model={model} permission={permission}
+        permissionLabel={permissionLabel} showEffort={showEffort} />
     </div>
   );
 });
 
-function PhoneSettingsRows({ model, permission, permissionLabel, showEffort, close, ...props }: Props & {
+type MenuProps = Props & {
+  open: boolean;
+  setOpen: (open: boolean) => void;
   model: ReturnType<typeof useChatModel>;
   permission: ReturnType<typeof usePermissionMode>;
   permissionLabel: string;
   showEffort: boolean;
-  close: () => void;
+  /** The popup's heading: this conversation, or the next new chat. */
+  heading?: string;
+};
+
+type Rows = Omit<MenuProps, "open" | "setOpen"> & { close: () => void };
+const SettingsContext = createContext<Rows | null>(null);
+
+/** Framework7's popup, its own View inside: the settings list, and a page
+ *  for each row's choices. */
+function PhoneSettingsPopup({ open, setOpen, ...rows }: MenuProps) {
+  return (
+    <PhonePortal>
+      <SettingsContext.Provider value={{ ...rows, close: () => setOpen(false) }}>
+        <Popup opened={open} onPopupClosed={() => setOpen(false)} swipeToClose push>
+          <View url="/" routes={SETTINGS_ROUTES} />
+        </Popup>
+      </SettingsContext.Provider>
+    </PhonePortal>
+  );
+}
+
+/** The same popup for the next new chat, from the phone's list: it sets
+ *  the draft that the enclosing scope names (``prepareNewChat``) without
+ *  opening it. The controls read as the composer's do (composer/index.tsx). */
+export function PhoneNewChatSettings({ open, setOpen }: {
+  open: boolean;
+  setOpen: (open: boolean) => void;
 }) {
   const { text } = useTranslation();
-  // The sheet is open: read the harnesses its Harness row lists.
-  const harness = useHarness(true);
-  const agent = useChatAgent(close);
-  const toggle = (on: boolean, flip: () => void, label: string) => (
-    <DropdownMenuItem
-      className={ROW}
-      onSelect={(event) => { event.preventDefault(); haptic("selection"); flip(); }}
-      role="menuitemcheckbox"
-      aria-checked={on}
+  const sid = useScopedSessionId();
+  const effort = useThinkingEffort();
+  const chatAgent = useSessionAgentSettings().chat || NO_CHAT_AGENT;
+  const { noEnabledModels } = useModelAvailability();
+  const { webSearch, toggleWebSearch } = useToolsToggles();
+  const fastByModel = useSessionScope((s) => s.settings.fastByModel);
+  const fastDefault = useSessionScope((s) => s.settings.fast);
+  const fastKey = `${chatAgent.provider ?? ""}:${chatAgent.model ?? ""}`;
+  const fastEnabled = fastByModel?.[fastKey] ?? fastDefault;
+  const setSettings = useBoundSetComposerSettings();
+  // A draft has no session to tell yet: its first message carries these.
+  const { unattended, toggleUnattended } = useUnattendedMode(null, () => false);
+  const { sandbox, sandboxAvailable, toggleSandbox } = useSandboxToggle(sid, false);
+  const model = useChatModel(chatAgent.provider, chatAgent.model, open);
+  const permission = usePermissionMode();
+  const permissionLabel = permission.options.find((o) => o.value === permission.mode)?.label ?? permission.mode;
+  const blocked = noEnabledModels && !isHarnessProvider(chatAgent.provider);
+  return (
+    <PhoneSettingsPopup
+      open={open}
+      setOpen={setOpen}
+      heading={text("New chat", "新对话")}
+      onPickImages={() => {}}
+      webSearchEnabled={webSearch}
+      toggleWebSearch={toggleWebSearch}
+      fastEnabled={fastEnabled}
+      fastSupported={!!chatAgent.fast}
+      toggleFast={() => setSettings({ fast: !fastEnabled, fastByModel: { ...fastByModel, [fastKey]: !fastEnabled } })}
+      unattended={unattended}
+      toggleUnattended={toggleUnattended}
+      sandboxEnabled={sandbox}
+      sandboxAvailable={sandboxAvailable}
+      toggleSandbox={toggleSandbox}
+      chatAgent={chatAgent}
+      chatModel={chatAgent.model}
+      noEnabledModels={blocked}
+      thinking={effort.thinking}
+      thinkingOptions={effort.options}
+      setThinking={effort.set}
+      settled
+      model={model}
+      permission={permission}
+      permissionLabel={permissionLabel}
+      showEffort={!!chatAgent.model && !blocked && effort.options.length > 0}
+    />
+  );
+}
+
+const NO_CHAT_AGENT: NonNullable<ReturnType<typeof useSessionAgentSettings>["chat"]> = {};
+
+type Option = { value: string; label: string; disabled?: boolean };
+type Group = { label?: string; options: Option[] };
+
+/** A row whose choices open as a page of the popup: Framework7's smart
+ *  select, over a select of the choices. */
+function PickRow({ title, value, current, groups, onPick, disabled }: {
+  title: string;
+  value: string;
+  /** What the row names when its value is none of the choices. */
+  current?: string;
+  groups: Group[];
+  onPick: (value: string) => void;
+  disabled?: boolean;
+}) {
+  const { text } = useTranslation();
+  const pick = useRef(onPick);
+  pick.current = onPick;
+  const all = groups.flatMap((group) => group.options);
+  // The smart select reads its choices as it opens and names the chosen one
+  // when it starts: a new list or choice starts it again.
+  const key = `${value}|${all.map((option) => option.value).join(",")}`;
+  const option = (o: Option) => <option key={o.value} value={o.value} disabled={o.disabled}>{o.label}</option>;
+  return (
+    <ListItem
+      key={key}
+      title={title}
+      smartSelect
+      disabled={disabled}
+      smartSelectParams={{
+        openIn: "page",
+        closeOnSelect: true,
+        // The check at the end of the row, as iOS's own lists put it.
+        inputIconPosition: "end",
+        pageBackLinkText: text("Back", "返回"),
+        // Its `change` event, which Framework7's types leave out.
+        on: { change: (_select: unknown, next: unknown) => { haptic("selection"); pick.current(String(next)); } },
+      } as SmartSelect.Parameters}
     >
-      <span className="min-w-0 flex-1 truncate text-left">{label}</span>
-      <span className="phone-switch" data-on={on ? "" : undefined} aria-hidden="true" />
-    </DropdownMenuItem>
-  );
-
-  return (
-    <>
-      <div className="phone-sheet-head">
-        <span>{text("This conversation", "这个对话")}</span>
-        <button type="button" onClick={close}>{text("Done", "完成")}</button>
-      </div>
-      <div className="phone-sheet-group">
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger className={ROW}>
-            <MenuRow label="Harness" trail={harnessName(harness)} submenu />
-          </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent className={MENU_PANEL}>
-            <HarnessRows state={harness} onPicked={close} />
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger className={ROW}>
-            <MenuRow label={text("Model", "模型")} trail={<ModelTrail label={model.label} id={model.model} none={text("None", "未选择")} />} submenu />
-          </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent className={MENU_PANEL}>
-            <ChatModelMenuBody chat={model} onClose={close} />
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
-      </div>
-      {showEffort ? (
-        <div className="phone-effort-row">
-          <span className="phone-sheet-label">{text("Thinking", "思考力度")}</span>
-          <div className="phone-segmented" role="radiogroup" aria-label={text("Thinking effort", "思考力度")}>
-            {props.thinkingOptions.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                role="radio"
-                aria-checked={option.value === props.thinking}
-                data-on={option.value === props.thinking ? "" : undefined}
-                onClick={() => { haptic("selection"); props.setThinking(option.value); }}
-              >
-                {formatEffortLabel(option.value)}
-              </button>
-            ))}
-          </div>
-        </div>
-      ) : null}
-      <div className="phone-sheet-group">
-      <DropdownMenuSub>
-        <DropdownMenuSubTrigger className={ROW}>
-          <MenuRow label={text("Permissions", "权限")} trail={permissionLabel} submenu />
-        </DropdownMenuSubTrigger>
-        <DropdownMenuSubContent className={MENU_PANEL}>
-          <div className={GROUP_LABEL}>{text("Mode", "模式")}</div>
-          {permission.options.map((o) => (
-            <DropdownMenuItem
-              key={o.value}
-              className={cn(ROW, o.description ? ITEM_TWO_LINE : "")}
-              onSelect={() => { if (!permission.pending) permission.set(o.value); }}
-            >
-              <span className="min-w-0 flex-1">
-                <span className={o.description ? ITEM_TITLE : "truncate"}>{o.label}</span>
-                {o.description ? <span className={ITEM_DESC}>{o.description}</span> : null}
-              </span>
-              {o.value === permission.mode ? <MenuCheck /> : <span className={CHECK_SLOT_PAD} />}
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuSubContent>
-      </DropdownMenuSub>
-      {harness.harness ? (
-        // The outside agent's own agents (Codex profiles, Claude Code's agents).
-        <DropdownMenuSub>
-          {/* Until the harness is read it has no choices to list. */}
-          <DropdownMenuSubTrigger className={ROW} disabled={!harness.entry}>
-            <MenuRow label={text("Agent", "智能体")} trail={harnessAgentLabel(harness, text)} submenu />
-          </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent className={MENU_PANEL}>
-            <HarnessAgentRows state={harness} onPicked={close} />
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
-      ) : (
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger className={ROW}>
-            <MenuRow label={text("Agent", "智能体")} trail={agent.label} submenu />
-          </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent className={MENU_PANEL}>
-            <ChatAgentMenuRows chat={agent} />
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
-      )}
-      </div>
-      <div className="phone-sheet-group">
-        {props.fastSupported ? toggle(props.fastEnabled, props.toggleFast, text("Fast mode", "高速模式")) : null}
-        {/* An outside agent searches and runs commands its own way. */}
-        {harness.harness ? null : toggle(props.webSearchEnabled, props.toggleWebSearch, text("Web search", "网页搜索"))}
-        {props.sandboxAvailable && !harness.harness ? toggle(props.sandboxEnabled, props.toggleSandbox, text("Sandbox", "沙箱")) : null}
-        {toggle(props.unattended, props.toggleUnattended, text("Unattended", "无人值守"))}
-      </div>
-    </>
+      <select name={title} value={value} onChange={() => {}}>
+        {all.some((o) => o.value === value) ? null : <option value={value} disabled>{current || value || "—"}</option>}
+        {groups.map((group, index) => group.label
+          ? <optgroup key={group.label + index} label={group.label}>{group.options.map(option)}</optgroup>
+          : group.options.map(option))}
+      </select>
+    </ListItem>
   );
 }
 
-/** The model's name, and its id under it when the name is not the id. */
-function ModelTrail({ label, id, none }: { label: string; id?: string; none: string }) {
-  const bare = (id ?? "").replace(/^[^:/]+[:/]/, "");
-  // The id only adds something when it is not the name spelled in lower case.
-  const same = (v: string) => v.toLowerCase().replace(/[\s_.-]+/g, "");
+// Framework7's List puts its rows in its <ul> by their component's name.
+PickRow.displayName = "f7-list-item-pick";
+
+/** An on/off row: Framework7's toggle. */
+function ToggleRow({ title, on, flip }: { title: string; on: boolean; flip: () => void }) {
   return (
-    <span className="phone-model-trail">
-      <span>{label || none}</span>
-      {bare && same(bare) !== same(label) ? <small>{bare}</small> : null}
-    </span>
+    <ListItem title={title}>
+      <Toggle slot="after" checked={on} onToggleChange={() => { haptic("selection"); flip(); }} />
+    </ListItem>
   );
 }
 
-/** The settings in the phone app: the same button, and iOS's own menu
- *  (lib/mobile/native-menu.ts), as ChatGPT's and Claude's iPhone apps
- *  show theirs. A row with a value opens its choices as a submenu; the
- *  switches are checked rows. */
-function NativeSettings({ model, permission, permissionLabel, showEffort, modelText, summary, ...props }: Props & {
-  model: ReturnType<typeof useChatModel>;
-  permission: ReturnType<typeof usePermissionMode>;
-  permissionLabel: string;
-  showEffort: boolean;
-  modelText: string;
-  summary: string;
-}) {
+/** The model's choices: a harness's own models, then OpenProgram's by
+ *  provider (useModelPicker, the model menu's list). */
+function useModelChoices(model: ReturnType<typeof useChatModel>) {
   const { text } = useTranslation();
+  const harness = model.harness.harness ? {
+    id: model.harness.harness,
+    provider: harnessProvider(model.harness.harness) ?? model.provider ?? "",
+    entry: model.harness.entry,
+  } : undefined;
+  const picker = useModelPicker({ currentProvider: model.provider, currentModel: model.model, onClose: () => {}, harness });
+  const groups: Group[] = [];
+  let value = "";
+  if (harness) {
+    groups.push({
+      label: harness.entry?.label ?? harness.id,
+      options: (harness.entry?.models ?? []).map((m) => {
+        const key = JSON.stringify(["h", harness.provider, m.id]);
+        if (model.provider === harness.provider && listedModel(harness.entry, model.model)?.id === m.id) value = key;
+        return { value: key, label: m.label };
+      }),
+    });
+  }
+  if (picker.gateway) {
+    for (const group of picker.byProvider) {
+      groups.push({
+        label: harness ? `${picker.providerName(group.provider)} · ${text("through OpenProgram", "通过 OpenProgram")}` : picker.providerName(group.provider),
+        options: group.models.map((m) => {
+          const key = JSON.stringify(["m", m.provider, m.id]);
+          if (picker.isActive(m)) value = key;
+          return { value: key, label: m.name || m.id };
+        }),
+      });
+    }
+  }
+  // A model the lists leave out (an id the harness passed through) is
+  // still named, as the composer's button names it.
+  const current = value ? undefined : model.model ?? undefined;
+  const pick = (key: string) => {
+    const [kind, provider, id] = JSON.parse(key) as [string, string, string];
+    if (kind === "h") void picker.pickModel(provider, id);
+    else void picker.pick(provider, id);
+  };
+  return { groups, value, current, pick };
+}
+
+ToggleRow.displayName = "f7-list-item-toggle";
+
+const SETTINGS_ROUTES = [{ path: "/", component: SettingsPage }];
+
+function SettingsPage() {
+  const rows = useContext(SettingsContext);
+  return rows ? <PhoneSettingsRows {...rows} /> : null;
+}
+
+function PhoneSettingsRows({ model, permission, permissionLabel, showEffort, heading, close, ...props }: Rows) {
+  const { text } = useTranslation();
+  // The popup is open: read the harnesses its Harness row lists.
   const harness = useHarness(true);
+  const agent = useChatAgent(() => {});
   const pickHarness = useHarnessPick(harness, () => {});
   const harnessAgents = useHarnessAgents(harness, () => {});
-  const agent = useChatAgent(() => {});
-  const picker = useModelPicker({
-    currentProvider: model.provider,
-    currentModel: model.model,
-    onClose: () => {},
-    probe: false,
-    harness: harness.harness ? {
-      id: harness.harness,
-      provider: harnessProvider(harness.harness) ?? model.provider ?? "",
-      entry: harness.entry,
-    } : undefined,
-  });
-
-  const items = (): NativeMenuItem[] => {
-    const tick = () => haptic("selection");
-    const section = (title: string, children: NativeMenuItem[]): NativeMenuItem => ({ title, inline: true, children });
-
-    const harnessMenu: NativeMenuItem[] = [
-      { title: "OpenProgram", checked: !harness.harness, run: () => void pickHarness("openprogram") },
-      ...(harness.harnesses ?? []).map((h) => ({
-        title: h.label, subtitle: harnessNote(h, text), checked: harness.harness === h.id,
-        disabled: !!unavailable(h), run: () => void pickHarness(h.id, h),
-      })),
-    ];
-
-    const modelRow = (m: { provider: string; id: string; name?: string }) => ({
-      title: m.name || m.id, checked: picker.isActive(m as never), run: () => picker.pick(m.provider, m.id),
-    });
-    const providers: NativeMenuItem[] = picker.byProvider.length === 1
-      ? picker.byProvider[0].models.map(modelRow)
-      : picker.byProvider.map((group) => ({
-        title: picker.providerName(group.provider),
-        subtitle: group.models.find((m) => picker.isActive(m))?.name,
-        children: group.models.map(modelRow),
-      }));
-    const entry = harness.entry;
-    const modelMenu: NativeMenuItem[] = harness.harness ? [
-      section(entry?.label ?? harness.harness, (entry?.models ?? []).map((m) => ({
-        title: m.label,
-        checked: model.provider === harnessProvider(harness.harness!) && listedModel(entry, model.model)?.id === m.id,
-        run: () => void picker.pickModel(harnessProvider(harness.harness!) ?? "", m.id),
-      }))),
-      ...(picker.gateway ? [section(text("Through OpenProgram", "通过 OpenProgram"), providers)] : []),
-    ] : providers;
-
-    const agentMenu: NativeMenuItem[] = harness.harness
-      ? harnessAgents.shown.map((group) => section(group.title ?? "", harnessAgents.choices
-        .filter((a) => a.kind === group.kind)
-        .map((a) => ({ title: harnessAgents.label(a), checked: a.id === harnessAgents.currentId, run: () => void harnessAgents.pick(a.id) }))))
-      : [
-        section(agent.liveAgents.length ? text("Chat", "对话") : "", agent.chatAgents.map((a) => ({
-          title: a.name || a.id, checked: a.id === agent.currentId, run: () => void agent.pick(a),
-        }))),
-        ...(agent.liveAgents.length ? [section(text("Always-on", "常驻"), agent.liveAgents.map((a) => ({
-          title: a.name || a.id, checked: a.id === agent.currentId, run: () => void agent.pick(a),
-        })))] : []),
-        section("", [{ title: text("Manage Agents", "管理 Agents"), icon: "gearshape", run: () => navigate("/agents") }]),
-      ];
-
-    const toggle = (on: boolean, flip: () => void, title: string, icon: string): NativeMenuItem =>
-      ({ title, icon, checked: on, run: () => { tick(); flip(); } });
-    const toggles: NativeMenuItem[] = [];
-    if (props.fastSupported) toggles.push(toggle(props.fastEnabled, props.toggleFast, text("Fast mode", "高速模式"), "bolt"));
-    if (!harness.harness) toggles.push(toggle(props.webSearchEnabled, props.toggleWebSearch, text("Web search", "网页搜索"), "globe"));
-    if (props.sandboxAvailable && !harness.harness) toggles.push(toggle(props.sandboxEnabled, props.toggleSandbox, text("Sandbox", "沙箱"), "shippingbox"));
-    toggles.push(toggle(props.unattended, props.toggleUnattended, text("Unattended", "无人值守"), "moon"));
-
-    return [
-      section("", [
-        { title: "Harness", subtitle: harnessName(harness), icon: "square.stack.3d.up", children: harnessMenu },
-        { title: text("Model", "模型"), subtitle: model.label || text("None", "未选择"), icon: "cpu", children: modelMenu },
-        ...(showEffort ? [{
-          title: text("Thinking", "思考力度"), subtitle: props.thinking ? formatEffortLabel(props.thinking) : undefined, icon: "brain",
-          children: props.thinkingOptions.map((o) => ({
-            title: formatEffortLabel(o.value), checked: o.value === props.thinking, run: () => { tick(); props.setThinking(o.value); },
-          })),
-        }] : []),
-        { title: text("Permissions", "权限"), subtitle: permissionLabel, icon: "lock.shield", children: permission.options.map((o) => ({
-          title: o.label, subtitle: o.description, checked: o.value === permission.mode,
-          run: () => { if (!permission.pending) permission.set(o.value); },
-        })) },
-        {
-          title: text("Agent", "智能体"), icon: "person.crop.circle",
-          subtitle: (harness.harness ? harnessAgentLabel(harness, text) : agent.label) || undefined,
-          disabled: !!harness.harness && !harness.entry, children: agentMenu,
-        },
-      ]),
-      section("", toggles),
-    ];
-  };
+  const models = useModelChoices(model);
+  const efforts = props.thinkingOptions.map((option) => ({ value: option.value, label: formatEffortLabel(option.value) }));
 
   return (
-    <button
-      type="button"
-      className="phone-composer-settings"
-      disabled={!!props.chatAgent.locked}
-      aria-label={text(`Settings: ${summary}`, `设置：${summary}`)}
-      onClick={(event) => openNativeMenu(event.currentTarget, items())}
-    >
-      <span className="phone-composer-chip phone-composer-chip-model">
-        <ModelMark provider={model.markProvider} />
-        <span className="phone-composer-settings-text">{modelText}</span>
-      </span>
-      <span className="phone-composer-chip phone-composer-chip-permission" data-mode={permission.mode}>
-        <SolarIcon name="shield-check" size={17} aria-hidden="true" />
-      </span>
-    </button>
+    <Page>
+      <Navbar title={heading ?? text("This conversation", "这个对话")}>
+        <Link slot="right" popupClose>{text("Done", "完成")}</Link>
+      </Navbar>
+      <List strong inset dividersIos>
+        <PickRow
+          title="Harness"
+          value={harness.harness ?? OPENPROGRAM_HARNESS}
+          groups={[{ options: [
+            { value: OPENPROGRAM_HARNESS, label: "OpenProgram" },
+            ...(harness.harnesses ?? []).map((h) => ({
+              value: h.id,
+              label: [h.label, harnessNote(h, text)].filter(Boolean).join(" · "),
+              disabled: !!unavailable(h),
+            })),
+          ] }]}
+          onPick={(id) => void pickHarness(id, harness.harnesses?.find((h) => h.id === id))}
+        />
+        <PickRow title={text("Model", "模型")} value={models.value} current={models.current} groups={models.groups} onPick={models.pick} />
+        {/* More efforts than a segmented control holds: a row under the model. */}
+        {showEffort && efforts.length > 5 ? (
+          <PickRow title={text("Thinking", "思考力度")} value={props.thinking} groups={[{ options: efforts }]}
+            onPick={(value) => props.setThinking(value as typeof props.thinking)} />
+        ) : null}
+      </List>
+      {/* A segmented control while its choices fit (the system keeps one to
+          five segments on a phone); more, and they are a row above. */}
+      {showEffort && efforts.length <= 5 ? (
+        <>
+          <BlockTitle>{text("Thinking", "思考力度")}</BlockTitle>
+          <Block>
+            <Segmented strong>
+              {efforts.map((option) => (
+                <Button key={option.value} active={option.value === props.thinking}
+                  onClick={() => { haptic("selection"); props.setThinking(option.value as typeof props.thinking); }}>
+                  {option.label}
+                </Button>
+              ))}
+            </Segmented>
+          </Block>
+        </>
+      ) : null}
+      <List strong inset dividersIos>
+        <PickRow
+          title={text("Permissions", "权限")}
+          value={permission.mode}
+          groups={[{ options: permission.options.map((o) => ({ value: o.value, label: o.label })) }]}
+          onPick={(mode) => { if (!permission.pending) permission.set(mode as typeof permission.mode); }}
+        />
+        {harness.harness ? (
+          // The outside agent's own agents (Codex profiles, Claude Code's
+          // agents); until the harness is read it has no choices to list.
+          <PickRow
+            title={text("Agent", "智能体")}
+            value={harnessAgents.currentId}
+            disabled={!harness.entry}
+            groups={harnessAgents.shown.map((group) => ({
+              label: group.title ?? undefined,
+              options: harnessAgents.choices.filter((a) => a.kind === group.kind).map((a) => ({ value: a.id, label: harnessAgents.label(a) })),
+            }))}
+            onPick={(id) => void harnessAgents.pick(id)}
+          />
+        ) : null}
+        {/* Rows, not a fragment: the list puts only its rows in its <ul>. */}
+        {harness.harness ? null : (
+          <PickRow
+            title={text("Agent", "智能体")}
+            value={agent.currentId ?? ""}
+            groups={[
+              { label: agent.liveAgents.length ? text("Chat", "对话") : undefined, options: agent.chatAgents.map((a) => ({ value: a.id, label: a.name || a.id })) },
+              ...(agent.liveAgents.length ? [{ label: text("Always-on", "常驻"), options: agent.liveAgents.map((a) => ({ value: a.id, label: a.name || a.id })) }] : []),
+            ]}
+            onPick={(id) => { const found = agent.agents?.find((a) => a.id === id); if (found) void agent.pick(found); }}
+          />
+        )}
+        {harness.harness ? null : (
+          <ListItem link="#" title={text("Manage Agents", "管理 Agents")} onClick={() => { close(); navigate("/agents"); }} />
+        )}
+      </List>
+      <List strong inset dividersIos>
+        {props.fastSupported ? <ToggleRow title={text("Fast mode", "高速模式")} on={props.fastEnabled} flip={props.toggleFast} /> : null}
+        {/* An outside agent searches and runs commands its own way. */}
+        {harness.harness ? null : <ToggleRow title={text("Web search", "网页搜索")} on={props.webSearchEnabled} flip={props.toggleWebSearch} />}
+        {props.sandboxAvailable && !harness.harness ? <ToggleRow title={text("Sandbox", "沙箱")} on={props.sandboxEnabled} flip={props.toggleSandbox} /> : null}
+        <ToggleRow title={text("Unattended", "无人值守")} on={props.unattended} flip={props.toggleUnattended} />
+      </List>
+    </Page>
   );
 }

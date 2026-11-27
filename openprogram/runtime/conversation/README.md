@@ -15,6 +15,13 @@ Importing this package registers the conversation engine with the call core
 the running turn reach it, and claims the core's cancellation check
 (``run_control``), so a stopped turn aborts at the next Agent method entry.
 
+Programs sit above conversations and are never imported here. What a
+Program does at a moment of a turn (a chat Goal admitting and settling its
+turns, the task board following a reply, ``send_file`` attaching files) it
+registers with ``turn_hooks``; what a turn asks of the screen tool, the tool
+answers through ``screen_tool``; the tool registry and its policy chain are
+reached through ``openprogram.runtime.program_host``.
+
 ## Files in this directory
 
 - **`bound_reply.py`** — Deliver a bound chat's assistant replies to its channel conversation
@@ -27,10 +34,13 @@ the running turn reach it, and claims the core's cancellation check
 - **`open_work.py`** — Open work: what a conversation's agent still owes the user
 - **`process_notices.py`** — Tell the agent when a command it left running in the background ends
 - **`process_runner.py`** — Run a turn's Agent method tools in an isolated subprocess
+- **`screen_tool.py`** — What a turn needs from the screen tool
 - **`session_context.py`** — Unified per-turn session context
 - **`side_work.py`** — Background work a finished turn starts beside itself
 - **`surface_context.py`** — Turn-scoped awareness of a visible OpenProgram desktop surface
 - **`topics.py`** — Sort a conversation's messages into topics, for Activity's time chart
+- **`turn_endings.py`** — Whether a turn's result ends its run
+- **`turn_hooks.py`** — The moments of a conversation turn that Programs react to
 
 ## Sub-packages
 

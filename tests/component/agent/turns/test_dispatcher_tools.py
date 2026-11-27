@@ -49,6 +49,7 @@ from openprogram.models.providers.types import (
     Usage,
 )
 from openprogram.programs._host import runtime as R
+from openprogram.runtime.agent import tool_execution
 from openprogram.programs._host.runtime import function
 from openprogram.runtime.conversation import model_tools
 
@@ -177,14 +178,14 @@ def fresh_registry(monkeypatch: pytest.MonkeyPatch):
     R._registry.clear()
     R._toolset_membership.clear()
     R._unsafe_in_channel.clear()
-    R._cache.clear()
+    tool_execution._cache.clear()
     import openprogram.programs as _functions
     monkeypatch.setattr(_functions, "_exposed_set", lambda: None)
     yield R
     R._registry.clear()
     R._toolset_membership.clear()
     R._unsafe_in_channel.clear()
-    R._cache.clear()
+    tool_execution._cache.clear()
     R._registry.update(saved_reg)
     R._toolset_membership.update(saved_ts)
     R._unsafe_in_channel.update(saved_unsafe)
@@ -501,7 +502,7 @@ def test_next_turn_reads_a_tool_result_as_the_turn_that_ran_it_did(
 
     results_dir = tmp_path / "results"
     results_dir.mkdir()
-    monkeypatch.setattr("openprogram.programs._host.runtime._tool_results_dir",
+    monkeypatch.setattr("openprogram.runtime.agent.tool_execution._tool_results_dir",
                         lambda: results_dir)
     full = {
         "under_cap": _ROWS,
@@ -604,7 +605,7 @@ def test_a_small_window_model_reads_its_share_of_a_result_in_both_turns(
 
     results_dir = tmp_path / "results"
     results_dir.mkdir()
-    monkeypatch.setattr("openprogram.programs._host.runtime._tool_results_dir",
+    monkeypatch.setattr("openprogram.runtime.agent.tool_execution._tool_results_dir",
                         lambda: results_dir)
     small = _stub_model().model_copy(update={"context_window": 32_768})
     monkeypatch.setattr(D, "_resolve_model", lambda profile, override=None: small)
@@ -670,7 +671,7 @@ def test_a_bounded_result_keeps_its_whole_text_on_disk(
     # the profile's shared directory (redirected here) stays empty.
     results_dir = tmp_path / "results"
     results_dir.mkdir(parents=True, exist_ok=True)
-    monkeypatch.setattr("openprogram.programs._host.runtime._tool_results_dir",
+    monkeypatch.setattr("openprogram.runtime.agent.tool_execution._tool_results_dir",
                         lambda: results_dir)
 
     @function(name="persistprobe", description="Persist", max_result_weight=200)
@@ -837,8 +838,8 @@ def test_dispatcher_releases_self_update_only_after_durable_turn_and_idle_status
     monkeypatch.setattr(D, "finalize_turn", lambda **_kwargs: turn_committed)
     released: list[tuple[str, str]] = []
     monkeypatch.setattr(
-        D,
-        "release_prepared_update",
+        D.maintenance,
+        "turn_committed",
         lambda session_id, assistant_id: released.append((session_id, assistant_id)),
     )
     stream_state = {"used": False}
@@ -884,8 +885,8 @@ def test_dispatcher_does_not_release_when_assistant_persistence_fails(
     )
     released: list[tuple[str, str]] = []
     monkeypatch.setattr(
-        D,
-        "release_prepared_update",
+        D.maintenance,
+        "turn_committed",
         lambda session_id, assistant_id: released.append((session_id, assistant_id)),
     )
 
@@ -917,8 +918,8 @@ def test_dispatcher_does_not_release_when_finished_status_is_not_durable(
     monkeypatch.setattr(D, "finalize_turn", lambda **_kwargs: True)
     released: list[tuple[str, str]] = []
     monkeypatch.setattr(
-        D,
-        "release_prepared_update",
+        D.maintenance,
+        "turn_committed",
         lambda session_id, assistant_id: released.append((session_id, assistant_id)),
     )
     update_session = tmp_db.update_session
@@ -1222,7 +1223,7 @@ def test_full_result_artifacts_survive_reused_provider_ids(
 ):
     results_dir = tmp_path / "results"
     results_dir.mkdir()
-    monkeypatch.setattr(R, "_tool_results_dir", lambda: results_dir)
+    monkeypatch.setattr(tool_execution, "_tool_results_dir", lambda: results_dir)
 
     @function(name="persistprobe", description="Persist", max_result_weight=500)
     def persistprobe(value: str) -> str:
@@ -1300,7 +1301,7 @@ def test_resumed_turn_releases_its_prepared_update(monkeypatch, turn_committed):
     monkeypatch.setattr(finalize, "finalize_turn", lambda **kwargs: turn_committed)
     monkeypatch.setattr(turn_writer.TurnWriter, "head_for_finalize", lambda self, _id: "a1")
     released: list[tuple[str, str]] = []
-    monkeypatch.setattr(T, "release_prepared_update",
+    monkeypatch.setattr(T.maintenance, "turn_committed",
                         lambda session_id, assistant_id: released.append((session_id, assistant_id)))
     request = SimpleNamespace(session_id="c1", advance_head=True, source="web", last_round_text="")
     continuation = SimpleNamespace(

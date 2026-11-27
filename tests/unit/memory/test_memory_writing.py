@@ -1253,7 +1253,7 @@ def test_a_sign_in_failure_is_recorded_once_and_lifts_on_a_new_sign_in(
 
     from openprogram.state.paths import get_state_dir
 
-    login = get_state_dir() / "auth" / "openai-codex" / "default.json"
+    login = get_state_dir() / "auth" / "openai" / "default.json"
     login.parent.mkdir(parents=True, exist_ok=True)
     login.write_text("{}", encoding="utf-8")
     _n, processed = run(None)

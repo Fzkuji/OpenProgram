@@ -206,7 +206,7 @@ def _wrap_agentic_runtime_block(
                 # we already emitted above are anchored to the same
                 # runtime_id so the second write is a no-op upsert.
                 loop = _asyncio.get_event_loop()
-                from openprogram.runtime.permissions.authority import runtime_authority
+                from openprogram.state.authority import runtime_authority
                 from openprogram.state.worktree.context import current_worktree_path
                 subprocess_args = dict(args or {})
 
@@ -248,10 +248,10 @@ def _wrap_agentic_runtime_block(
                     if surface_snapshot is None:
                         from openprogram.runtime.conversation import surface_context
                         from openprogram.runtime.permissions.policy import permission_decision, surface_grant_applies
-                        from openprogram.programs import get_agent_tool
-                        from openprogram.programs.tools.computer_use.computer_use import tool as screen
+                        from openprogram.runtime import program_host
+                        from openprogram.runtime.conversation import screen_tool as screen
 
-                        screen_tool = get_agent_tool("computer_use")
+                        screen_tool = program_host.host().get_agent_tool(screen.NAME)
                         # A call that only looks at the conversation's own Pages, from
                         # whichever target the providers say those are; none without one.
                         pages = screen.page_surface_call()

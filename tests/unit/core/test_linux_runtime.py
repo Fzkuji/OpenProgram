@@ -100,22 +100,22 @@ def test_linux_port_probe_falls_back_when_lsof_is_missing(monkeypatch) -> None:
 
 
 def test_worker_pid_requires_a_live_lock(monkeypatch) -> None:
-    from openprogram.operations.worker import lifecycle
+    from openprogram.host.worker import process
 
-    monkeypatch.setattr(lifecycle, "read_holder_pid", lambda: 321)
-    monkeypatch.setattr(lifecycle, "_process_alive", lambda _pid: True)
-    monkeypatch.setattr(lifecycle, "is_held_by", lambda _pid: False)
+    monkeypatch.setattr(process, "read_holder_pid", lambda: 321)
+    monkeypatch.setattr(process, "_process_alive", lambda _pid: True)
+    monkeypatch.setattr(process, "is_held_by", lambda _pid: False)
 
-    assert lifecycle.current_worker_pid() is None
+    assert process.current_worker_pid() is None
 
-    monkeypatch.setattr(lifecycle, "is_held_by", lambda _pid: True)
-    assert lifecycle.current_worker_pid() == 321
+    monkeypatch.setattr(process, "is_held_by", lambda _pid: True)
+    assert process.current_worker_pid() == 321
 
 
 def test_worker_pid_files_reject_nonpositive_signal_targets(
     tmp_path: Path, monkeypatch,
 ) -> None:
-    from openprogram.operations.worker import lock as worker_lock
+    from openprogram.host.worker import lock as worker_lock
 
     lock_file = tmp_path / "worker.lock"
     lock_file.write_text("0\n", encoding="utf-8")

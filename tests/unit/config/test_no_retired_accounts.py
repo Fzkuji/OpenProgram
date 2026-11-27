@@ -16,6 +16,7 @@ from scripts.publishing import retired_accounts
 ROOT = Path(__file__).resolve().parents[3]
 
 
+@pytest.mark.slow
 def test_no_tracked_file_names_a_retired_account() -> None:
     hits = retired_accounts.scan(retired_accounts.checkout_files(ROOT))
     assert not hits, "these lines name a retired account; remove the mention:\n" + "\n".join(hits)

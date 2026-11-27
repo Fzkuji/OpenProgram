@@ -21,7 +21,7 @@
 
 <h2 id="anthropic">Loading on Anthropic</h2>
 <p>A provider declares a native form under <code translate="no">tool_search</code> in <code translate="no">provider.json</code>. Anthropic declares <code translate="no">anthropic-reference</code> for <code translate="no">anthropic-messages</code>, with <code translate="no">models_off: ["haiku"]</code>.</p>
-<p>The Grok subscription endpoint declares none: it answers a <code translate="no">tool_search_call</code> item with 422 "unknown item type", so a load there appends to the array after every other tool.</p>
+<p>A provider that declares none appends a load to the array after every other tool.</p>
 <table class="stack fixed">
 <thead><tr><th scope="col">Part</th><th scope="col">With the form</th><th scope="col">Without it</th></tr></thead>
 <tbody>
@@ -90,7 +90,6 @@
 <table class="stack fixed">
 <thead><tr><th scope="col">Wire</th><th scope="col">Where the note goes</th></tr></thead>
 <tbody>
-<tr><th scope="row">Codex (<code translate="no">tool_search_output</code>)</th><td>The output carries the loaded definitions, <code translate="no">tools: []</code> when there are none; the note follows as a user item wrapped in <code translate="no">&lt;tool-search-result&gt;</code></td></tr>
 <tr><th scope="row">Anthropic references</th><td>With loads: the text block beside the <code translate="no">tool_reference</code> blocks. Without: the result text, which is the note</td></tr>
 <tr><th scope="row">Every other wire</th><td>The result text, which starts with the note</td></tr>
 </tbody>
@@ -218,9 +217,8 @@
 <tbody>
 <tr><th scope="row"><code translate="no">loaded_deferred_tools</code> in journal, safe points, checkpoints</th><td>Read-only for one release, then removed</td></tr>
 <tr><th scope="row">Anthropic three-request self-test with cache diagnosis</th><td>A paid live run</td></tr>
-<tr><th scope="row">Codex cache after a large load and after a summary</th><td>A live Codex run</td></tr>
-<tr><th scope="row">OpenAI and Azure Responses search form</th><td>A live check; not declared until then</td></tr>
-<tr><th scope="row">Copilot, Vercel, opencode with references</th><td>A live check; they keep the array-append path</td></tr>
+<tr><th scope="row">OpenAI and Azure Responses search form</th><td>Not built: the Responses adapter would render the form, then a live check</td></tr>
+<tr><th scope="row">Vercel, opencode with references</th><td>A live check; they keep the array-append path</td></tr>
 <tr><th scope="row">Empty thinking blocks skipped on Anthropic</th><td>A request comparison with a paid run</td></tr>
 <tr><th scope="row">Context breakdown and budget</th><td>Still estimate the catalog from the inline text</td></tr>
 <tr><th scope="row">Epoch records</th><td>Kept per conversation; branches sharing a first message share one</td></tr>

@@ -53,11 +53,12 @@ APPLICATION_HINT = (
 
 def entries() -> list[dict[str, Any]]:
     """Every registered entry with its owner, tier and whether it needs approval."""
-    from openprogram.programs._host.runtime import all_tools, tool_owner, tool_tier
+    from openprogram.runtime import program_host
+    tools = program_host.host()
     rows = []
-    for tool in sorted(all_tools(), key=lambda t: t.name):
-        rows.append({"name": tool.name, "owner": tool_owner(tool) or "tool",
-                     "tier": tool_tier(tool).value,
+    for tool in sorted(tools.all_tools(), key=lambda t: t.name):
+        rows.append({"name": tool.name, "owner": tools.tool_owner(tool) or "tool",
+                     "tier": tools.tool_tier(tool).value,
                      "needs_approval": getattr(tool, "_requires_approval", None) not in (None, False)})
     return rows
 

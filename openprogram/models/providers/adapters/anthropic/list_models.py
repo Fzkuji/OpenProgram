@@ -1,6 +1,6 @@
 """Anthropic model list — ``/v1/models`` (``x-api-key`` header).
 
-Convention module (see ``openai_codex/list_models.py`` for the pattern): the
+Convention module (see ``deepseek/list_models.py`` for the pattern): the
 dispatcher loads ``fetch(provider_id, timeout)`` by directory name.
 
 Differs from the generic OpenAI-compatible fetcher in two ways: auth header
@@ -24,7 +24,7 @@ _log = logging.getLogger(__name__)
 def fetch(provider_id: str, timeout: float) -> Any:
     import httpx
 
-    from openprogram.models.providers.settings.env_api_keys import resolve_api_key_with_auth_store
+    from openprogram.models.auth.env_api_keys import resolve_api_key_with_auth_store
     from openprogram.models.providers.settings.storage import _resolve_base_url
     from openprogram.host.security.safe_http import configured_safe_client, safe_client
     from openprogram.host.security.url_policy import OwnerURLException, normalize_origin

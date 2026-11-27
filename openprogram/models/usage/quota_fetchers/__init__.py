@@ -52,7 +52,7 @@ TIMEOUT_S = 10.0
 
 REASONS = ("open", "manual", "failure", "key_added")
 
-_MODULES = ("openrouter", "codex_usage", "zai", "minimax", "opencode_go", "github_copilot", "deepseek")
+_MODULES = ("openrouter", "zai", "minimax", "opencode_go", "deepseek")
 
 
 @dataclass
@@ -219,7 +219,7 @@ def fetch_one(module: Any, cred: FetchCredential, *, http_get: HttpGet = _http_g
     """Read one key's quota endpoint and record what it says. ``None`` when nothing was learnt."""
     now = time.time() if now is None else now
     url, headers, configured = module.request(cred)
-    from openprogram.models.listing.probe_log import KIND_QUOTA, probing
+    from openprogram.models.usage.probe_log import KIND_QUOTA, probing
     with probing(cred.provider, KIND_QUOTA):
         answer = http_get(url, headers, configured)
     account = (cred.provider, cred.account)

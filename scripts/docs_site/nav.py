@@ -10,7 +10,7 @@ from __future__ import annotations
 import html
 import json
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 # Folders that are never part of the docs site.
@@ -635,6 +635,7 @@ TAB_SECTIONS: dict[str, list[tuple[str, str, list[str]]]] = {
             "reference/design/providers/auth/credential-model.html",
             "reference/design/providers/auth/credential-status-redesign.html",
             "reference/design/providers/auth/credential-validation-unification.html",
+            "reference/design/providers/auth/subscription-policy.html",
             "reference/design/providers/auth/unified-account-management.html",
             "reference/design/providers/auth/unified-auth-storage.html",
         ]),
@@ -644,7 +645,6 @@ TAB_SECTIONS: dict[str, list[tuple[str, str, list[str]]]] = {
             "reference/design/providers/reliability/error-taxonomy-propagation.html",
             "reference/design/providers/reliability/llm-fault-tolerance.html",
             "reference/design/providers/reliability/request-repair.html",
-            "reference/design/providers/requests/codex-transport.html",
             "reference/design/providers/provider-quota.html",
             "reference/design/providers/provider-management.html",
             "reference/design/providers/requests/record-replay.html",

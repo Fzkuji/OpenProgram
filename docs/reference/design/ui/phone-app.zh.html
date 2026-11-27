@@ -1,6 +1,6 @@
 <title>手机界面</title>
 <meta name="description" content="在触屏手机上，网页界面是一套独立的手机界面：项目列表、项目里的对话、带返回和详情的对话页、输入框里的一个设置菜单、详情页，用的是桌面端的数据和渲染；为什么不再改桌面结构，参考了哪些同类产品。">
-<meta name="covers" content="apps/web/components/phone/ apps/web/components/chat/composer/controls/phone-composer-bar.tsx apps/web/app/styles/base/phone-app.css apps/mobile/ios/OpenProgram/WebShell.swift apps/web/lib/mobile/bridge.ts">
+<meta name="covers" content="apps/web/components/phone/ apps/web/lib/layout/phone-route.ts apps/web/components/chat/composer/controls/phone-composer-bar.tsx apps/web/app/styles/base/phone-app.css apps/web/scripts/postcss-framework7-scope.cjs apps/mobile/ios/OpenProgram/WebShell.swift apps/web/lib/mobile/bridge.ts">
 <h1>手机界面</h1>
 <p>在触屏手机上（商店里的 App 或手机浏览器），界面是一套手机 App 的页面，而不是桌面窗口。<code translate="no">useTouchPhone()</code> 成立时，<a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/app-shell.tsx"><code translate="no">AppShell</code></a> 渲染 <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/phone/phone-app.tsx"><code translate="no">PhoneApp</code></a>，代替侧边栏、标签栏和右侧面板。窄的桌面窗口仍用桌面外壳的<a href="phone-layout.zh.html">手机布局</a>。</p>
 
@@ -16,16 +16,21 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">页面</th><th scope="col">内容</th></tr></thead>
 <tbody>
-<tr><th scope="row">项目</th><td>顶部是当前显示的电脑和设置按钮，然后是大标题、搜索，下面每个项目一行：带首字母的彩色方块、名字、最近对话的时间或几个在等你、对话数和最新标题。有对话在等你的项目排最前，再按时间。搜索会找所有项目里的对话。</td></tr>
-<tr><th scope="row">底部胶囊</th><td>项目列表和项目页底部是一整条胶囊，高 60pt、两端全圆，离两边 16pt，紧贴 Home 条上方：新对话的设置（打开新对话并弹出它的设置菜单）、新对话输入框、语音（打开新对话并开始录音）。列表在它下面渐隐。</td></tr>
-<tr><th scope="row">电脑</th><td>点顶部的电脑名，在它下面弹出菜单，和 Files 点标题一样。里面列出这台手机配对的电脑（各自一条连接，由 App 切换），以及当前电脑连接的其他电脑（设置 → 机器），它们的项目本来就在列表里。一次只显示一台电脑（<code translate="no">phone-computer-switcher.tsx</code>）。</td></tr>
-<tr><th scope="row">边距</th><td>标题、搜索、列表行、导航栏和胶囊统一离边 16pt（<code translate="no">--phone-gutter</code>）。列表是平铺的：行直接在页面上，之间是细分隔线，没有灰色底。搜索框圆角 20pt。</td></tr>
-<tr><th scope="row">一个项目</th><td>‹ 项目、项目名、搜索，下面是它的对话，分“进行中”和“更早”两组。每行是标题，下面是状态词和最后一行，右边是时间、状态点或“等你”标记。左滑露出归档；长按时这一行浮起来，弹出置顶、重命名、复制链接、归档，最后是红色的删除。底部输入框写着“在 &lt;项目&gt; 里开新对话”。</td></tr>
-<tr><th scope="row">对话</th><td>导航栏：‹ 项目名（或返回）、标题，运行、等你或失败时标题下有状态点，ⓘ 打开详情。输入框是一个框，离屏幕两边 10pt、圆角 30pt：文字，下面一排 44pt 的按钮：<code translate="no">+</code>、写着模型和思考力度的芯片、表示权限的盾牌、麦克风；有文字时麦克风变成发送。</td></tr>
+<tr><th scope="row">样子</th><td>照 iOS 26 自带的 App，由 <a href="https://framework7.io">Framework7</a> 的 iOS 主题原样绘制：导航栏、大标题、列表、搜索栏、工具栏、操作表、弹出页和对话框，都用它自己的颜色和尺寸，系统字体（SF，中文用苹方）。常见控件一律不自己画。</td></tr>
+<tr><th scope="row">动画</th><td>都是 Framework7 自带的：页面之间的推入和返回、左边缘滑动返回、弹出页升起时下面的页面后退、电脑按钮长成它的菜单、滑动操作、开关和分段控件。</td></tr>
+<tr><th scope="row">项目</th><td>导航栏左边是当前电脑（笔记本图标，连上时小圆点是绿色），右边是设置按钮，标题居中在两者之间；下面是搜索栏和内嵌列表里的项目，置顶的在前。首页没有新对话栏，新对话在项目里开。每行：带首字母的彩色方块、项目名、最近对话的时间或等你处理的对话数（角标），以及对话数和最新标题。等你处理的项目在最前，然后是置顶的（主文件夹默认置顶），再按时间。搜索会找所有项目里的对话。</td></tr>
+<tr><th scope="row">底部三块</th><td>项目页底部是 Framework7 的底部工具栏，三块各在一片玻璃上：新对话的设置（设置弹出页盖在列表上，设置的是工具栏接着开的那个对话）、新对话、语音（新开对话并打开麦克风）。</td></tr>
+<tr><th scope="row">电脑</th><td>点笔记本按钮，按钮自己长成菜单，跟 iOS 26 导航栏按钮一样：同一块导航栏玻璃，左上角和弧度（高度的一半）不变，向右下变宽变长，笔记本图标淡出、各行淡入；关闭时缩回按钮。Framework7 没有这种菜单（它的弹出菜单是按钮旁边另一个形状），所以这一块由 App 用 Framework7 的玻璃自己画。列出和手机配对的电脑（各自一条连接，由 App 切换）和当前电脑连着的电脑（设置 → 机器，标着“经 …”），它们的项目当前电脑已经列着；然后是配对和管理。当前显示的那台在右边打勾。一次只显示一台电脑（<code translate="no">phone-computer-switcher.tsx</code>）。</td></tr>
+<tr><th scope="row">一个项目</th><td>‹ 项目，项目名居中在导航栏里，右边一个 … 按钮；搜索栏，下面是它的对话，分“进行中”和“更早”，用 Framework7 的媒体列表。每行：标题，下面是状态词和最后一行（图片显示为“图片”），右边是智能体标志加时间、运行中的转圈，或“等你”角标。工具栏写着“在 &lt;项目&gt; 里开新对话”。</td></tr>
+<tr><th scope="row">项目菜单</th><td>… 按钮在 App 里打开 iOS 原生菜单，浏览器里是 Framework7 的操作表：先写项目所在电脑和文件夹，然后是置顶、重命名、归档聊天，走的是桌面端项目菜单同样的请求。</td></tr>
+<tr><th scope="row">行操作</th><td>Framework7 的滑动操作：右滑露出置顶（已置顶时是取消置顶），左滑露出归档。长按打开置顶、重命名、复制链接、归档和删除：商店 App 里是 iOS 自己的菜单，浏览器里是 Framework7 的操作表。重命名和删除用 Framework7 的对话框确认。</td></tr>
+<tr><th scope="row">对话</th><td>照“信息”App：Framework7 的导航栏，‹ 返回、标题和下面的状态、ⓘ 打开详情。对话内容在导航栏下面滚动。</td></tr>
+<tr><th scope="row">输入框</th><td>输入框是一个框，离屏幕两边 10pt、圆角 30pt：上面是文字，下面一排按钮：Framework7 的 <code translate="no">+</code> 链接，一个色调按钮里放模型和思考力度、权限的盾牌和 ▾，以及麦克风，有文字后变成实心的发送按钮。框是玻璃的。完全权限时盾牌变红。</td></tr>
+<tr><th scope="row">输入框按钮</th><td>对话的模型确定前按钮留空，确定后淡入。只有新对话在输入框上方显示它所在的电脑、频道和项目那一行。</td></tr>
 <tr><th scope="row">消息</th><td>用户消息是浅色气泡；每组工具调用折成一行灰字，点开后点其中一步会以一页打开。消息下面没有按钮：长按时按住的文字或气泡浮起来，弹出它的操作。</td></tr>
-<tr><th scope="row">设置菜单</th><td>点任一芯片打开一个菜单，放这一轮的全部设置：Harness、模型、思考力度、权限、智能体，每行下面写当前值，选项在子菜单里；然后是高速模式、网页搜索、沙箱、无人值守，开着的打勾（外部智能体的对话没有网页搜索和沙箱）。</td></tr>
-<tr><th scope="row">详情</th><td>推到对话上面：改动（带 +增加 −删除 行数）、文件、活动、资源各一行，点开各是一页（桌面的右侧面板）；然后是显示方式，再是置顶、重命名、自动重命名、复制链接、复制会话，归档和删除单独一组。删除后回到项目列表。</td></tr>
-<tr><th scope="row">其他页面</th><td>设置、历史和其他路由都以一页打开，上面有 ‹ 项目。</td></tr>
+<tr><th scope="row">设置菜单</th><td>点这个按钮，在一个 Framework7 弹出页里列出这一轮的全部设置，标题旁边是完成：Harness、模型、权限和智能体是智能选择行，点开在弹出页里推入选项页；思考力度是分段控件（超过五档时改成一行选项）；然后是高速模式、网页搜索、沙箱和无人值守的开关（外部智能体没有网页搜索和沙箱）。</td></tr>
+<tr><th scope="row">详情</th><td>推到对话上面，照“设置”的布局：最上面是这个对话的卡片（智能体标志、标题、“项目 · harness”）；置顶、重命名、复制链接、复制对话是四个色调按钮；然后是列表：改动（带 +增加 −删除 行数）、文件、活动和资源，各自打开一页（桌面的右侧面板）；用分段控件选对话的显示方式；自动重命名；归档和删除。删除后回到项目。</td></tr>
+<tr><th scope="row">其他页面</th><td>设置、历史和其他路由都在 Framework7 的导航栏下打开，‹ 项目；页面自己不画导航栏。有列表的页面（设置、智能体）先显示列表；点一行打开内容，导航栏变成 ‹ 设置，返回回到列表（<code translate="no">lib/layout/phone-route.ts</code>）。</td></tr>
 </tbody>
 </table>
 
@@ -33,13 +38,15 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">部分</th><th scope="col">做法</th></tr></thead>
 <tbody>
-<tr><th scope="row">页面和返回</th><td>每个页面是用 <code translate="no">history.pushState</code> 推入的地址，Next 会让 <code translate="no">usePathname</code> 跟着变。商店 App 里从左边缘滑动返回一页，页面跟手（<code translate="no">use-edge-swipe-back.ts</code>）：<code translate="no">WKWebView</code> 自带的返回手势不认这些地址。手机浏览器里用浏览器自己的手势。</td></tr>
-<tr><th scope="row">页面切换</th><td>新页面从右边滑入盖住旧页面，旧页面向左挪一点并变暗；返回时倒着放（<code translate="no">use-page-transitions.ts</code>）。旧页面是它最后一帧的静态拷贝，屏幕不会空白。没用 View Transitions API：WebKit 给长对话截图要两秒。</td></tr>
-<tr><th scope="row">不出现半成品页面</th><td>页面按历史记录条目区分，被替换的地址（比如新对话拿到 id）保留原页面。还没读过的对话等消息到了再打开（最多 700ms），拷贝停着不动，直到对话内容画出来。</td></tr>
-<tr><th scope="row">数据</th><td>不重复取数据：列表读会话 store，对话页用分屏视图里自成一体的 <code translate="no">PeerSessionPane</code>，详情页挂右侧面板原有的面板。聊天页的外壳在看不见的地方保持挂载，因为连接和地址里对话的加载由它负责。</td></tr>
+<tr><th scope="row">控件</th><td>常见的一切都来自 <a href="https://framework7.io">Framework7</a> v9（React），原样使用。选它而不是 Konsta UI：Konsta 只有控件，没有页面、导航和弹出页，这些都得自己做，做出来总是不对；也不是 Ionic：它的 iOS 样子早于 iOS 26；也不是更年轻的液态玻璃组件库。同一套 Framework7 现在画 iOS，以后给 Android App 画 Material。只有对话内容、输入框本身和数据层是 App 自己的。</td></tr>
+<tr><th scope="row">Framework7 和 App 的样式</th><td>Framework7 的样式表只随手机 App 加载，构建时每条规则都改写成只作用在 Framework7 的根元素里面，并且不进入 App 自己画的区域（<code translate="no">data-not-f7</code>：对话内容、面板、Next 页面），除非那里又放了 Framework7 的控件（<code translate="no">data-f7</code>：输入框的按钮），Framework7 控件里 App 自己画的标记又排除在外（聊天行里的智能体标记带 <code translate="no">data-not-f7</code>）；否则它的类名（<code translate="no">.block</code>、<code translate="no">.grid</code>、<code translate="no">.card</code>）会套到 Tailwind 的同名类上（<code translate="no">apps/web/scripts/postcss-framework7-scope.cjs</code>）。</td></tr>
+<tr><th scope="row">字体和深色模式</th><td>Framework7 的深色类跟着主题模式走。字体是 SF，中文用苹方。</td></tr>
+<tr><th scope="row">页面和返回</th><td>App 在哪一页由地址决定，Next 的路由、对话自己的导航和手机里的链接都会改地址。Framework7 的 View 跟着地址走（<code translate="no">phone-router.ts</code>）：推入就推入页面，后退就回到那一页，替换就原地改这一页的地址（新对话拿到 id），或者换成另一种页面。反过来，Framework7 的返回和左边缘滑动返回先在 View 里返回，历史记录再跟着退一条。</td></tr>
+<tr><th scope="row">不出现半成品页面</th><td>还没读过的对话等消息到了再打开（最多 700ms），不会先以空的新对话滑进来。</td></tr>
+<tr><th scope="row">数据</th><td>不重复取数据：列表读会话 store，App 按电脑记住上次的对话和项目列表，打开或回到项目页时列表立刻出现，只重画变了的部分；对话页用分屏视图里自成一体的 <code translate="no">PeerSessionPane</code>，详情页挂右侧面板原有的面板。聊天页的外壳在看不见的地方保持挂载，因为连接和地址里对话的加载由它负责。</td></tr>
 <tr><th scope="row">和桌面共用</th><td>模型、智能体和会话操作菜单拆成了 hook 和内容（<code translate="no">useChatModel</code>、<code translate="no">useChatAgent</code>、<code translate="no">useSessionActions</code>），手机的面板、详情页和桌面的芯片、菜单跑同一份代码。</td></tr>
 <tr><th scope="row">中日韩文字</th><td>iOS 的 WebKit 遇到系统字体没有的字，会画成带问号的方框，而不是去试下一个字体，所以每个字体栈都把 PingFang SC、Hiragino Sans、Apple SD Gothic Neo 放在 <code translate="no">-apple-system</code> 前面（<code translate="no">lib/prefs/appearance/font-stacks.ts</code>）。</td></tr>
-<tr><th scope="row">菜单</th><td>商店 App 里所有菜单都由 iOS 自己画（<code translate="no">lib/mobile/native-menu.ts</code>、<code translate="no">NativeMenus.swift</code>），样子和动画就是系统的：点按钮时网页把菜单项交给 App，手指一落到对话或消息上就先交过去，长按时菜单已经备好；选中的项以事件传回网页。浏览器里仍用网页自己的面板。</td></tr>
+<tr><th scope="row">菜单</th><td>选择都用 Framework7 的控件：设置弹出页里的智能选择页、电脑按钮长成的菜单、浏览器里长按出来的操作表。商店 App 里对话和消息的长按菜单由 iOS 自己画（<code translate="no">lib/mobile/native-menu.ts</code>、<code translate="no">NativeMenus.swift</code>）：手指一按下页面就把菜单项发过去，长按随时可以弹出；选中的项作为事件传回来。</td></tr>
 <tr><th scope="row">长按</th><td>消息的菜单列出它桌面操作栏里的按钮（操作栏留在页面里隐藏），点选就是点那个按钮，所以每个操作跑同一份代码（<code translate="no">phone-message-menu.tsx</code>）。输入框以外不能选中文字。</td></tr>
 <tr><th scope="row">触感</th><td>商店 App 的桥接提供轻、中、选择、成功四种震动（<code translate="no">lib/mobile/bridge.ts</code> 里的 <code translate="no">haptic()</code>）：长按、开关和分段选择时用。</td></tr>
 <tr><th scope="row">权限卡片</th><td>选项竖排成全宽 44pt 按钮，推荐的在最下面，靠近拇指。</td></tr>

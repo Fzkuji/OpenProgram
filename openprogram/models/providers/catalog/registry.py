@@ -8,27 +8,19 @@ openprogram.models.providers.catalog.registry — the built-in providers and det
 ``PROVIDERS`` maps ONLY the built-in backends. Building a Runtime from
 them is the runtime's job: ``openprogram.runtime.agent.runtime.factory``
 (``create_runtime``) reads this table, the detection below and
-:func:`http_api_key_for`. The subscription/CLI-credential backends are
-served by a dedicated Runtime class registered in
-``openprogram.runtime.agent.provider_runtimes``; the plain API-key HTTP
-providers by the base ``Runtime(model="<namespace>:<model>")`` with the
-key resolved here. Every other provider is served the same base-Runtime
+:func:`http_api_key_for`. Each is a plain API-key HTTP provider served by
+the base ``Runtime(model="<namespace>:<model>")`` with the key resolved
+here. A subscription is used by running the vendor's own program as an
+outside-agent harness (``openprogram.runtime.harnesses``), not here. Every other provider is served the same base-Runtime
 way through the api_registry — the same path the chat dispatcher uses.
 """
 
 import os
-import shutil
 
 
 # -- Provider registry -------------------------------------------------------
 
-# The built-in provider ids. Two entry shapes:
-#
-#   "model_namespace" only — subscription/CLI-credential backends whose auth
-#       adoption + per-provider headers need a dedicated Runtime subclass; the
-#       class is registered in the runtime layer's ``PROVIDER_RUNTIMES``
-#       table (openprogram.runtime.agent.provider_runtimes).
-#   "model_namespace" + "credential" — plain API-key HTTP providers built as
+# The built-in provider ids, each a plain API-key HTTP provider built as
 #       base ``Runtime(model="<namespace>:<model>", api_key=...)``. The
 #       namespace is the registry prefix the models live under (the ``gemini``
 #       provider streams ``google:<id>`` models); ``credential`` names the
@@ -37,14 +29,6 @@ import shutil
 #
 # "default_model" is the fallback when neither caller nor config picks one.
 PROVIDERS = {
-    "openai-codex": {
-        "model_namespace": "openai-codex",
-        "default_model": "gpt-5.5",
-    },
-    "gemini-cli": {
-        "model_namespace": "gemini-subscription",
-        "default_model": "gemini-2.5-flash",
-    },
     "anthropic": {
         "model_namespace": "anthropic",
         "credential": "anthropic",
@@ -75,19 +59,6 @@ PROVIDERS = {
         "default_model": "gemini-2.5-flash",
     },
 }
-
-
-def _detect_caller_env() -> tuple[str, str] | None:
-    """Detect if we're running inside a known LLM agent environment.
-
-    Returns (provider, model) if detected, None otherwise.
-    """
-    # Running inside Codex CLI?
-    if os.environ.get("CODEX_CLI") or os.environ.get("CODEX_SANDBOX_TYPE"):
-        if shutil.which("codex"):
-            return "openai-codex", None
-
-    return None
 
 
 def _load_provider_config() -> tuple[str, str] | None:
@@ -126,9 +97,7 @@ def detect_provider() -> tuple[str, str]:
     Detection priority:
       1. Env vars (AGENTIC_PROVIDER / AGENTIC_MODEL)
       2. Config file (~/.openprogram/config.json → last_used_model)
-      3. Caller environment (inside Claude Code? Codex? → use the same)
-      4. Available CLI providers (claude → codex → gemini)
-      5. AuthStore API keys (anthropic → openai → google)
+      3. AuthStore API keys (anthropic → openai → google)
 
     Returns:
         (provider_name, default_model) — e.g. ("anthropic", "claude-sonnet-4-6")
@@ -141,20 +110,9 @@ def detect_provider() -> tuple[str, str]:
     if result:
         return result
 
-    # 3. Caller environment detection
-    result = _detect_caller_env()
-    if result:
-        return result
-
-    # 4. CLI providers (no API key needed)
-    if shutil.which("codex"):
-        return "openai-codex", None
-    if shutil.which("gemini"):
-        return "gemini-cli", "gemini-2.5-flash"
-
-    # 5. API providers — a key saved in the AuthStore (settings UI or
+    # 3. API providers — a key saved in the AuthStore (settings UI or
     #    ``openprogram providers login <provider> --api-key``).
-    from openprogram.models.providers.settings.env_api_keys import is_configured
+    from openprogram.models.auth.env_api_keys import is_configured
     if is_configured("anthropic"):
         return "anthropic", "claude-sonnet-4-6"
     if is_configured("openai"):
@@ -163,15 +121,10 @@ def detect_provider() -> tuple[str, str]:
         return "gemini", "gemini-2.5-flash"
 
     raise RuntimeError(
-        "No LLM provider found. Set up one of the following:\n"
+        "No LLM provider found. Add an API key (stored under ~/.openprogram):\n"
         "\n"
-        "  CLI providers (no API key needed):\n"
-        "    1. Codex CLI:        npm install -g @openai/codex && codex auth\n"
-        "    2. Gemini CLI:       npm install -g @google/gemini-cli\n"
-        "\n"
-        "  API providers (paste a key — stored under ~/.openprogram):\n"
-        "    3. Web UI:   Settings -> Model Services -> pick one -> add a key\n"
-        "    4. CLI:      openprogram providers login <provider> --api-key\n"
+        "    Web UI:   Settings -> Model Services -> pick one -> add a key\n"
+        "    CLI:      openprogram providers login <provider> --api-key\n"
         "                 (e.g. openprogram providers login deepseek --api-key)\n"
         "\n"
     )
@@ -182,33 +135,21 @@ def check_providers() -> dict:
 
     Returns a dict with status of each provider:
         {
-            "openai-codex": {"available": True, "method": "CLI", "model": "gpt-5.5"},
             "openai": {"available": True, "method": "API", "model": "gpt-4.1"},
             ...
         }
     """
     results = {}
-    cli_checks = {
-        "openai-codex": "codex",
-        "gemini-cli": "gemini",
-    }
     api_checks = {
         "anthropic": "ANTHROPIC_API_KEY",
         "openai": "OPENAI_API_KEY",
         "gemini": ["GOOGLE_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY"],
     }
 
-    for name, binary in cli_checks.items():
-        results[name] = {
-            "available": shutil.which(binary) is not None,
-            "method": "CLI",
-            "model": PROVIDERS[name]["default_model"],
-        }
-
     # Availability via the canonical resolver (AuthStore / cloud chain).
     # The status names here map to the canonical provider ids
     # ("gemini" status row → "google").
-    from openprogram.models.providers.settings.env_api_keys import is_configured
+    from openprogram.models.auth.env_api_keys import is_configured
     _canon = {"gemini": "google"}
     for name in api_checks:
         results[name] = {
@@ -232,7 +173,7 @@ def http_api_key_for(entry: dict) -> str | None:
     """The key a request of a ``model_namespace`` PROVIDERS entry would use
     now, or ``None`` (API-key shaped credentials only; Anthropic takes API
     keys only, AGENTS.md)."""
-    from openprogram.models.providers.settings.env_api_keys import resolve_provider_key
+    from openprogram.models.auth.env_api_keys import resolve_provider_key
     return resolve_provider_key(entry["credential"])
 
 

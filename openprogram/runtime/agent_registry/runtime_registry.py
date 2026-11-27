@@ -103,8 +103,6 @@ def _build_configured(provider: str, model_id: str) -> Any:
     from openprogram.runtime.agent.runtime.factory import create_runtime
     if provider in PROVIDERS:
         kwargs: dict[str, Any] = {"provider": provider}
-        if provider == "openai-codex":
-            kwargs["search"] = True
         if model_id:
             kwargs["model"] = model_id
         return create_runtime(**kwargs)

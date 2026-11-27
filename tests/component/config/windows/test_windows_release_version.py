@@ -9,6 +9,7 @@ import sys
 
 import pytest
 
+from openprogram.host._platform import processes
 from openprogram.host._platform import terminal
 
 
@@ -31,7 +32,7 @@ def installed(tmp_path, monkeypatch):
     metadata = python_root / "Lib" / "site-packages" / "openprogram-0.8.1.dist-info" / "METADATA"
     metadata.parent.mkdir(parents=True)
     metadata.write_text("Metadata-Version: 2.1\nName: openprogram\nVersion: 0.8.1\n")
-    monkeypatch.setattr(terminal, "_windows_powershell", lambda *a, **kw: "0.8.1.0\n")
+    monkeypatch.setattr(processes, "_windows_powershell", lambda *a, **kw: "0.8.1.0\n")
     verify = runpy.run_path(str(ROOT / "scripts/release/verify-release-version.py"))["_installed_app_version"]
     return app, manifest, metadata, verify
 
@@ -55,7 +56,7 @@ def test_installed_windows_version_rejects_disagreement(installed, monkeypatch, 
     elif change == "escape":
         payload["python"] = "../../outside.exe"
     else:
-        monkeypatch.setattr(terminal, "_windows_powershell", lambda *a, **kw: "0.8.1.1" if change == "revision" else "")
+        monkeypatch.setattr(processes, "_windows_powershell", lambda *a, **kw: "0.8.1.1" if change == "revision" else "")
     manifest.write_text(json.dumps(payload))
     with pytest.raises(SystemExit):
         verify(app)

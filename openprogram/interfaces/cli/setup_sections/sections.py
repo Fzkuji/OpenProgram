@@ -167,7 +167,7 @@ def run_memory_section() -> int:
     )
     print(f"Memory backend: {picked}")
     if picked == "none":
-        from openprogram.programs.tools.knowledge.memory import MEMORY_TOOL_NAMES
+        from openprogram.state.memory.tool_names import MEMORY_TOOL_NAMES
         print(f"({' / '.join(MEMORY_TOOL_NAMES)} are hidden from the model "
               "until a backend is selected.)")
     return 0

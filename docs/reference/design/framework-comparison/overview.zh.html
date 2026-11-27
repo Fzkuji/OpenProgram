@@ -27,7 +27,7 @@
 <li>未确认：稳定的版本化远程控制 SDK、完整公开的 headless 事件协议、自维护 IDE 扩展。Owner 认证的 WebSocket 与 Python 库入口属内部或内嵌接口，不承诺外部兼容。</li>
 <li>OpenProgram 和 OpenClaw 都把 agent 指引放在 agent workspace。OpenClaw 有 <code translate="no">migrate-claude</code>、<code translate="no">migrate-hermes</code>；Codex 桌面版与 CLI 能导入 Claude Code、Cursor 的配置和近期工作。OpenProgram 没有外部会话、配置或 skills 的导入器。</li>
 </ul>
-<p><code translate="no">extensions/mcp/server/server.py</code> · <code translate="no">interfaces/acp/server.py</code> · <code translate="no">interfaces/cli/commands/capabilities/mcp.py</code> · <code translate="no">runtime/agent_registry/workspace.py</code></p>
+<p><code translate="no">interfaces/mcp_server/server.py</code> · <code translate="no">interfaces/acp/server.py</code> · <code translate="no">interfaces/cli/commands/capabilities/mcp.py</code> · <code translate="no">runtime/agent_registry/workspace.py</code></p>
 </details>
 <details><summary>意外：证据</summary>
 <ul>
@@ -146,7 +146,7 @@
 <thead><tr><th scope="col">条目</th><th scope="col">状态</th><th scope="col">位置</th></tr></thead>
 <tbody>
 <tr><th scope="row">脚本化 provider</th><td>部分：仅测试用</td><td><code translate="no">tests/component/providers/scripted_provider.py</code></td></tr>
-<tr><th scope="row">MCP server</th><td>已完成：认证 stdio，只暴露允许的工具，复用现有注册、权限模式和 allow 模式。不含远程 SDK、OpenAI 兼容端点和入站 webhook</td><td><code translate="no">extensions/mcp/server/server.py</code>、<code translate="no">interfaces/cli/commands/capabilities/mcp.py</code></td></tr>
+<tr><th scope="row">MCP server</th><td>已完成：认证 stdio，只暴露允许的工具，复用现有注册、权限模式和 allow 模式。不含远程 SDK、OpenAI 兼容端点和入站 webhook</td><td><code translate="no">interfaces/mcp_server/server.py</code>、<code translate="no">interfaces/cli/commands/capabilities/mcp.py</code></td></tr>
 <tr><th scope="row">轨迹导出</th><td>部分：Markdown 或 HTML，默认脱敏</td><td><code translate="no">state/store/session/reading/export.py</code></td></tr>
 <tr><th scope="row">可恢复删除</th><td>部分：<code translate="no">trash list</code>、<code translate="no">trash restore</code>、清单</td><td><code translate="no">host/sandbox/recoverable_delete.py</code>、<code translate="no">interfaces/cli/commands/maintenance/trash.py</code></td></tr>
 <tr><th scope="row">功能台账与默认阶段</th><td>未实现</td><td>无</td></tr>

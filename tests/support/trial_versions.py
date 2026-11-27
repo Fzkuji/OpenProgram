@@ -7,9 +7,9 @@ import site as site_module
 import subprocess
 import sys
 
-from openprogram.operations.self_update.versions import layout as paths
+from openprogram.host._platform import runtime_layout as paths
 from openprogram.operations.self_update.versions import store as version_store
-from openprogram.operations.self_update.versions.layout import Layout
+from openprogram.host._platform.runtime_layout import Layout
 
 from .sealed_versions import BASE as _SEALED_BASE, REPOSITORY
 

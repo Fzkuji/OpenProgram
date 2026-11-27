@@ -7,10 +7,20 @@
 <thead class="sr"><tr><th scope="col">部分</th><th scope="col">显示</th></tr></thead>
 <tbody>
 <tr><th scope="row">在对话里</th><td>模型芯片前的 <strong>Harness</strong> 芯片让对话改由 Codex 运行：模型、思考档位、Agent 和权限模式换成 Codex 的，它的审批出现在对话里，终端里 <code translate="no">codex resume &lt;id&gt;</code> 能接着同一个会话。用的是你自己安装的 <code translate="no">codex</code>；有新版时，模型菜单会列出新版带来的模型和 <strong>Update Codex</strong></td></tr>
-<tr><th scope="row">模型</th><td>Harness 自己的登录，或<strong>通过 OpenProgram</strong> 使用任一已启用的模型；Claude Code 还可分别指定 Opus、Sonnet、Haiku 背后的模型</td></tr>
+<tr><th scope="row">其他智能体</th><td>Claude Code（也可在它的模型菜单里选任一已启用的模型）、DeepSeek Harness 和 Google 的 Gemini CLI 也能这样运行对话，各用自己的模型和登录。Gemini CLI 用你在它里面设好的 Google 账号或 Gemini API 密钥，没有时用模型服务里的 Google API 密钥</td></tr>
+<tr><th scope="row">模型</th><td>Harness 自己的登录，或<strong>通过 OpenProgram</strong> 使用任一已启用的模型；Claude Code 还可分别指定 Opus、Sonnet、Haiku 背后的模型和子智能体的模型；Codex 可指定子智能体和记忆用的模型，以及<strong>后台压缩</strong>。<strong>找不到命令</strong>表示它的设置目录还在，但命令已不在</td></tr>
+<tr><th scope="row">编辑器和应用</th><td>装了就列出，各自选模型：VS Code、VS Code Insiders、VSCodium、Zoo Code、Zed、Antigravity、Dim、Kun、Nowledge Mem、OpenHanako、Alma、Shelley、miniQ。Cursor Private Inference 和 Avibe 是开关。Cindy、AionUi、Cherry Studio 和 Lody 用链接：<strong>在 … 中添加</strong>打开应用确认，有了之后显示<strong>已添加</strong>。Dim、Kun、Nowledge Mem、Alma、Shelley 和 Avibe 要开着才能修改</td></tr>
+<tr><th scope="row">更多智能体</th><td>Crush、Goose、Kimi Code、jcode、Mistral Vibe、AtomCode、Grok Build、Kigi、Grok App、Reasonix Studio、Mister Morph、Muse Code、PenguinHarness、Hermes Agent、Raycast、DeepSeek Harness 和 DS Bot 在本机时会出现在模型里。<strong>通过 OpenProgram</strong> 把启用的模型加进智能体自己的模型列表，并让它从所选模型开始；它的其他提供商不动，换回它自己的设置会还原它的文件</td></tr>
+<tr><th scope="row">它们的设置</th><td>智能体有的话，模型下方可选思考强度或思考档位，Kimi Code 的子智能体池可同时选多个模型，DeepSeek Harness 还可选它自己的 DeepSeek 模型，<strong>遥测</strong>设为关闭会关掉它发给自己厂商的使用数据，连接与否都生效</td></tr>
 <tr><th scope="row">也用于终端</th><td>把选择写进 <code translate="no">~/.codex/config.toml</code> 或 <code translate="no">~/.claude/settings.json</code>，终端里的 <code translate="no">codex</code> 和 <code translate="no">claude</code> 也用它，Codex 应用也一样：它会列出已启用的模型，并自动用上新的设置。关闭后恢复原来的值。<strong>配置已在别处修改</strong>表示之后有值被改过，它会保持原样。</td></tr>
+<tr><th scope="row">更多应用和 CLI</th><td>Claude Desktop、Claude Science、T3 Code、OpenMausBot、Paseo、NewMax、MiniMax Code、ZCode 和 Kiro Crew 在本机时各占一行：选一个模型，OpenProgram 就把它写进那个应用自己的设置；关闭后恢复原样。Claude Code 的其他配置目录（<code translate="no">~/.claude-work</code> …）各占一行。修改时 NewMax 和 OpenMausBot 须先退出；<strong>重启</strong>会重新打开读过旧设置的应用</td></tr>
+<tr><th scope="row">和你的 Claude Desktop 并排</th><td>在 Mac 上，<strong>Runs In</strong>（运行位置）会在 <code translate="no">~/Applications</code> 里建一个 <strong>Claude OpenProgram</strong>：一份跑在 OpenProgram 上的副本，和你自己已登录的 Desktop 并排运行</td></tr>
+<tr><th scope="row">更多智能体</th><td><strong>通过 OpenProgram</strong> 同样适用于下列智能体，写进各自的配置：Qwen Code、Copilot CLI（它自己的提供商）、Command Code、fx、Empryo、nanobot、Paimon、Ante、Cline、Qoder 和 Qoder CN、Open Code Review、Snow CLI、Tuanjie Cowork、OpenPencil、WorkBuddy 和 WorkBuddy AI、CodeBuddy、JetBrains IDE 里的 Copilot、Droid、Obsidian（Copilot for Obsidian）、AstrBot、OpenClaw 和 QwenPaw。只在启动时读设置的应用需要重启；接入 OpenPencil 前先退出它</td></tr>
+<tr><th scope="row">OpenCode 及同类</th><td>OpenCode、OpenChamber、MiMo Code、DevEco Code、JetBrains Air（应用和 IDE）和 OpenBot 会把<strong>通过 OpenProgram</strong>写进它们自己的配置：已启用的模型出现在它们的模型选择器里，选中的就是默认模型。在 Air 里选 <strong>OpenProgram</strong> 智能体；OpenBot 重启后在自己的选择器里列出这些模型</td></tr>
+<tr><th scope="row">Pi 及同类</th><td>Pi、OmO、Prime Agent、mu、StepCode、Aside、Pencil、Craft Agents、MothX、LiveAgent 和 omp（包括 omp 的每个 profile）会把<strong>通过 OpenProgram</strong>写进它们自己的配置，连同思考档位；Pi 和 omp 还可选模型走的协议，omp 还有各角色和 advisor，Aside 还可选写哪个账户。Pencil 和 LiveAgent 在自己的模型选择器里列出这些模型；改 LiveAgent 前先退出它</td></tr>
+<tr><th scope="row">只在终端用的智能体</th><td>终端里的 <strong>Gemini CLI</strong> 也能用任一已启用的模型，这里的 Gemini CLI 对话仍用你自己的 Gemini 登录。<strong>Antigravity CLI</strong>（<code translate="no">agy</code>）也可以：在新终端里输入 <code translate="no">agy</code> 即可；它的卡片还能选推理强度、开关 Fast Tools，agy 没接 OpenProgram 时也能开关。<strong>Cursor CLI</strong> 和 <strong>Devin</strong> 只能在它们自己的模型里选，Devin 还能选推理强度</td></tr>
 <tr><th scope="row">每个 Harness 一张卡片</th><td>最近 30 天的会话数、Token、输出和按 API 价估算的费用</td></tr>
-<tr><th scope="row">Codex 套餐</th><td>每项额度一条进度条，带重置时间和 credits，取 Codex 最近一次写下的值</td></tr>
+<tr><th scope="row">Codex 套餐</th><td>每项额度一条进度条，带重置时间和 credits，取 Codex app-server 最近一次报告的值</td></tr>
 <tr><th scope="row">每日 Token</th><td>每天一根柱，每个 Harness 一种颜色</td></tr>
 <tr><th scope="row">会话</th><td>标题、文件夹、分支、模型、启动它的应用、Token 和估算费用。可按 Harness 筛选或搜索；复制按钮复制在终端里继续这个会话的命令。</td></tr>
 <tr><th scope="row">按模型、启动来源</th><td>按模型和按应用（终端、桌面版、SDK）的合计</td></tr>

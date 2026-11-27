@@ -4,7 +4,7 @@ The provider caches a request's prefix. The next turn's first request reuses
 it only if every byte before the new user message is what the last request
 of the previous turn sent. These tests run real turns (dispatcher, agent
 loop, DAG render) with a scripted provider, serialize every request with
-the real Codex and Anthropic adapters (``tests/support/request_bytes.py``)
+the real Responses and Anthropic adapters (``tests/support/request_bytes.py``)
 and assert the next turn's request starts with the whole of the previous
 turn's last request.
 
@@ -19,7 +19,7 @@ import json
 
 import pytest
 
-from openprogram.models.providers.types import AgentToolResult, TextContent, ToolCall
+from openprogram.models.providers.types import TextContent, ToolCall
 from openprogram.models.usage import prefix_fingerprint
 from openprogram.models.usage.context import UsageContext
 from openprogram.models.usage.ledger import UsageLedger
@@ -33,7 +33,7 @@ from tests.support.request_bytes import (
 )
 
 MEMORY = "<memory-context>\nThe user's dog is called Pip.\n</memory-context>"
-WIRES = ["codex", "anthropic"]
+WIRES = ["responses", "anthropic"]
 
 
 @pytest.fixture(params=WIRES)
@@ -154,7 +154,7 @@ def test_calls_made_together_render_together(bench):
                _text(bench, "all 42"))
     bench.turn("thanks", _text(bench, "ok"))
     _assert_next_turn_extends(bench)
-    if bench.model.api == "openai-codex":
+    if bench.model.api == "openai-responses":
         kinds = [json.loads(item).get("type") for item in bench.history(-1)]
         assert kinds[1:5] == ["function_call", "function_call", "function_call_output", "function_call_output"]
 

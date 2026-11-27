@@ -3,7 +3,7 @@
 <meta name="covers" content="openprogram/models/usage/harnesses/">
 <h1>Third-Party Harnesses</h1>
 
-<p>Claude Code and Codex write every session to files on this computer. OpenProgram reads those files and shows the sessions, tokens, estimated cost and the last plan quota they recorded.</p>
+<p>Claude Code and Codex write every session to files on this computer. OpenProgram reads those files and shows the sessions, tokens and estimated cost, plus the Codex plan quota its app-server last reported.</p>
 <p>Reading changes no harness's configuration, sits in no request path and sends nothing anywhere. Running a harness on OpenProgram's models is the <a href="model-gateway.html">Model Gateway</a>.</p>
 
 <table class="stack fixed">
@@ -29,7 +29,7 @@
 <tr><th scope="row">Price source</th><td>models.dev</td><td>None</td><td>LiteLLM</td><td>models.dev, the catalogue OpenProgram already uses</td></tr>
 <tr><th scope="row">Long-context tier</th><td>Ignored</td><td>—</td><td>Applied</td><td>Applied</td></tr>
 <tr><th scope="row">Deleted transcripts</th><td>Dropped</td><td>—</td><td>Kept</td><td>Kept, 92 days</td></tr>
-<tr><th scope="row">Codex quota</th><td>Live endpoint</td><td>Live endpoint</td><td>Live endpoint</td><td>The newest value Codex wrote to its own files</td></tr>
+<tr><th scope="row">Codex quota</th><td>Live endpoint</td><td>Live endpoint</td><td>Live endpoint</td><td>What Codex reports: its app-server's <code translate="no">account/rateLimits/read</code> at start, then <code translate="no">account/rateLimits/updated</code>, or its rollout files' <code translate="no">rate_limits</code>, whichever is newer</td></tr>
 <tr><th scope="row">Claude quota</th><td>Live endpoint</td><td>Claude Code's sign-in</td><td>Claude Code's sign-in</td><td>Not shown</td></tr>
 <tr><th scope="row">When it reads</th><td>Polls every 10–15 s</td><td>On request</td><td>On request</td><td>At Worker start, then when the page asks</td></tr>
 <tr><th scope="row">Which app started a session</th><td>Not shown</td><td>Not shown</td><td>Not shown</td><td>Shown</td></tr>
@@ -103,7 +103,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Part</th><th scope="col">Shows</th></tr></thead>
 <tbody>
-<tr><th scope="row">A card per harness</th><td>Sessions, tokens, output and the API estimate for 30 days; for Codex each plan window as a meter with its reset, credits and when Codex wrote it</td></tr>
+<tr><th scope="row">A card per harness</th><td>Sessions, tokens, output and the API estimate for 30 days; for Codex each plan window as a meter with its reset, credits and when the app-server reported it</td></tr>
 <tr><th scope="row">Daily tokens</th><td>Stacked bars, one colour per harness</td></tr>
 <tr><th scope="row">Sessions</th><td>Filtered by harness and search: title; folder, branch, models, app, last activity; tokens and calls; estimate; a copy button for the continue command. 20 shown, then all.</td></tr>
 <tr><th scope="row">By model, Started from</th><td>Tables with the harness on each row</td></tr>

@@ -83,7 +83,18 @@ def project(tmp_path: Path) -> dict:
     for relative in ("scripts/release/runtime-wheels.py", "scripts/release/product-runtime.json",
                      "scripts/release/trim-runtime.py",
                      "openprogram/__init__.py", "openprogram/host/__init__.py",
-                     "openprogram/host/_platform/__init__.py", "openprogram/host/_platform/architecture.py"):
+                     "openprogram/host/_platform/__init__.py", "openprogram/host/_platform/architecture.py",
+                     "openprogram/host/_platform/host_facts.py",
+                     # Importing ``openprogram`` installs the layers' ports.
+                     "openprogram/host/runtime_facts.py",
+                     "openprogram/host/lower_layers.py",
+                     "openprogram/models/__init__.py",
+                     "openprogram/models/lower_layers.py",
+                     "openprogram/models/part_ports.py",
+                     "openprogram/state/__init__.py",
+                     "openprogram/state/host_facts.py",
+                     "openprogram/state/model_facts.py",
+                     "openprogram/state/setting_rules.py"):
         (repo / relative).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(ROOT / relative, repo / relative)
     (repo / "pyproject.toml").write_text(

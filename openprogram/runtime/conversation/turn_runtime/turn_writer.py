@@ -258,7 +258,7 @@ class TurnWriter:
         from openprogram.runtime.conversation.turn_admission.turn_lifecycle import (
             insert_placeholder,
         )
-        from openprogram.runtime.permissions.authority import runtime_authority
+        from openprogram.state.authority import runtime_authority
         self._carry_own_branch()
         result = insert_placeholder(
             self.db, self.req.session_id, assistant_msg_id, user_msg_id,

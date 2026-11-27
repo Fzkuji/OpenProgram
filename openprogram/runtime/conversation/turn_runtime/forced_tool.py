@@ -61,8 +61,8 @@ def dispatch_forced_tool_call(
     # Look up by registry name so user-only tools (expose=False) can still
     # be started from Programs / fn-form. Agent tool tables stay filtered.
     try:
-        from openprogram.programs._host.runtime import get as _get_tool
-        tool = _get_tool(tool_name)
+        from openprogram.runtime import program_host
+        tool = program_host.host().get(tool_name)
     except Exception as e:  # noqa: BLE001
         raise ValueError(f"failed to resolve tool {tool_name!r}: {e}") from e
     if tool is None:

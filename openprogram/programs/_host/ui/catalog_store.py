@@ -58,7 +58,7 @@ def update(mutate):
     Publish the new catalog before removing legacy rows. A retry after a
     partial publication accepts identical rows only, never overwrites state.
     """
-    from openprogram.models.auth.credentials import _private_file_lock
+    from openprogram.state.private_files import _private_file_lock
     with _lock, _private_file_lock(path(), root=paths.get_state_dir()):
         rows = _read()
         def migrate(legacy):

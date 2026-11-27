@@ -1,6 +1,6 @@
 """Every adapter hands a provider's refusal to the credential layer instead of
 retrying it itself: one request per key, the limited key cools down and the
-next key is tried (models/auth/selection.py, streaming/stream.py)."""
+next key is tried (models/providers/streaming/credential_failover.py, streaming/stream.py)."""
 from __future__ import annotations
 
 import asyncio
@@ -11,6 +11,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import pytest
 
 from openprogram.models.auth import selection
+from openprogram.models.providers.streaming import credential_failover
 from openprogram.models.auth.credential_provider import (
     CredentialProvider, set_credential_provider_for_testing,
 )
@@ -110,7 +111,7 @@ def test_a_server_error_is_sent_again_twice_on_the_same_key(api, server, store, 
     async def no_wait(_s):
         return None
 
-    monkeypatch.setattr(selection.asyncio, "sleep", no_wait)
+    monkeypatch.setattr(credential_failover.asyncio, "sleep", no_wait)
     _Refuser.status = 503
     _send(api, server)
     assert _Refuser.keys == ["sk-first-0000000000"] * 3, api

@@ -28,9 +28,6 @@ Public surface (re-exported here for convenience):
 
 - **`dev_instance.py`** — The development instance of a source checkout, beside the official App
 - **`lifecycle.py`** — Lifecycle controls for the persistent worker process
-- **`lock.py`** — Single-holder file lock for the persistent worker
-- **`paths.py`** — State file paths for the persistent worker
-- **`ports.py`** — Unified port probing + ownership diagnostics
 - **`runner.py`** — Foreground run-loop for the persistent worker
 - **`startup_log.py`** — Worker status lines stamped with the seconds since the process started
 - **`subsystems.py`** — What this worker started, as reported to ``/api/diagnostics``

@@ -60,7 +60,7 @@ test("nothing is said while the figures are on their way, and a revisit draws th
 
 test("the cost card is the billed sum, with unpriced calls and subscriptions' list price", async () => {
   serve(totals({ billed_cost: 6.3, included_cost: 41.2, unpriced_events: 25 }), [
-    row({ model: "gpt-5.5", provider: "openai-codex", cost: 41.2, included: true }),
+    row({ model: "gpt-5.5", provider: "opencode-go", cost: 41.2, included: true }),
     row({ model: "deepseek-chat", provider: "deepseek", cost: 6.3, unpriced_events: 25 }),
     row({ model: "glm-4.6", provider: "zai", cost: 0 }),
   ]);

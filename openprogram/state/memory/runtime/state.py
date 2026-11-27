@@ -10,7 +10,7 @@ from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from openprogram.host.security.identity_header import normalize_identity_header_part
+from openprogram.state.identity_header import normalize_identity_header_part
 
 from ..workspace_layout import runtime_dir
 from openprogram.host._platform.filesystem import replace_file

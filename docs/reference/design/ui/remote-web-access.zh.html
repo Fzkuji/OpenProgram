@@ -216,7 +216,7 @@
 <tr><th scope="row"><code translate="no">GET /api/auth/challenge</code></th><td>监听者证明，见下；不授予任何权限</td></tr>
 <tr><th scope="row"><code translate="no">GET /healthz</code></th><td>只有 <code translate="no">{"status":"ok"}</code>；详情在需认证的 <code translate="no">/api/diagnostics</code></td></tr>
 <tr><th scope="row"><code translate="no">POST /hooks/&lt;id&gt;</code></th><td>Scheduler webhook，由任务自己的密钥保护</td></tr>
-<tr><th scope="row"><code translate="no">/gateway/**</code></th><td>给 Claude Code 和 Codex 的模型网关：bearer 或 <code translate="no">x-api-key</code> 带网关密钥或 owner 令牌；网关密钥打不开别的路径（<a href="../integrations/model-gateway.zh.html">模型网关</a>）</td></tr>
+<tr><th scope="row"><code translate="no">/gateway/**</code></th><td>给外部智能体的模型网关：bearer 或 <code translate="no">x-api-key</code> 带网关密钥、智能体专属密钥或 owner 令牌（Gemini 路径上也可用 <code translate="no">x-goog-api-key</code> 或 <code translate="no">?key=</code>），或带着智能体专属密钥的地址（<code translate="no">/gateway/agent/&lt;id&gt;.&lt;mac&gt;/</code>）。不带密钥仅限本机、不经转发：Obsidian 窗口（<code translate="no">app://obsidian.md</code>，按 CORS 应答）访问 <code translate="no">/gateway/agent/obsidian/</code>，以及已连接的 Muse Code 不带 <code translate="no">Origin</code> 请求 <code translate="no">/muse-code/models</code>。网关密钥打不开别的路径（<a href="../integrations/model-gateway.zh.html">模型网关</a>）</td></tr>
 <tr><th scope="row"><code translate="no">GET /application-assets/…</code></th><td>沙箱模块导入，<code translate="no">Origin: null</code>；只读一棵不可变 UI 树；仍校验 Host</td></tr>
 <tr><th scope="row">Office 主机</th><td>启用时由 <code translate="no">office_editor</code> 应用提供；拒绝 WebSocket</td></tr>
 </tbody>

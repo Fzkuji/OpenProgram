@@ -10,7 +10,8 @@ import pytest
 from openprogram.models.providers.types import AgentTool, AgentToolResult
 from openprogram.operations.migrations import open_permissions
 from openprogram.runtime.agent.turn_request import TurnRequest
-from openprogram.runtime.permissions.authority import owner_authority, paired_channel_authority, runtime_authority
+from openprogram.runtime.permissions.authority import owner_authority, paired_channel_authority
+from openprogram.state.authority import runtime_authority
 from openprogram.runtime.permissions.modes import DEFAULT_PERMISSION, resolve_mode
 from openprogram.runtime.permissions.policy import permission_decision
 

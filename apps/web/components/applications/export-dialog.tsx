@@ -1,7 +1,7 @@
 "use client";
 /**
  * Export an application as software of its own (programs export,
- * openprogram/interfaces/standalone/export.py): choose a folder, export,
+ * openprogram/programs/_host/ui/export.py): choose a folder, export,
  * then show the result in the file manager.
  */
 import { useEffect, useRef, useState } from "react";

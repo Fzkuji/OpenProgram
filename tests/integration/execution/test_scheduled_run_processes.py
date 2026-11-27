@@ -91,7 +91,7 @@ SESSION = "scheduled-session"
 
 
 def worker_lock():
-    from openprogram.operations.worker.lock import WorkerLock
+    from openprogram.host.worker.lock import WorkerLock
     lock = WorkerLock()
     assert lock.try_acquire()
     return lock
@@ -168,7 +168,7 @@ def new_session(folder):
 
 def sub_agent(folder):
     import fake_model  # noqa: F401
-    from openprogram.programs.tools.jobs.cron import cron, worker
+    from openprogram.runtime.scheduler import store as task_store, worker
     from openprogram.runtime.conversation import process_runner
     from openprogram.runtime.execution import default_store
     from openprogram.runtime.jobs import get_runner
@@ -178,7 +178,7 @@ def sub_agent(folder):
     new_session(folder)
     runner = get_runner()
     process_runner._link_registration_modules = lambda: ["fake_model"]
-    spec = cron._build_execution_spec(kind="prompt", body="check", cwd=str(folder), entry_id="hourly",
+    spec = task_store._build_execution_spec(kind="prompt", body="check", cwd=str(folder), entry_id="hourly",
                                       authority=local_owner_authority(), origin=(SESSION, "main"))
     entry = {"id": "hourly", "title": "Hourly", "cron": "0 * * * *", "prompt": "check", "execution": spec}
     process = worker._spawn(entry, str(Path(folder) / "logs"))
@@ -360,8 +360,8 @@ def worker_continues_a_scheduled_run(folder):
     default_db().append_message(SESSION, {"id": "first", "role": "user", "content": "hi",
                                           "predecessor": None, "timestamp": 1.0})
     default_db().set_head(SESSION, "first")
-    from openprogram.programs.tools.jobs.cron import cron
-    cron._save(cron._resolve_path(), [{"id": "hourly", "title": "Hourly"}])
+    from openprogram.runtime.scheduler import store as task_store
+    task_store._save(task_store._resolve_path(), [{"id": "hourly", "title": "Hourly"}])
     runner = get_runner()
     context = multiprocessing.get_context("spawn")
     receive, send = context.Pipe(duplex=False)
@@ -400,7 +400,7 @@ def worker_continues_a_scheduled_run(folder):
 
 def wait_on_a_dead_worker(folder, notices, answers):
     """A run waiting for an answer from a Worker that has gone."""
-    from openprogram.programs.tools.jobs.cron import worker
+    from openprogram.runtime.scheduler import worker
     from openprogram.runtime.execution.worker_calls import SubprocessWorkerCalls, use_worker_calls
     from openprogram.runtime.jobs.runner.shared import get_runner
 
@@ -427,7 +427,7 @@ def start_a_task(folder, prompt, origin=None, loaded=False):
     ``loaded``: the Worker already holds the run's conversation, as it does the
     chat a task was set in, or a task's own conversation after an earlier run."""
     import run_model  # noqa: F401
-    from openprogram.programs.tools.jobs.cron import cron, worker
+    from openprogram.runtime.scheduler import store as task_store, worker
     from openprogram.runtime.conversation import process_runner
     from openprogram.runtime.execution import default_store
     from openprogram.runtime.jobs import get_runner
@@ -435,10 +435,10 @@ def start_a_task(folder, prompt, origin=None, loaded=False):
 
     get_runner()
     process_runner._link_registration_modules = lambda: ["run_model"]
-    spec = cron._build_execution_spec(kind="prompt", body=prompt, cwd=str(folder), entry_id="hourly",
+    spec = task_store._build_execution_spec(kind="prompt", body=prompt, cwd=str(folder), entry_id="hourly",
                                       authority=local_owner_authority(), origin=origin)
     entry = {"id": "hourly", "title": "Hourly", "cron": "0 * * * *", "prompt": prompt, "execution": spec}
-    cron._save(cron._resolve_path(), [entry])
+    task_store._save(task_store._resolve_path(), [entry])
     if loaded:
         default_store().tables.ensure_session(spec["session_id"])
     return worker._spawn(entry, str(Path(folder) / "logs")), spec["session_id"]
@@ -563,6 +563,7 @@ def _run(tmp_path, stage, *arguments):
     return json.loads(finished.stdout.strip().splitlines()[-1]) if finished.stdout.strip() else None
 
 
+@pytest.mark.slow
 def test_a_scheduled_tasks_sub_agent_runs_in_the_worker(tmp_path):
     report = _run(tmp_path, "sub_agent")
     assert not report["alive"], report["run_log"]
@@ -599,6 +600,7 @@ def test_a_turn_written_over_after_it_ended_recovers_its_ending(tmp_path):
     assert report["unfinished"] == 0 and not report["active"] and report["released"] == 1
 
 
+@pytest.mark.slow
 def test_a_scheduled_run_the_next_worker_continues_ends_as_that_run(tmp_path):
     report = _run(tmp_path, "worker_continues_a_scheduled_run")
     assert report["paused"] == "paused" and report["runs_while_paused"] == []
@@ -616,6 +618,7 @@ def test_a_run_waiting_on_the_worker_ends_when_the_worker_is_gone(tmp_path):
     assert ended.read_text() == "WorkerUnavailable: the Worker that started this scheduled run has stopped"
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("held", ["loaded", "not loaded"])
 @pytest.mark.parametrize("wait", ["wait in a tool", "wait for the model"])
 def test_a_stop_asked_in_the_worker_ends_a_run_in_its_own_process(tmp_path, wait, held):
@@ -629,6 +632,7 @@ def test_a_stop_asked_in_the_worker_ends_a_run_in_its_own_process(tmp_path, wait
     assert report["runs"] == []
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("held", ["loaded", "not loaded"])
 def test_a_killed_run_process_is_ended_by_the_worker_at_once(tmp_path, held):
     report = _run(tmp_path, "kill_the_process", held)
@@ -637,6 +641,7 @@ def test_a_killed_run_process_is_ended_by_the_worker_at_once(tmp_path, held):
     assert report["runs"] == [["failed", "the run was interrupted and could not continue"]]
 
 
+@pytest.mark.slow
 def test_a_task_set_outside_a_chat_reports_into_its_own_conversation(tmp_path):
     report = _run(tmp_path, "report_in_its_own_conversation")
     assert report["session_id"] == "cron-hourly"

@@ -5,7 +5,7 @@
 
 <p>消息里的每个文件都由同一种文本标记表示：</p>
 <pre translate="no"><code>[attachment: notes.txt (txt, 18 KB, 4210 lines) @json "/abs/path/notes.txt"]</code></pre>
-<p class="note">只由 <code translate="no">openprogram/state/attachments.py</code> 的 <code translate="no">format_marker</code> 写入，新增来源也调用它。网页端只由 <code translate="no">parseAttachments</code> 读取。可选的 <code translate="no">@previewjson</code> 指向保存的预览。旧写法 <code translate="no">@ /abs/path</code> 仍可读取。内容如何进入模型上下文：<a href="attachment-handling.zh.html">附件处理</a>。</p>
+<p class="note">只由 <code translate="no">openprogram/state/attachment_markers.py</code> 的 <code translate="no">format_marker</code> 写入，新增来源也调用它。网页端只由 <code translate="no">parseAttachments</code> 读取。可选的 <code translate="no">@previewjson</code> 指向保存的预览。旧写法 <code translate="no">@ /abs/path</code> 仍可读取。内容如何进入模型上下文：<a href="attachment-handling.zh.html">附件处理</a>。</p>
 
 <h2 id="now-in">入站</h2>
 <table class="stack">
@@ -327,7 +327,7 @@
 <details>
 <summary>代码位置</summary>
 <dl class="pairs">
-<dt>标记、根目录</dt><dd><code translate="no">openprogram/state/attachments.py</code></dd>
+<dt>标记、根目录</dt><dd><code translate="no">openprogram/state/attachment_markers.py</code>、<code translate="no">openprogram/state/attachments.py</code></dd>
 <dt>网页持久化</dt><dd><code translate="no">openprogram/interfaces/server/ws_actions/chat/attachments.py</code></dd>
 <dt>频道入站</dt><dd><code translate="no">openprogram/interfaces/channels/inbound/_attachments.py</code></dd>
 <dt>频道投递</dt><dd><code translate="no">openprogram/interfaces/channels/inbound/_conversation.py</code>、<code translate="no">_transport.py</code></dd>

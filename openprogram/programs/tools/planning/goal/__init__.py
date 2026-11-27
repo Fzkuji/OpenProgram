@@ -13,6 +13,8 @@ an independent, read-only ordinary chat turn in ``verification``.
 * ``notices``: transcript system rows
 * ``ownership``: the session's cross-process Goal owner lock
 * ``restart``: the recoverable pause of a Workflow Goal after a worker restart
+* ``standing``: the standing Goal an always-on conversation's wake starts
+* ``runtime_hooks``: the Goal's part in the conversation runtime's turn moments
 
 Design doc: docs/reference/design/runtime/reliability/goal-and-recovery.html.
 
@@ -75,3 +77,10 @@ from openprogram.programs.tools.planning.goal.command import (  # noqa: F401
     goal_builtin_handler,
     handle_goal_command,
 )
+
+# The Goal's part in the conversation's turns (admission, settlement, a
+# restart, an always-on wake), registered with the runtime, which never
+# imports the Goal.
+from openprogram.programs.tools.planning.goal import runtime_hooks as _runtime_hooks  # noqa: E402
+
+_runtime_hooks.register()

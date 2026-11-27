@@ -9,8 +9,9 @@ Everything through which a user or another program talks to OpenProgram.
 | `openprogram.interfaces.speech` — speech input and output | [`speech/`](speech/) |
 | `openprogram.interfaces.server` — the FastAPI Server application | [`server/`](server/) |
 | `openprogram.interfaces.cli` — the Python CLI application | [`cli/`](cli/) |
+| `openprogram.interfaces.mcp_server` — the MCP server outside programs call | [`mcp_server/`](mcp_server/) |
 
-All five are ordinary packages under this directory, found by the package
+All six are ordinary packages under this directory, found by the package
 discovery in the root `pyproject.toml`, so a wheel, an editable install and a
 plain checkout see the same layout. The React/Ink terminal client that the CLI
 launches is a separate Node.js workspace in [`apps/cli/`](../../apps/cli/); its

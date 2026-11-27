@@ -97,7 +97,7 @@ def key_env_names(provider_id: str) -> list[str]:
     if auth_kind(provider_id) != "api_key":
         return []
     try:
-        from openprogram.models.providers.settings.env_api_keys import env_vars_for
+        from openprogram.models.auth.env_api_keys import env_vars_for
         names = env_vars_for(provider_id)
     except Exception:
         names = []
@@ -142,8 +142,10 @@ def _rank() -> dict[str, int]:
 
 def _stored_providers() -> set[str]:
     try:
+        from openprogram.models.auth.provider_policy import is_withdrawn
         from openprogram.models.auth.store import get_store
-        return {pool.provider_id for pool in get_store().list_pools() if pool.credentials}
+        return {pool.provider_id for pool in get_store().list_pools()
+                if pool.credentials and not is_withdrawn(pool.provider_id)}
     except Exception:
         return set()
 
@@ -159,7 +161,7 @@ def _label(provider_id: str) -> str:
 def env_keys(provider_ids: Optional[list[str]] = None, *, stored: Optional[set[str]] = None) -> list[DetectedEnvKey]:
     """One row per set variable that a catalogue provider reads as its key."""
     from openprogram.host.security.credential_mask import mask_credential
-    from openprogram.models.providers.settings.env_api_keys import provider_id_for_env_var
+    from openprogram.models.auth.env_api_keys import provider_id_for_env_var
     ids = _catalogue_ids() if provider_ids is None else provider_ids
     stored = _stored_providers() if stored is None else stored
     readers: dict[str, list[str]] = {}

@@ -23,7 +23,7 @@ from .lifecycle import (
     write_pid_file,
     write_port_file,
 )
-from .lock import WorkerLock
+from openprogram.host.worker.lock import WorkerLock
 from .startup_log import worker_print
 
 
@@ -37,7 +37,7 @@ def _settle_web_port() -> int | None:
     holder named, never swapped silently for another.
     """
     from .lifecycle import claim_worker_port
-    from .ports import describe_port_owner, port_bindable
+    from openprogram.host.worker.ports import describe_port_owner, port_bindable
 
     try:
         port, setting = claim_worker_port()
@@ -314,7 +314,8 @@ _HEALTHY_START_POLLS = 60
 
 def _clear_boot_attempts() -> None:
     """Forget this version's start records, so they count abnormal ends only."""
-    from openprogram.operations.self_update.versions import layout, store
+    from openprogram.host._platform import runtime_layout as layout
+    from openprogram.operations.self_update.versions import store
 
     runtime = layout.current_runtime()
     if runtime is not None:
@@ -323,7 +324,7 @@ def _clear_boot_attempts() -> None:
 
 def _clear_boot_attempts_while_serving() -> None:
     """A version that has served for 10 minutes has not failed to start, and it goes on not failing."""
-    from openprogram.operations.self_update.versions import layout
+    from openprogram.host._platform import runtime_layout as layout
 
     if not layout.managed():
         return
@@ -341,7 +342,8 @@ def _clear_boot_attempts_while_serving() -> None:
 
 def _forget_refused_start() -> None:
     """This start lost the worker lock; the version it would have run is healthy."""
-    from openprogram.operations.self_update.versions import layout, store
+    from openprogram.host._platform import runtime_layout as layout
+    from openprogram.operations.self_update.versions import store
 
     runtime = layout.current_runtime()
     if runtime is not None:
@@ -351,7 +353,7 @@ def _forget_refused_start() -> None:
 def _remember_worker_environment() -> None:
     """What the controller gives a worker it starts where no service does."""
     from openprogram.operations.self_update.delivery.controller import save_worker_environment
-    from openprogram.operations.self_update.versions import layout
+    from openprogram.host._platform import runtime_layout as layout
 
     if layout.managed() and not trial_mode():
         try:
@@ -396,7 +398,7 @@ def _clean_finished_updates() -> None:
     """Remove what finished updates left: sealed versions, or staged payloads."""
     from openprogram.operations.self_update.store import SelfUpdateStore
     from openprogram.operations.self_update.versions import retention
-    from openprogram.operations.self_update.versions.layout import current_runtime
+    from openprogram.host._platform.runtime_layout import current_runtime
     from openprogram.state.paths import get_state_dir
 
     runtime = current_runtime()
@@ -425,7 +427,8 @@ def _settle_managed_version(port: int) -> None:
     """After a healthy start: adopt a version move and report direct edits."""
     from openprogram.operations.self_update.control import undo
     from openprogram.operations.self_update.delivery import owner_notice
-    from openprogram.operations.self_update.versions import layout, unapplied
+    from openprogram.host._platform import runtime_layout as layout
+    from openprogram.operations.self_update.versions import unapplied
 
     runtime = layout.current_runtime()
     if runtime is None or trial_mode():
@@ -474,7 +477,7 @@ def _wait_for_stop(wait=None) -> None:
     from openprogram.host._platform import changes
 
     from .lifecycle import stop_requested
-    from .paths import stop_request_path
+    from openprogram.host.worker.paths import stop_request_path
 
     request = stop_request_path()
     changes.watch(request.parent, _STOP_TOPIC, names={request.name})
@@ -517,6 +520,10 @@ def run_foreground() -> int:
         lock.release()
         return 1
 
+    # The runtime asks self-update before it admits turns and claims Jobs.
+    from openprogram.operations.self_update import runtime_gate
+
+    runtime_gate.register()
     _remember_worker_environment()
     _register_install()
     # A request left for an earlier worker with this PID is not for this one.
@@ -623,21 +630,6 @@ def run_foreground() -> int:
 
     threading.Thread(target=_warm_providers, daemon=True, name="provider-warmup").start()
 
-    subscription_refresh_stop = None
-    subscription_refresh_thread = None
-    if not trial:
-        try:
-            from openprogram.models.providers.catalog.subscription_refresh import (
-                start_subscription_catalog_refresher,
-            )
-
-            subscription_refresh_stop, subscription_refresh_thread = (
-                start_subscription_catalog_refresher()
-            )
-            worker_print("subscription catalog refresh running")
-        except Exception as exc:  # noqa: BLE001
-            worker_print(f"subscription catalog refresh failed to start: {exc}")
-
     # Frontend build gate — the static export (apps/web/out/) is served by
     # this same process; just make sure it's fresh. Synchronous: the UI
     # isn't usable before it exists anyway. Failure is non-fatal (the
@@ -701,7 +693,7 @@ def run_foreground() -> int:
     scheduler_thread = None
     if not trial:
         try:
-            from openprogram.programs.tools.jobs.cron.worker import start_in_worker
+            from openprogram.runtime.scheduler.worker import start_in_worker
 
             if recovery_ready:
                 scheduler_stop, scheduler_thread = start_in_worker()
@@ -810,8 +802,6 @@ def run_foreground() -> int:
         channels.shutdown()
         if scheduler_stop is not None:
             scheduler_stop.set()
-        if subscription_refresh_stop is not None:
-            subscription_refresh_stop.set()
         # Shared join budget, not 3s per thread: `openprogram stop` waits
         # 5s after SIGTERM before force-killing, and two channel bots at
         # 3s each already blew that window — every stop ended in SIGKILL.
@@ -823,10 +813,6 @@ def run_foreground() -> int:
                 print(f"[{label}] still running; drops on process exit")
         if scheduler_thread is not None:
             scheduler_thread.join(timeout=max(0.1, _join_deadline - time.time()))
-        if subscription_refresh_thread is not None:
-            subscription_refresh_thread.join(
-                timeout=max(0.1, _join_deadline - time.time())
-            )
     finally:
         from openprogram.runtime.conversation.run_control import begin_worker_shutdown
         begin_worker_shutdown()

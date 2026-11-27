@@ -21,7 +21,7 @@ def test_writer_shell_rejects_uncited_prose_without_committed_mutation(tmp_path,
     _ensure_git_history(root)
     # Reuse the existing command-adapter boundary; the shell itself is a real
     # subprocess, while host sandbox availability is controlled for portability.
-    monkeypatch.setattr("openprogram.state.memory.management.workspace._sandbox.resolve_policy", lambda *, required: object())
+    monkeypatch.setattr("openprogram.host.sandbox.resolve_policy", lambda *, required: object())
     monkeypatch.setattr("openprogram.host.backend.local._invocation", lambda command, _cwd, **kwargs: (["/bin/sh", "-c", command], False, None, True))
     before = {p.relative_to(root): p.read_bytes() for p in root.rglob("*") if p.is_file() and ".git" not in p.relative_to(root).parts}
     revision = workspace_revision(root)

@@ -282,6 +282,8 @@ include = ["openprogram", "openprogram.*"]
     "models/providers/adapters/*/provider.json",
     # The models Codex currently offers (runtime/harnesses/codex/maintenance.py).
     "runtime/harnesses/codex/model-manifest.json",
+    # The model-list plugin written beside OpenCode's config (models/gateway/agents/opencode_format.py).
+    "models/gateway/agents/opencode_models.js",
 ]
 "openprogram.interfaces.server" = [
     "routes/application-sdk.js",

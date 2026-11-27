@@ -26,7 +26,7 @@
 <tr><th scope="row"><code translate="no">openprogram setup ui</code></th><td>向导：端口（<code translate="no">1–65535</code>）和自动打开浏览器</td></tr>
 </tbody>
 </table>
-<p class="note">只有 worker 选端口：<code translate="no">operations/worker/lifecycle.py</code> 的 <code translate="no">claim_worker_port()</code> 在 worker 拿到锁之后马上定下端口，<code translate="no">resolve_worker_port()</code> 读取它。App 读同样的文件（<code translate="no">apps/desktop/main/worker/web-port.js</code>），所以两边总是一致。</p>
+<p class="note">只有 worker 选端口：<code translate="no">operations/worker/lifecycle.py</code> 的 <code translate="no">claim_worker_port()</code> 在 worker 拿到锁之后马上定下端口，<code translate="no">host/worker/process.py</code> 的 <code translate="no">resolve_worker_port()</code> 读取它。App 读同样的文件（<code translate="no">apps/desktop/main/worker/web-port.js</code>），所以两边总是一致。</p>
 
 <h2 id="one-port-per-account">每个账户一个端口</h2>
 <p>回环端口属于整台电脑。端口固定时，同一台电脑上同时登录的第二个账户，或者 18100 已被别的程序占用的用户，都没有 worker，App 一直等。所以每个账户有自己的端口：</p>
@@ -52,7 +52,7 @@
 <p class="note">绝不杀占用者；监听者不证明自己是本账户的 worker，就拿不到本账户的 token。</p>
 
 <table class="stack fixed">
-<thead class="sr"><tr><th scope="col">operations/worker/ports.py 的检查</th><th scope="col">方式</th></tr></thead>
+<thead class="sr"><tr><th scope="col">host/worker/ports.py 的检查</th><th scope="col">方式</th></tr></thead>
 <tbody>
 <tr><th scope="row">存活：<code translate="no">port_in_use(port)</code></th><td>裸 TCP 连接</td></tr>
 <tr><th scope="row">能否监听：<code translate="no">port_bindable(port)</code></th><td>试绑定一次。Windows 上用 <code translate="no">SO_EXCLUSIVEADDRUSE</code>：那里的 <code translate="no">SO_REUSEADDR</code> 会绑到正在监听的端口上，把被占的端口说成空闲</td></tr>

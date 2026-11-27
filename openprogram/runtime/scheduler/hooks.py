@@ -97,7 +97,7 @@ def receive(task_id: str, headers: Mapping[str, str], body: bytes) -> tuple[int,
     not tell a caller which task ids exist.
     """
     from . import service
-    from openprogram.programs.tools.jobs.cron import worker
+    from openprogram.runtime.scheduler import worker
 
     if len(body) > BODY_MAX:
         return 413, {"error": "body_too_large"}

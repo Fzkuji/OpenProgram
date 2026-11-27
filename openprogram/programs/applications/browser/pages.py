@@ -1826,3 +1826,27 @@ def page_keys_for_socket_tab(ws, window_id: str, tab_id: str) -> list[str]:
         _log.debug("browser page key projection unavailable window_id=%s tab_id=%s",
                    window_id, tab_id, exc_info=True)
     return list(dict.fromkeys(key for key in keys if key))
+
+
+class _ForwardedOperations:
+    """What an agentic subprocess does on a browser Page, forwarded to the
+    worker so the preview follows it (the conversation runtime's
+    ``tool_subprocess_reports`` turn moment; the runtime never imports this
+    application)."""
+
+    kind = "browser_operation"
+
+    def forward(self, callback) -> None:
+        forward_operations_to_parent(callback)
+
+    def report(self, data: Mapping[str, Any], *, execution_id: str | None = None) -> None:
+        report_forwarded_operation(data, execution_id=execution_id)
+
+
+def _register_forwarded_operations() -> None:
+    from openprogram.runtime.conversation import turn_hooks
+
+    turn_hooks.register("tool_subprocess_reports", "browser", _ForwardedOperations())
+
+
+_register_forwarded_operations()

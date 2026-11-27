@@ -7,7 +7,7 @@ import mcp.types as mcp_types
 import pytest
 from mcp.shared.exceptions import McpError
 
-from openprogram.extensions.mcp.server.contracts import (
+from openprogram.interfaces.mcp_server.contracts import (
     get_mcp_tools,
     validate_tool_call,
 )

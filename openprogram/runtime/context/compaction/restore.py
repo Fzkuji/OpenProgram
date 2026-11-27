@@ -6,7 +6,8 @@ summary node so every later request sends the same bytes:
 
 - the plan the user approved last on this chain (Claude Code's plan
   attachment), cut to ``PLAN_TOKENS`` with a note saying so;
-- the open task: title, purpose, steps and the current step (Kimi Code
+- the sections Programs register (``register_section``): the task tools
+  add the open task, its title, purpose, steps and current step (Kimi Code
   and Hermes restore their todo board);
 - the background jobs still running, one line each (Claude Code);
 - the paths of files read and changed, never their contents, added to the
@@ -19,7 +20,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Iterable, Optional
+from typing import Any, Callable, Iterable, Optional
 
 _log = logging.getLogger(__name__)
 
@@ -34,6 +35,9 @@ READ_TOOLS = frozenset({"read"})
 WRITE_TOOLS = frozenset({"write", "edit"})
 #: Metadata key of the path lists on a summary node.
 RESTORED_FILES = "restored_files"
+#: The sections Programs add after the plan, in order: ``(heading, read)``
+#: (``register_section``).
+SECTIONS: list[tuple[str, Callable[[str], list[str]]]] = []
 
 
 def _tokens(text: str) -> int:
@@ -131,29 +135,16 @@ def _previous_files(graph: Any, covers: Iterable[str]) -> Optional[dict]:
     return (best.metadata or {}).get(RESTORED_FILES) if best is not None else None
 
 
-def _task_lines(session_id: str) -> list[str]:
-    """The task the running agent has open: its title, purpose, numbered
-    steps with status and result, and the step in progress. Tasks already
-    closed are in the summary, not here."""
-    from openprogram.programs.tools.planning.todo import shared as todo
-    task = todo.open_task(todo.load_tasks(session_id), todo.current_scope())
-    if task is None:
-        return []
-    lines = [str(task.get("title") or "").strip()]
-    if task.get("purpose"):
-        lines.append(str(task["purpose"]).strip())
-    steps = todo.steps_of(todo.load(session_id), str(task.get("id")))
-    current = None
-    for number, step in enumerate(steps, 1):
-        line = f"- [{step.get('status') or 'pending'}] {number} {str(step.get('subject') or '').strip()}"
-        if step.get("result"):
-            line += f" — {step['result']}"
-        lines.append(line)
-        if step.get("status") == "in_progress":
-            current = number
-    if current is not None:
-        lines.append(f"Current step: {current}")
-    return lines
+def register_section(heading: str, read: Callable[[str], list[str]]) -> None:
+    """Add a section after the approved plan: ``read(session_id)`` returns
+    its lines, none to leave it out. A Program registers the state it owns
+    (the task tools: the open task); registering a heading again replaces
+    its reader."""
+    for index, (existing, _) in enumerate(SECTIONS):
+        if existing == heading:
+            SECTIONS[index] = (heading, read)
+            return
+    SECTIONS.append((heading, read))
 
 
 def _job_lines(session_id: str) -> list[str]:
@@ -183,9 +174,10 @@ def restored(session_id: str, graph: Any, head_id: Optional[str],
         if left:
             kept += f"\n[Plan cut here: {left} more characters are in the approved plan.]"
         parts.append("## Approved plan\n" + kept)
-    task = _safely(_task_lines, session_id)
-    if task:
-        parts.append("## Open task\n" + "\n".join(task))
+    for heading, read in list(SECTIONS):
+        lines = _safely(read, session_id)
+        if lines:
+            parts.append(f"## {heading}\n" + "\n".join(lines))
     jobs = _safely(_job_lines, session_id)
     if jobs:
         parts.append("## Background jobs still running\n" + "\n".join(jobs))

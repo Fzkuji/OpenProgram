@@ -106,105 +106,6 @@ def _json_dumps(value: Any) -> str:
         return json.dumps(value, default=str)
 
 
-# ---------------------------------------------------------------------------
-# Client-executed tool search
-# ---------------------------------------------------------------------------
-#
-# A deferred tool loaded mid-conversation must not change bytes already sent.
-# The tools array is rendered before the conversation, so a tool added to it
-# (even at its end) makes the provider re-read everything after it. The
-# Responses API's client-executed ``tool_search`` puts a loaded tool where it
-# was loaded instead: the model's search is a ``tool_search_call`` item, and
-# the loaded definitions travel in the ``tool_search_output`` item that
-# answers it, at the end of the input. The tools array then stays as it was.
-
-#: The registered loader tool that maps onto the Responses ``tool_search`` tool.
-TOOL_SEARCH_NAME = "tool_search"
-
-#: The tag around a search's note sent after its ``tool_search_output``.
-SEARCH_NOTE_TAG = "tool-search-result"
-
-
-def _tool_search_tool(tool: "Tool", api: str | None, model_id: str | None) -> dict[str, Any]:
-    from openprogram.models.providers.schema import normalize_for
-
-    return {
-        "type": "tool_search",
-        "execution": "client",
-        "description": tool.description,
-        "parameters": normalize_for(api, tool.parameters, model_id),
-    }
-
-
-def carried_tool_names(input_items: list[dict[str, Any]]) -> set[str]:
-    """Names of the tools a ``tool_search_output`` in ``input_items`` loads."""
-    names: set[str] = set()
-    for item in input_items:
-        if isinstance(item, dict) and item.get("type") == "tool_search_output":
-            for spec in item.get("tools") or ():
-                if isinstance(spec, dict) and spec.get("name"):
-                    names.add(spec["name"])
-    return names
-
-
-def _carried_search(message: Any, model: "Model") -> list[dict[str, Any]]:
-    """The one search pair that loads what a compaction summary carries.
-
-    A summary takes the place of the searches that loaded its carried tools
-    (``shared.tool_loads.carried_records``); one ``tool_search_call`` /
-    ``tool_search_output`` pair in front of it loads them again, each with
-    the definition the conversation first sent, so the tools array stays as
-    it was. Its call id comes from the names, so every request after the
-    compaction sends the same bytes. A carried name with no stored
-    definition is left to the tools array.
-    """
-    from openprogram.models.providers.shared.tool_loads import carried_records
-    from openprogram.models.providers.types import Tool as _Tool
-
-    records = [entry for entry in carried_records(message)
-               if isinstance(entry.get("definition"), dict)
-               and entry["definition"].get("name") == entry["name"]
-               and isinstance(entry["definition"].get("parameters"), dict)]
-    if not records:
-        return []
-    names = [entry["name"] for entry in records]
-    call_id = f"carried_{_short_hash(','.join(names))}"
-    return [
-        {
-            "type": "tool_search_call",
-            "execution": "client",
-            "call_id": call_id,
-            "status": "completed",
-            "arguments": {"select": "select:" + ",".join(names)},
-        },
-        {
-            "type": "tool_search_output",
-            "execution": "client",
-            "call_id": call_id,
-            "status": "completed",
-            "tools": [_function_tool(_Tool(**entry["definition"]), model.api, model.id)
-                      for entry in records],
-        },
-    ]
-
-
-def loads_searched_tools_from_input(model: Any) -> bool:
-    """Whether a request to ``model`` keeps a searched tool loaded only while
-    the search that loaded it is in the input (``carried_tool_names``): its
-    provider declares the Responses form for its API
-    (``settings.tool_search_spec``)."""
-    from openprogram.models.providers.settings.tool_search_spec import model_tool_search_form
-
-    return model_tool_search_form(model) == "responses"
-
-
-def native_tool_search(model: Any, context: "Context") -> bool:
-    """Whether this request sends its searches natively: the model takes the
-    Responses form and ``context`` offers the loader."""
-    return loads_searched_tools_from_input(model) and any(
-        getattr(t, "name", None) == TOOL_SEARCH_NAME for t in (context.tools or ()))
-
-
 def _short_hash(s: str) -> str:
     """Fast deterministic hash to shorten long strings (mirrors shortHash in TS)."""
     h1 = 0xDEADBEEF
@@ -227,14 +128,8 @@ def convert_responses_messages(
     model: "Model",
     context: "Context",
     include_system_prompt: bool = True,
-    native_tool_search: bool = False,
 ) -> list[dict[str, Any]]:
-    """Convert internal messages to OpenAI Responses API input format.
-
-    With ``native_tool_search`` a ``tool_search`` call and its result become
-    the client-executed ``tool_search_call`` / ``tool_search_output`` pair,
-    the output carrying the loaded tools' definitions.
-    """
+    """Convert internal messages to OpenAI Responses API input format."""
     from openprogram.models.providers.shared.transform_messages import transform_messages
 
     # transform_messages calls this with 3 args (id, model, msg) per its
@@ -268,17 +163,11 @@ def convert_responses_messages(
         messages.append({"role": role, "content": sanitize_surrogates(context.system_prompt)})
 
     transformed = transform_messages(context.messages, model, normalize_tool_call_id)
-    # call_ids of the tool_search calls sent as tool_search_call items; their
-    # results go as tool_search_output, never as function_call_output.
-    native_search_calls: set[str] = set()
 
     for msg_index, msg in enumerate(transformed):
         role = getattr(msg, "role", None)
 
         if role == "user":
-            if native_tool_search:
-                # A summary rendered as user input carries tools too.
-                messages.extend(_carried_search(msg, model))
             content_val = msg.content
             if isinstance(content_val, str):
                 messages.append({
@@ -304,8 +193,6 @@ def convert_responses_messages(
                 messages.append({"role": "user", "content": content_items})
 
         elif role == "assistant":
-            if native_tool_search:
-                messages.extend(_carried_search(msg, model))
             output: list[dict[str, Any]] = []
             # A turn from any OTHER model (different id, provider or api)
             # carries fc_ item ids the target upstream never issued —
@@ -345,8 +232,7 @@ def convert_responses_messages(
                     elif len(msg_id) > 64:
                         msg_id = f"msg_{_short_hash(msg_id)}"
                     # NOTE: no "status" field here. `status` is an OUTPUT-only
-                    # field; some Responses endpoints (notably openai-codex's
-                    # /responses) reject it on an INPUT item with
+                    # field; some Responses endpoints reject it on an INPUT item with
                     # "Unknown parameter: input[N].status". An input
                     # message item never needs it.
                     output.append({
@@ -367,18 +253,6 @@ def convert_responses_messages(
                     if is_foreign_turn and item_id and item_id.startswith("fc_"):
                         item_id = None
 
-                    if native_tool_search and block.name == TOOL_SEARCH_NAME:
-                        # No item id: the backend matches the output by
-                        # call_id, and an id from another turn may not resolve.
-                        output.append({
-                            "type": "tool_search_call",
-                            "execution": "client",
-                            "call_id": call_id,
-                            "status": "completed",
-                            "arguments": dict(getattr(block, "arguments", {}) or {}),
-                        })
-                        native_search_calls.add(call_id)
-                        continue
 
                     fc: dict[str, Any] = {
                         "type": "function_call",
@@ -419,39 +293,6 @@ def convert_responses_messages(
             has_text = bool(text_result)
 
             call_id = msg.tool_call_id.split("|")[0]
-            if call_id in native_search_calls:
-                # The output carries the definitions the result's load record
-                # stored when the tools were loaded (``shared.tool_loads``),
-                # never the result text: the item is the same bytes on every
-                # request however the text ages and whatever the tools'
-                # schemas become. A tool the turn no longer offers is refused
-                # when called, like any unknown tool.
-                from openprogram.models.providers.shared.tool_loads import load_records, search_note
-                from openprogram.models.providers.types import Tool as _Tool
-
-                tools = [] if msg.is_error else [
-                    _function_tool(_Tool(**entry["definition"]), model.api, model.id)
-                    for entry in load_records(getattr(msg, "details", None))
-                ]
-                messages.append({
-                    "type": "tool_search_output",
-                    "execution": "client",
-                    "call_id": call_id,
-                    "status": "completed",
-                    "tools": tools,
-                })
-                # The output has no place for words, and an empty list reads
-                # as "no such tool". What the search has to say beyond its
-                # definitions (the tool is already callable, the name is
-                # unknown, nothing matched) follows as its own item, from
-                # the note the result stored, so the bytes never change.
-                note = search_note(getattr(msg, "details", None))
-                if note:
-                    messages.append({"role": "user", "content": [{
-                        "type": "input_text",
-                        "text": sanitize_surrogates(f"<{SEARCH_NOTE_TAG}>\n{note}\n</{SEARCH_NOTE_TAG}>"),
-                    }]})
-                continue
             messages.append({
                 "type": "function_call_output",
                 "call_id": call_id,
@@ -482,16 +323,8 @@ def convert_responses_tools(
     tools: "list[Tool]",
     api: str | None = "openai-responses",
     model_id: str | None = None,
-    *,
-    native_tool_search: bool = False,
-    carried: "set[str] | frozenset[str]" = frozenset(),
 ) -> list[dict[str, Any]]:
     """Convert tools to OpenAI Responses API function format.
-
-    With ``native_tool_search`` the ``tool_search`` loader becomes the
-    client-executed Responses ``tool_search`` tool, and a tool named in
-    ``carried`` (one a ``tool_search_output`` in the input already loads)
-    is left out, so loading it does not change the array.
 
     Schema dialect + the ``"strict"`` flag are both decided by the
     unified ``providers.schema`` layer keyed on ``(api, model_id)`` —
@@ -501,21 +334,11 @@ def convert_responses_tools(
     their ``model.api`` / ``model.id``; the api default keeps old
     call-by-position working.
     """
-    converted: list[dict[str, Any]] = []
-    for t in tools:
-        if native_tool_search:
-            if t.name == TOOL_SEARCH_NAME:
-                converted.append(_tool_search_tool(t, api, model_id))
-                continue
-            if t.name in carried:
-                continue
-        converted.append(_function_tool(t, api, model_id))
-    return converted
+    return [_function_tool(t, api, model_id) for t in tools]
 
 
 def _function_tool(t: "Tool", api: str | None, model_id: str | None) -> dict[str, Any]:
-    """One tool as a Responses function definition, in the tools array or
-    in a ``tool_search_output`` alike."""
+    """One tool as a Responses function definition."""
     from openprogram.models.providers.schema import normalize_for, wants_strict_flag
 
     return {
@@ -667,18 +490,6 @@ async def process_responses_stream(
                 })
                 stream.push({"type": "toolcall_start", "content_index": len(blocks) - 1, "partial": output})
 
-            elif item_type == "tool_search_call":
-                # A client-executed search is the loader tool's call: it runs
-                # like any tool and is sent back as a tool_search_call.
-                blocks.append({
-                    "type": "toolCall",
-                    "id": f"{item_dict.get('call_id', '')}|{item_dict.get('id', '')}",
-                    "name": TOOL_SEARCH_NAME,
-                    "arguments": {},
-                    "index": out_idx,
-                })
-                stream.push({"type": "toolcall_start", "content_index": len(blocks) - 1, "partial": output})
-
             elif item_type == "web_search_call":
                 blocks.append({
                     "type": "serverToolUse",
@@ -818,25 +629,6 @@ async def process_responses_stream(
                         "arguments": args,
                     }
                     stream.push({"type": "toolcall_end", "content_index": len(blocks) - 1, "tool_call": tool_call, "partial": output})
-
-            elif item_type == "tool_search_call":
-                raw_args = item_dict.get("arguments")
-                args = (raw_args if isinstance(raw_args, dict)
-                        else parse_streaming_json(raw_args or "{}"))
-                if not isinstance(args, dict):
-                    args = {}
-                i = _find(out_idx, "toolCall")
-                if i < 0 or blocks[i].get("type") != "toolCall":
-                    blocks.append({"type": "toolCall", "name": TOOL_SEARCH_NAME, "arguments": {}})
-                    i = len(blocks) - 1
-                    stream.push({"type": "toolcall_start", "content_index": i, "partial": output})
-                block = blocks[i]
-                block["id"] = f"{item_dict.get('call_id', '')}|{item_dict.get('id', '')}"
-                block["arguments"] = args
-                block.pop("index", None)
-                tool_call = {"type": "toolCall", "id": block["id"],
-                             "name": TOOL_SEARCH_NAME, "arguments": args}
-                stream.push({"type": "toolcall_end", "content_index": i, "tool_call": tool_call, "partial": output})
 
             elif item_type == "web_search_call":
                 i = _find(out_idx, "serverToolUse")

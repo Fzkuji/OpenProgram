@@ -103,8 +103,9 @@ TOOL_PROGRAMS: dict[str, str] = {
 
 
 def _builtin_applications_root() -> str:
-    import openprogram.programs.applications as _applications
-    return os.path.dirname(_applications.__file__)
+    # ``programs/applications/`` beside this package; its folder is all that
+    # is asked, so the applications are not imported for it.
+    return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "applications")
 
 
 def builtin_application_names() -> list[str]:

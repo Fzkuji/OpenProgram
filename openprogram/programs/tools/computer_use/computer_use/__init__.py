@@ -15,7 +15,12 @@ Dependencies point one way: the tool, through routing, to the providers, to the 
 - ``desktop/`` — the platform backends: ``macos/``, ``windows/``, ``linux/``, what they share in
   ``common/``, and ``embedding/`` (another application's window shown in an App tab)
 - ``guides/`` — the guide text of each type and of code
+- ``runtime_hooks.py`` — the answers to what a conversation turn asks of the tool (its targets, devices,
+  Pages call) and the release of what a run kept
 """
 from .tool import DESCRIPTION, NAME, computer_use
+from . import runtime_hooks as _runtime_hooks
+
+_runtime_hooks.register()
 
 __all__ = ["DESCRIPTION", "NAME", "computer_use"]

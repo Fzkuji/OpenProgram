@@ -20,7 +20,7 @@
 <li class="flow-end"><strong>策略</strong><small><code translate="no">in_order</code>、<code translate="no">evenly</code>、<code translate="no">least_used</code>（今天用得最少）</small></li>
 </ol>
 <p>绑定和固定存在会话 metadata 里（<code translate="no">credential_binding</code>、<code translate="no">credential_pin</code>）；调用先认上下文里的对话，再认 <code translate="no">Runtime</code> 发出的缓存键（<code translate="no">op-…</code>），子会话顺着 <code translate="no">parent_session_id</code> 找到所属对话，所以程序、agent 方法、子 agent 和 Goal 轮次都用对话固定或绑定的密钥。</p>
-<p>所有 adapter 的流都由同一个 <code translate="no">with_credential()</code>（<code translate="no">models/auth/selection.py</code>）包住；adapter 的 SDK 自己不重试。</p>
+<p>所有 adapter 的流都由同一个 <code translate="no">with_credential()</code>（<code translate="no">models/providers/streaming/credential_failover.py</code>）包住；adapter 的 SDK 自己不重试。</p>
 <h2>出错时怎么办</h2>
 <table class="stack fixed">
 <thead><tr><th scope="col">错误</th><th scope="col">凭据</th><th scope="col">请求</th></tr></thead>
@@ -46,7 +46,7 @@
 <tr><th scope="row">用量</th><td>每条用量记录 <code translate="no">credential_id</code>；额度按凭据读取</td></tr>
 </tbody>
 </table>
-<p>粘贴的密钥用 <code translate="no">POST /api/providers/{p}/credentials/check-key</code> 检查，这一步不保存；点“添加密钥”或“更换密钥”时连同名称一次保存，并沿用刚才的检查结果。添加登录沿用 <code translate="no">/api/providers/{p}/login/{start,poll,submit,cancel}</code>。对列表的修改都经过 <code translate="no">models/auth/manage.py</code>，路由和 CLI 共用。</p>
+<p>粘贴的密钥用 <code translate="no">POST /api/providers/{p}/credentials/check-key</code> 检查，这一步不保存；点“添加密钥”或“更换密钥”时连同名称一次保存，并沿用刚才的检查结果。添加登录沿用 <code translate="no">/api/providers/{p}/login/{start,poll,submit,cancel}</code>。对列表的修改都经过 <code translate="no">models/listing/manage.py</code>，路由和 CLI 共用。</p>
 <h2>旧数据迁移</h2>
 <p>在新布局上第一次启动时，把旧的按账号分开的文件迁移一次（<code translate="no">models/auth/carry_over.py</code>）：</p>
 <ol>

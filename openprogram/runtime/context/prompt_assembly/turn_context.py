@@ -6,7 +6,7 @@ One storage form: the user node's ``turn_context`` list, each entry
 - An **attachment** is a fact about this turn: the date it was sent on
   (``date``, only when it differs from the last date the history shows),
   that the reply before it was stopped (``interrupted``,
-  :func:`interruption_note`), a rewind the user made before it
+  ``execution.run_control.stop_reasons.interruption_note``), a rewind the user made before it
   (``rewind``), the plan-mode note (``plan_mode``), the Goal note
   (``goal``) and its todo reminder (``todo_reminder``), the memory it
   recalled (``memory_prefetch``), a scheduled run's note (``run_note``), what
@@ -268,46 +268,6 @@ def catalog_stored(history: Any, *, exclude: Optional[str] = None, ident: str = 
 
 
 # The reply before this turn was stopped
-
-_INTERRUPTION_NOTES = {
-    "cancel.user": "The user stopped your previous reply before it finished; its last part is incomplete.",
-    "cancel.parent": ("Your previous reply was stopped because the task that started it was stopped; "
-                      "its last part is incomplete."),
-    "cancel.session": ("Your previous reply was stopped when the whole conversation was stopped; "
-                       "its last part is incomplete."),
-}
-_TIME_LIMIT_NOTE = "Your previous reply was stopped by its time limit; its last part is incomplete."
-_RESTART_NOTE = ("Your previous reply was cut off by a service restart, not by the user; "
-                 "continue from where it left off if the next message asks for it.")
-_OTHER_NOTE = "Your previous reply was stopped before it finished."
-_CUT_TOOLS_NOTE = " A tool call that was stopped may have partly run."
-
-
-def interruption_note(interruption: Any) -> str:
-    """What the turn after a stopped reply is told, beside its message.
-
-    A fact and, when a tool call was stopped or never ran, that it may have
-    partly run (Codex ``<turn_aborted>``), put in front of the next user
-    message (Grok Build) rather than in the assistant's place, where a
-    model repeats it (Hermes). Written once, on that message's node.
-    """
-    if not isinstance(interruption, Mapping):
-        return ""
-    from openprogram.runtime.execution.run_control.stop_reasons import (
-        RESTART_REASONS, TIME_LIMIT_REASONS,
-    )
-
-    reason = interruption.get("reason_code")
-    if reason in RESTART_REASONS:
-        note = _RESTART_NOTE
-    elif reason in TIME_LIMIT_REASONS:
-        note = _TIME_LIMIT_NOTE
-    else:
-        note = _INTERRUPTION_NOTES.get(str(reason), _OTHER_NOTE)
-    if interruption.get("cut_tools"):
-        note += _CUT_TOOLS_NOTE
-    return note
-
 
 def reply_interruption(row: Optional[Mapping]) -> Optional[dict]:
     """The interruption a stored reply records, or None when it ended.
@@ -585,7 +545,6 @@ __all__ = [
     "conversation_audience",
     "entries",
     "entry_text",
-    "interruption_note",
     "kept_sections",
     "last_sections",
     "last_stored",

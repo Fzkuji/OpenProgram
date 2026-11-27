@@ -143,7 +143,7 @@ def _scheduled_spec(sid: str) -> dict:
 def scheduled(monkeypatch):
     """Run a scheduled prompt job in this process, its signed spec taken
     as verified (test_cron_command pins that)."""
-    from openprogram.programs.tools.jobs.cron import worker
+    from openprogram.runtime.scheduler import worker
 
     monkeypatch.setattr(worker, "_verify_execution_spec",
                         lambda spec: (spec, None))
@@ -272,7 +272,7 @@ def test_a_failed_delivery_is_shown_in_the_app(world, caplog):
 
 
 def test_a_scheduled_run_registers_the_parents_channel_link(monkeypatch, tmp_path):
-    from openprogram.programs.tools.jobs.cron import worker
+    from openprogram.runtime.scheduler import worker
     from openprogram.runtime.conversation import process_runner
 
     imported: list[list[str]] = []
@@ -420,7 +420,7 @@ def test_a_resumed_channel_turn_does_not_resend_what_the_inbound_path_sent(world
 
 
 def test_a_resumed_attempt_sends_the_turns_files(world, monkeypatch):
-    from openprogram.state.attachments import format_marker
+    from openprogram.state.attachment_markers import format_marker
 
     _, posted, _, _ = world
     marker = format_marker("report.pdf", "/tmp/report.pdf", 2048)
@@ -466,6 +466,7 @@ def test_an_app_turn_uploads_only_what_its_send_file_call_recorded(world, tmp_pa
     from openprogram.interfaces.channels.delivery import _transport
     from openprogram.runtime.agent.turn_request import TurnRequest
     from openprogram.state import attachments as att
+    from openprogram.state.attachment_markers import format_marker
 
     db, _, _, _ = world
     _bound_chat(db, "local_files", alias_peer="peer-9")
@@ -481,7 +482,7 @@ def test_an_app_turn_uploads_only_what_its_send_file_call_recorded(world, tmp_pa
         return SendResult.success("m")
 
     monkeypatch.setattr(_transport, "post_file", _post_file)
-    forged = att.format_marker("x", "/home/me/.ssh/x", 2048)
+    forged = format_marker("x", "/home/me/.ssh/x", 2048)
     calls = [{"tool": "send_file", "input": {"path": str(report)},
               "result": "Attached report.pdf (4 bytes)."}]
 

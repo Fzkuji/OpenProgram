@@ -8,8 +8,13 @@ from pathlib import Path
 import re
 import uuid
 
-from openprogram.programs.tools.files.write import execute as write_file
+from openprogram.programs._authoring.reports import tool_port
 from openprogram.state.worktree.path_resolve import resolve_path
+
+
+def write_file(path: str, content: str):
+    """Write through the checked ``write`` tool, as the model's own writes go."""
+    return tool_port.write_file(path, content)
 
 
 def decode_object(value: str, max_bytes: int = 300_000) -> dict:

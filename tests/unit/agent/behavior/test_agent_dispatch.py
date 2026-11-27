@@ -131,7 +131,7 @@ def test_send_creates_no_generation(parent_turn):
     """A message reaches an agent that already exists, so it spends a
     message and leaves the generation count alone — the target and the
     reply turn both run at the sender's count."""
-    from openprogram.programs.tools.agents.send_message.send_message.depth import (
+    from openprogram.runtime.jobs.chain_budgets import (
         set_chain_generations,
     )
     tok = set_chain_generations(1)
@@ -229,7 +229,7 @@ def test_self_target_refused(parent_turn):
 
 
 def test_message_budget_guard(parent_turn, monkeypatch):
-    from openprogram.programs.tools.agents.send_message.send_message.depth import (
+    from openprogram.runtime.jobs.chain_budgets import (
         set_chain_messages, _chain_messages,
     )
     from openprogram.runtime.permissions.refusal import Refused
@@ -244,7 +244,7 @@ def test_message_budget_guard(parent_turn, monkeypatch):
 
 
 def test_hop_limit_refuses_the_fifth_hop(parent_turn):
-    from openprogram.programs.tools.agents.send_message.send_message.depth import (
+    from openprogram.runtime.jobs.chain_budgets import (
         set_chain_messages, _chain_messages,
     )
     from openprogram.runtime.permissions.refusal import Refused

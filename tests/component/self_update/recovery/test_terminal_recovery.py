@@ -42,6 +42,7 @@ def terminal(v, monkeypatch, outcome):
     v.commands.clear()
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("outcome", ["succeeded", "rolled_back"])
 @pytest.mark.parametrize("concurrent", [False, True])
 def test_terminal_controller_reentry_clears_only_after_fresh_verification(accepted, monkeypatch, outcome, concurrent):
@@ -67,6 +68,7 @@ def test_terminal_controller_reentry_clears_only_after_fresh_verification(accept
     assert len(v.commands) == 2
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("damage", ["decision", "journal", "app", "doctor", "owner", "evidence_during_probe"])
 def test_terminal_cleanup_preserves_maintenance_on_changed_evidence(accepted, monkeypatch, damage):
     from openprogram.operations.self_update.verification import system_probe
@@ -134,7 +136,8 @@ def test_aborted_prepared_transaction_recovers_without_activation(live, installa
         from openprogram.runtime.permissions import authority
         from openprogram.programs.tools.system import self_update as public_tools
         from tests.component.programs.tools.test_self_update_tools import _request
-        monkeypatch.setattr(public_tools, "owner_principal_id", authority.owner_principal_id)
+        from openprogram.operations.self_update import candidate_source
+        monkeypatch.setattr(candidate_source, "owner_principal_id", authority.owner_principal_id)
         turn = _request(session_id=request.session_id)
         monkeypatch.setattr(public_tools, "_turn_context", lambda: (turn, "a1"))
         result = asyncio.run(public_tools.self_update.execute("cancel-recovery", {"action": "cancel", "update_id": request.update_id}, None, None))

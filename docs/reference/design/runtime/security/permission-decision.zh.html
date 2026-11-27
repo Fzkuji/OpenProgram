@@ -79,7 +79,7 @@
 <tr><th scope="row">身份</th><td>能力、非 Owner 范围、页面脚本、框架操作、引用的记忆</td><td><code translate="no">permissions/identity.py</code>、<code translate="no">tool_authority.py</code>、工具抛出的 <code translate="no">Refused</code></td></tr>
 <tr><th scope="row">规则</th><td>deny、ask、allow 规则，外发暂扣，hook</td><td><code translate="no">permissions/rule.py</code>、<code translate="no">runtime/events/tool_gate.py</code></td></tr>
 <tr><th scope="row">模式</th><td>上表</td><td><code translate="no">_mode_decision</code></td></tr>
-<tr><th scope="row">沙箱</th><td>沙箱外的路径和网络，仅在 Sandbox 打开时</td><td><code translate="no">host/sandbox/</code>、<code translate="no">programs/_host/execution.py</code></td></tr>
+<tr><th scope="row">沙箱</th><td>沙箱外的路径和网络，仅在 Sandbox 打开时</td><td><code translate="no">host/sandbox/</code>、<code translate="no">runtime/agent/tool_execution.py</code></td></tr>
 <tr><th scope="row">正确性</th><td>参数检查、先读后写、审批期间文件被改、审查过期</td><td>工具代码，以错误或重试返回模型</td></tr>
 </tbody>
 </table>
@@ -127,7 +127,7 @@
 <tbody>
 <tr><th scope="row">过期状态</th><td><code translate="no">PERMISSION_REVIEW_STALE</code>、<code translate="no">APPROVAL_FILE_CHANGED</code> 和等待恢复不匹配，经 <code translate="no">refusal.stale(...)</code> 作为重试指令返回，不算拦截</td></tr>
 <tr><th scope="row">MCP 服务器</th><td>面向模型的文字按判定代码取自 <code translate="no">refusal.py</code>（<code translate="no">MCP_GATE_REFUSALS</code>），所以 <code translate="no">_trusted_approval_denial</code> 识别的正是门产生的字符串</td></tr>
-<tr><th scope="row">单一来源测试</th><td><code translate="no">tests/unit/security/test_refusal_single_source.py</code> 遍历 <code translate="no">openprogram/programs/</code>、<code translate="no">openprogram/runtime/permissions/</code>、<code translate="no">openprogram/runtime/agent/loop/</code> 和 <code translate="no">openprogram/extensions/mcp/server/</code>。在 <code translate="no">refusal.py</code> 之外发现方括号拒绝字面量、字典或 <code translate="no">details=</code> 中的 <code translate="no">"denied": True</code>、<code translate="no">"sandbox policy:"</code> 字面量或 <code translate="no">raise PermissionError(</code> 时失败。每个例外都在显式白名单上并写明原因。</td></tr>
+<tr><th scope="row">单一来源测试</th><td><code translate="no">tests/unit/security/test_refusal_single_source.py</code> 遍历 <code translate="no">openprogram/programs/</code>、<code translate="no">openprogram/runtime/permissions/</code>、<code translate="no">openprogram/runtime/agent/loop/</code> 和 <code translate="no">openprogram/interfaces/mcp_server/</code>。在 <code translate="no">refusal.py</code> 之外发现方括号拒绝字面量、字典或 <code translate="no">details=</code> 中的 <code translate="no">"denied": True</code>、<code translate="no">"sandbox policy:"</code> 字面量或 <code translate="no">raise PermissionError(</code> 时失败。每个例外都在显式白名单上并写明原因。</td></tr>
 </tbody>
 </table>
 </details>

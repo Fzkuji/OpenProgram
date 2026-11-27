@@ -135,7 +135,7 @@ def test_drain_leaves_entry_on_failed_delivery(two_sessions, busy_target, monkey
 def test_queued_delivery_inherits_both_chain_counts(two_sessions, busy_target, monkeypatch):
     """A queued hop spends a message like a direct one, and creates no
     agent, so the generation count crosses the queue unchanged."""
-    from openprogram.programs.tools.agents.send_message.send_message.depth import (
+    from openprogram.runtime.jobs.chain_budgets import (
         set_chain_generations, set_chain_messages,
     )
     calls = _capture_async(monkeypatch)
@@ -372,7 +372,7 @@ def test_an_agent_name_reaches_its_one_conversation(two_sessions, monkeypatch):
 
 
 def test_the_hourly_send_window_survives_a_worker_restart(two_sessions, monkeypatch):
-    from openprogram.programs.tools.agents.send_message.send_message import depth
+    from openprogram.runtime.jobs import chain_budgets as depth
     monkeypatch.setattr(depth, "max_sends_per_hour", lambda: 1)
     _capture_async(monkeypatch)
     assert _send_message_impl("one", to="t1:b1").startswith("[delivered]")
@@ -384,7 +384,7 @@ def test_the_hourly_send_window_survives_a_worker_restart(two_sessions, monkeypa
 
 
 def test_a_message_back_to_a_conversation_waiting_on_this_chain_is_refused(two_sessions, monkeypatch):
-    from openprogram.programs.tools.agents.send_message.send_message import depth
+    from openprogram.runtime.jobs import chain_budgets as depth
     calls = _capture_async(monkeypatch)
     token = depth.set_chain_ancestors(("t1",))
     try:
@@ -405,7 +405,7 @@ def test_a_cross_conversation_send_carries_who_waits_above_it(two_sessions, monk
 
 def test_a_message_to_ones_running_helper_steers_it(two_sessions, busy_target, monkeypatch):
     from types import SimpleNamespace
-    from openprogram.programs.tools.agents.send_message.send_message import steer
+    from openprogram.runtime.conversation.peer_agents import steer
     monkeypatch.setattr(steer, "spawned_running_job", lambda run_session, tip, sid: SimpleNamespace(id="j_help"))
     submitted = []
     monkeypatch.setattr(steer, "submit", lambda execution_id, text, **kw: submitted.append(
@@ -427,7 +427,7 @@ def test_a_message_to_ones_running_helper_steers_it(two_sessions, busy_target, m
 
 def test_a_steer_that_cannot_be_taken_queues_as_before(two_sessions, busy_target, monkeypatch):
     from types import SimpleNamespace
-    from openprogram.programs.tools.agents.send_message.send_message import steer
+    from openprogram.runtime.conversation.peer_agents import steer
     monkeypatch.setattr(steer, "spawned_running_job", lambda *a: SimpleNamespace(id="j_help"))
     monkeypatch.setattr(steer, "submit", lambda *a, **k: None)
     _capture_async(monkeypatch)
@@ -435,7 +435,7 @@ def test_a_steer_that_cannot_be_taken_queues_as_before(two_sessions, busy_target
 
 
 def test_only_the_spawner_finds_its_helper(monkeypatch):
-    from openprogram.programs.tools.agents.send_message.send_message import steer
+    from openprogram.runtime.conversation.peer_agents import steer
     from openprogram.runtime.jobs.runner import _current_job_id
     from openprogram.runtime.jobs.types import Job, JobStatus
     helper = Job(id="j_help", parent_session_id="t1", prompt="x", agent_id="main", status=JobStatus.RUNNING,
@@ -456,7 +456,7 @@ def test_a_running_helper_addressed_by_its_reply_is_steered_not_run_twice(two_se
     writing (``<job>_user_reply``) and its Job has no head yet. A message
     from its spawner reaches it at its next tool step; it used to find the
     branch idle and start a second turn of the helper beside the first."""
-    from openprogram.programs.tools.agents.send_message.send_message import steer
+    from openprogram.runtime.conversation.peer_agents import steer
     from openprogram.runtime.jobs.store import save_job
     from openprogram.runtime.jobs.types import Job, JobStatus
     s = two_sessions

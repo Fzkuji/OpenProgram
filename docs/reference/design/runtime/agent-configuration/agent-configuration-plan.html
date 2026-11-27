@@ -35,7 +35,7 @@
 <table class="stack fixed">
 <thead><tr><th scope="col">Area and existing boundary</th><th scope="col">Responsibility</th></tr></thead>
 <tbody>
-<tr><th scope="row">Persistence: <code translate="no">runtime/agent_registry/manager.py</code>, <code translate="no">workspace.py</code></th><td>Keep AgentSpec and storage owner; proposed colocated <code translate="no">configuration.py</code> / <code translate="no">resolution.py</code> for typed values and pure logic</td></tr>
+<tr><th scope="row">Persistence: <code translate="no">runtime/agent_registry/manager.py</code>, <code translate="no">workspace.py</code></th><td>Keep AgentSpec and storage owner; proposed colocated configuration and resolution modules for typed values and pure logic</td></tr>
 <tr><th scope="row">API: <code translate="no">interfaces/server/routes/catalog/agents.py</code></th><td>One atomic manager operation; typed preview, revision and readiness responses; no route-local merge or second tools write</td></tr>
 <tr><th scope="row">Function calls: <code translate="no">runtime/agent/agent_function.py</code>, <code translate="no">llm.py</code>, <code translate="no">runtime/execution.py</code></th><td>Normalize old and new arguments once; immutable scoped configuration; keep return and validation, no Program/MCP tool loop, explicit authorized native search</td></tr>
 <tr><th scope="row">Durable dispatch: <code translate="no">programs/tools/agents/agent/agent/agent.py</code>, <code translate="no">runtime/conversation/peer_agents/sub_agent_run.py</code></th><td>Reuse dispatch and task lifecycle; persist snapshot and lineage through actual run and DAG stores</td></tr>

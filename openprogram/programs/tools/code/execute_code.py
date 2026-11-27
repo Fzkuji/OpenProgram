@@ -111,7 +111,8 @@ def execute(
     # / ``<stdin>`` frames read as <string>); remote backends fall
     # back to ``python -`` + stdin since the tempfile lives on the
     # host filesystem and isn't reachable from docker/ssh.
-    from openprogram.host.backend import get_active_backend, LocalBackend
+    from openprogram.host.backend import LocalBackend
+    from openprogram.host.machines import get_active_backend
 
     backend = get_active_backend()
     started = time.time()

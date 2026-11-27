@@ -3,11 +3,10 @@
 Loading a deferred tool is written into the result of the call that loaded
 it, as ``ToolResultMessage.details["loads"]``: one ``{"name", "definition"}``
 per tool, the definition being the tool's ``{"name", "description",
-"parameters"}`` at the moment it was loaded. A provider that loads a
-searched tool from the search's own result (the Responses
-``tool_search_output``) sends that definition as it was stored, so an
-aged, truncated or re-rendered result text and a later schema change
-leave the bytes already sent alone.
+"parameters"}`` at the moment it was loaded. A provider that renders a
+load from its record (Anthropic's deferred entries) sends that definition
+as it was stored, so an aged, truncated or re-rendered result text and a
+later schema change leave the bytes already sent alone.
 
 The record is a durable detail of a tool result (``durable_details``),
 with the attachment sent after it and where its whole text is kept: the

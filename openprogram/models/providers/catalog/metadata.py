@@ -40,10 +40,8 @@ from .local import LOCAL_PROVIDERS, is_local_provider
 PROVIDER_LABELS: dict[str, str] = {
     **{pid: info[0] for pid, info in LOCAL_PROVIDERS.items()},
     "openai": "OpenAI",
-    "openai-codex": "OpenAI Codex",
     "anthropic": "Anthropic",
     "google": "Google AI",
-    "gemini-subscription": "Gemini CLI",
     "azure-openai-responses": "Azure OpenAI",
     "amazon-bedrock": "Amazon Bedrock",
     "openrouter": "OpenRouter",
@@ -62,7 +60,6 @@ PROVIDER_LABELS: dict[str, str] = {
     "minimax-coding-plan": "MiniMax Token Plan (International)",
     "minimax-cn-coding-plan": "MiniMax Token Plan (CN)",
     "huggingface": "HuggingFace",
-    "github-copilot": "GitHub Copilot",
     "kimi-coding": "Kimi Coding",
     "vercel-ai-gateway": "Vercel AI Gateway",
     "opencode": "OpenCode",
@@ -70,20 +67,12 @@ PROVIDER_LABELS: dict[str, str] = {
     "opencode-go": "OpenCode Go",
     "deepseek": "DeepSeek",
     "atlascloud": "Atlas Cloud",
-    # Claude via local HTTP proxy daemon (replaces the old Claude Code
-    # CLI provider). Tools come from OpenProgram's own registry instead
-    # of the CLI's built-ins.
-    "xai-subscription": "Grok Subscription",
-    # CLI-backed:
-    "gemini-cli": "Gemini CLI",
 }
 
 
-# CLI-backed providers aren't in the HTTP provider registry. Currently
-# empty: 'gemini-cli' historically lived here, but it shares one
-# Runtime + auth flow with 'gemini-subscription' (the Cloud Code Assist
-# endpoint), so listing it separately just duplicated the row. New
-# CLI-only backends with no HTTP counterpart can be added back here.
+# CLI-backed providers aren't in the HTTP provider registry. Empty: a
+# vendor's own program runs as an outside-agent harness instead
+# (runtime/harnesses/).
 CLI_PROVIDERS: list[dict[str, Any]] = []
 
 
@@ -110,8 +99,6 @@ FETCH_MODELS_PROVIDERS = frozenset({
     #   google*        — custom endpoints / OAuth
     #   azure-*        — needs deployment name not model id
     #   amazon-bedrock — AWS SigV4
-    #   openai-codex   — ChatGPT backend, no public listing (403)
-    #   github-copilot — private OAuth with custom headers
     #   opencode       — not verified; add if/when tested
 })
 
@@ -277,7 +264,9 @@ def _credential_provider_ids() -> frozenset[str]:
     try:
         from openprogram.models.auth.credential_provider import get_credential_provider
         from openprogram.models.auth.account.aliases import resolve
-        return frozenset(resolve(pool.provider_id) for pool in get_credential_provider().store.list_pools() if pool.credentials)
+        from openprogram.models.auth.provider_policy import is_withdrawn
+        return frozenset(resolve(pool.provider_id) for pool in get_credential_provider().store.list_pools()
+                         if pool.credentials and not is_withdrawn(pool.provider_id))
     except Exception:
         return frozenset()
 
@@ -296,10 +285,9 @@ def auth_store_has_credential(provider_id: str) -> bool:
     """True when OpenProgram's own auth store holds a credential for
     ``provider_id`` (alias-aware).
 
-    Every native login — codex PKCE OAuth, github-copilot device-code,
-    anthropic / gemini-subscription CLI-import — writes a Credential into
-    this store (see ``auth/methods/``), and the store-backed runtimes
-    authenticate from it (``manager.acquire_sync``). So a credential here
+    Every login — a pasted key, a CLI import — writes a Credential into
+    this store (see ``auth/login/``), and requests authenticate from it
+    (``manager.acquire_sync``). So a credential here
     is the most authoritative "configured" signal there is, independent of
     whether an env var or external CLI dotfile was also populated.
     """
@@ -317,13 +305,11 @@ def is_configured(provider_id: str) -> bool:
     * **Auth store** — a credential saved by any native login (the
       authoritative signal; see :func:`auth_store_has_credential`).
     * CLI-backed providers — presence of their binary on PATH.
-    * OpenAI Codex also accepts its shared CLI auth file.
     * Everything else — env-var key set.
     """
     # Authoritative: a credential in OpenProgram's own auth store. This is
-    # where every native login (OAuth / device-code / CLI-import) lands and
-    # what the store-backed runtimes (codex, gemini-subscription,
-    # github-copilot, imported anthropic) read. Without this, a web/CLI
+    # where every login (pasted key, CLI import) lands and what requests
+    # read. Without this, a web/CLI
     # login that never also set an env var / external dotfile was reported
     # unconfigured and the chat model picker silently dropped its models.
     from openprogram.models.auth.provider_policy import UNSUPPORTED_PROVIDERS
@@ -337,16 +323,10 @@ def is_configured(provider_id: str) -> bool:
     for cli in CLI_PROVIDERS:
         if cli["id"] == provider_id:
             return shutil.which(cli["cli_binary"]) is not None
-    # openai-codex also counts when the Codex CLI's shared auth file exists
-    # (~/.codex/auth.json) — same OpenAI account, even if we haven't stored
-    # our own credential yet. (The store case is handled above.)
-    if provider_id == "openai-codex":
-        from pathlib import Path
-        return (Path.home() / ".codex" / "auth.json").exists()
     # Key-based providers (incl. the Bedrock/Vertex cloud-credential chains):
     # the canonical is_configured — env-var key, or a satisfied cloud
     # chain. See docs/design/providers/auth/api-key-resolution-unification.md.
-    from openprogram.models.providers.settings.env_api_keys import (
+    from openprogram.models.auth.env_api_keys import (
         env_vars_for, is_configured as key_is_configured)
     if env_vars_for(provider_id) or provider_id in ("amazon-bedrock", "google-vertex"):
         return key_is_configured(provider_id)
@@ -358,9 +338,8 @@ def is_configured(provider_id: str) -> bool:
     if _is_custom_provider(provider_id):
         import os
         return bool(os.environ.get(synthesized_env_var(provider_id)))
-    # Anything else signs in only through OpenProgram (a subscription OAuth
-    # or import such as xai-subscription, or a community provider whose key
-    # would have been saved in the store): no credential checked above means
+    # Anything else signs in only through OpenProgram (a community provider
+    # whose key would have been saved in the store): no credential checked above means
     # it is not set up, so a fresh install lists no provider as connected.
     return False
 
@@ -417,14 +396,14 @@ def resolved_endpoints(provider_id: str) -> dict:
     """Endpoint map for a provider, resolving the empty-dir gap.
 
     Community / token-plan providers (``minimax-cn-coding-plan``) and
-    alias-only providers (``chatgpt-subscription`` → ``openai-codex``) ship
+    alias-only providers (``bailian`` → ``alibaba-token-plan-cn``) ship
     an EMPTY provider dir — no ``provider.json`` — so their own endpoints are
     ``{}`` and rows built off them get a hostless base_url. Fill order:
 
       1. The provider's own ``provider.json`` endpoints (unchanged path).
-      2. Its alias target's endpoints (``chatgpt-subscription`` inherits
-         ``openai-codex``'s api + base_url, so the row routes to the codex
-         transport that resolves credentials under the canonical id).
+      2. Its alias target's endpoints (``bailian`` inherits
+         ``alibaba-token-plan-cn``'s api + base_url, so the row resolves
+         credentials under the canonical id).
       3. A synthetic ``{"default": {api, base_url}}`` from models.dev's
          base_url — with ``anthropic-messages`` when that base is an
          ``/anthropic`` endpoint, else ``openai-completions``.
@@ -465,7 +444,7 @@ def shipped_provider_ids() -> list[str]:
     """Ids of every provider shipped as ``providers/adapters/<dir>/provider.json``
     with a non-empty ``endpoints`` map. Dirs whose provider.json carries
     only wire-format metadata (thinking specs — ``openai_completions``,
-    ``openai_responses``, ``google_gemini_cli``) are not providers a user
+    ``openai_responses``) are not providers a user
     can enable and are excluded by the endpoints check."""
     from openprogram.models.providers.catalog.plugin_dirs import iter_dirs
     out: list[str] = []

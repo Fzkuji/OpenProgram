@@ -94,7 +94,7 @@ openprogram config set ui.web_port 8101</code></pre>
 <tr><th scope="row"><code translate="no">OPENPROGRAM_NO_AUTO_WORKER</code></th><td><code translate="no">1</code>: TUI connects only to an existing worker</td><td><code translate="no">openprogram/interfaces/cli/ink.py</code></td></tr>
 <tr><th scope="row"><code translate="no">OPENPROGRAM_NO_SLEEP</code></th><td><code translate="no">1</code>: no memory sleep-consolidation scheduler</td><td><code translate="no">openprogram/state/memory/scheduler.py</code></td></tr>
 <tr><th scope="row"><code translate="no">OPENPROGRAM_NO_PROGRAMS_WATCH</code></th><td><code translate="no">1</code>: no file watcher on the programs directory</td><td><code translate="no">openprogram/programs/_host/watcher.py</code></td></tr>
-<tr><th scope="row"><code translate="no">OPENPROGRAM_PROJECT_AUTOCOMMIT</code></th><td><code translate="no">0</code>: no project auto-commit</td><td><code translate="no">openprogram/state/store/project/project_commit.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_PROJECT_AUTOCOMMIT</code></th><td><code translate="no">0</code>: no project auto-commit</td><td><code translate="no">openprogram/state/project_commit.py</code></td></tr>
 <tr><th scope="row"><code translate="no">OPENPROGRAM_WEBSEARCH_DISABLE</code></th><td>Disables a search provider by name, e.g. <code translate="no">ollama</code></td><td><code translate="no">openprogram/programs/tools/web/web_search/providers/ollama.py</code></td></tr>
 </tbody>
 </table>
@@ -110,8 +110,6 @@ openprogram config set ui.web_port 8101</code></pre>
 <tr><th scope="row"><code translate="no">OPENPROGRAM_PROVIDER_STREAM_RETRIES</code></th><td>Attempts per streaming request, including the first (default 5). Connection retries have their own allowance of this minus one.</td><td><code translate="no">openprogram/models/providers/utils/streams/stream_retry.py</code></td></tr>
 <tr><th scope="row"><code translate="no">OPENPROGRAM_NETWORK_WAIT_MAX_S</code></th><td>Wait for an unreachable endpoint after retries are spent, checking every 5 to 30 s (default 1800; <code translate="no">0</code> fails at once). Cancelling ends it.</td><td><code translate="no">openprogram/models/providers/utils/streams/stream_retry.py</code></td></tr>
 <tr><th scope="row"><code translate="no">OPENPROGRAM_RETRY_AFTER_CAP_S</code></th><td>Longest <code translate="no">Retry-After</code> a retry sits through (default 300). Longer fails at once so a fallback model, another account or the user can take over. <code translate="no">0</code> lifts the cap.</td><td><code translate="no">openprogram/models/providers/utils/streams/stream_retry.py</code></td></tr>
-<tr><th scope="row"><code translate="no">OPENPROGRAM_CODEX_WEBSOCKET</code></th><td><code translate="no">0</code>: ChatGPT-sign-in Codex turns use HTTP instead of the WebSocket, which is on by default and sends a continuing turn as its new input only</td><td><code translate="no">openprogram/models/providers/adapters/openai_codex/websocket_transport.py</code></td></tr>
-<tr><th scope="row"><code translate="no">OPENPROGRAM_CODEX_ZSTD</code></th><td><code translate="no">0</code>: uncompressed Codex HTTP turns (zstd by default)</td><td><code translate="no">openprogram/models/providers/adapters/openai_codex/request_compression.py</code></td></tr>
 <tr><th scope="row"><code translate="no">OPENPROGRAM_STRICT_TOOLS</code></th><td><code translate="no">0</code>: strict tool schemas off (on by default)</td><td><code translate="no">openprogram/models/providers/schema/__init__.py</code></td></tr>
 <tr><th scope="row"><code translate="no">OPENPROGRAM_FORCE_IPV4</code></th><td><code translate="no">1</code>: forces an IPv4 source address</td><td><code translate="no">openprogram/models/providers/utils/http_transport/http_client.py</code></td></tr>
 </tbody>
@@ -124,7 +122,7 @@ openprogram config set ui.web_port 8101</code></pre>
 <tr><th scope="row"><code translate="no">OPENPROGRAM_DEBUG_RUNTIME</code></th><td><code translate="no">1</code>: mirrors runtime logs to stderr</td><td><code translate="no">openprogram/interfaces/server/runtime_management.py</code></td></tr>
 <tr><th scope="row"><code translate="no">OPENPROGRAM_DEBUG_REGISTRY</code></th><td><code translate="no">1</code>: traceback on function-registry import failures</td><td><code translate="no">openprogram/programs/_host/registry.py</code></td></tr>
 <tr><th scope="row"><code translate="no">OPENPROGRAM_DEBUG_DISPATCHER</code></th><td><code translate="no">1</code>: dispatcher logs at <code translate="no">INFO</code>, in the worker log</td><td><code translate="no">openprogram/runtime/conversation/turn_runtime/runtime_attach.py</code></td></tr>
-<tr><th scope="row"><code translate="no">OPENPROGRAM_DEBUG_PROVIDER</code></th><td><code translate="no">1</code>: provider-layer logs at <code translate="no">INFO</code>, in the worker log</td><td><code translate="no">openprogram/models/providers/adapters/openai_codex/openai_codex.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_DEBUG_PROVIDER</code></th><td><code translate="no">1</code>: provider-layer logs at <code translate="no">INFO</code>, in the worker log</td><td><code translate="no">openprogram/runtime/agent/loop/streaming.py</code></td></tr>
 </tbody>
 </table>
 <details>

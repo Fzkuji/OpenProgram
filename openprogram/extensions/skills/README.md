@@ -8,6 +8,7 @@ See ``docs/reference/design/integrations/extensions/skills-and-plugins.html`` se
 
 ## Files in this directory
 
+- **`commands.py`** — Project every loaded skill into the slash-command registry
 - **`discovery.py`** — Remote skill discovery
 - **`loader.py`** — The skill registry: one loader, one prompt renderer
 - **`tool.py`** — Built-in SkillTool

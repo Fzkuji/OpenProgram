@@ -78,7 +78,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">项</th><th scope="col"></th></tr></thead>
 <tbody>
-<tr><th scope="row">授权类工具</th><td><code translate="no">permission_decision</code> 把 <code translate="no">computer_use</code> 当作按屏幕授权的工具（<code translate="no">_APP_GRANT_TOOLS</code>）。</td></tr>
+<tr><th scope="row">授权类工具</th><td><code translate="no">permission_decision</code> 把 <code translate="no">computer_use</code> 当作按屏幕授权的工具：该工具登记了一份回答 <code translate="no">approval</code> 的档案（<code translate="no">runtime/permissions/tool_profiles.py</code>）。</td></tr>
 <tr><th scope="row">判定：询问</th><td>在会询问的模式下，当工具自身的 <code translate="no">requires_approval</code> 表明这次调用需要授权、且没有允许规则点名这块屏幕时，走模式判定，所以决定是 <code translate="no">ask</code>，理由 <code translate="no">MODE_APPROVAL</code>；因此无人值守的来源得到 <code translate="no">NO_ONE_TO_APPROVE</code>，允许规则和其他工具一样能结束询问。</td></tr>
 <tr><th scope="row">判定：Bypass</th><td>Bypass 直接放行。带 <code translate="no">code</code> 的调用，每一步都像一次单独的动作调用那样过同一个判定（<code translate="no">code._as_action_calls</code>），所以落在所有者拒绝或询问规则所写对象上的步骤会被拒绝。</td></tr>
 <tr><th scope="row">判定：Auto</th><td>Auto 在本对话此前的审查已放行同一块屏幕时返回 <code translate="no">AUTO_APP_GRANT</code>（<code translate="no">app_grants.held</code>），否则把调用交给自动审查，放行的结论由 <code translate="no">auto_review</code> 用 <code translate="no">app_grants.grant</code> 保留下来。</td></tr>

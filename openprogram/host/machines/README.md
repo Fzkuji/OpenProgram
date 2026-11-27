@@ -60,6 +60,7 @@ Design: docs/reference/design/integrations/computer-use/machines-and-targets.htm
 - **`kinds.py`** — Connection methods: how a device is reached
 - **`peer.py`** — Another OpenProgram: a machine reached through its own Worker
 - **`remote.py`** — File access on a machine whose shell keeps files there (``Shell.remote_files`` in ``host.backend``)
+- **`shells.py`** — The connection methods commands run through, ``ssh`` and ``docker``, as machine kinds
 - **`status.py`** — Connection state of each machine: what the project picker, the sidebar and the composer show beside its icon
 
 _Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/generators/gen_dir_readmes.py` from the repo root to refresh._

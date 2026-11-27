@@ -400,7 +400,7 @@
 <tr><th scope="row"><code translate="no">execution/recovery/resource_saga.py</code></th><td>以参数接收 governor；governor 实现 <code translate="no">ResourceGovernor</code></td></tr>
 </tbody>
 </table>
-<p>Goal 钩子属于 conversations，因为聊天 Goal 以会话轮次运行；它们在首次调用时导入 <code translate="no">openprogram.programs.tools.planning.goal</code>，因为该工具可能在启动恢复之后才加载。</p>
+<p>Goal 钩子属于 conversations，因为聊天 Goal 以会话轮次运行。conversations 从不导入 Goal：它们调用 Goal 包加载时登记的轮次时刻（<code translate="no">runtime/conversation/turn_hooks.py</code> 里的 <code translate="no">execution_terminal</code>、<code translate="no">session_owner</code>、<code translate="no">restart_pause</code>），查找前先加载 Programs，因为它们可能在启动恢复之后才加载。</p>
 </details>
 
 <h2 id="workflow-questions">Workflow 问题</h2>

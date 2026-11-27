@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
 import uuid
 from dataclasses import replace
 from typing import Any, Callable, Mapping, Protocol
@@ -64,6 +65,11 @@ class ResourceSaga:
         self.governor = governor
         self.owner_id = owner_id or f"resource-saga-{uuid.uuid4().hex}"
         self._fault_hook = fault_hook
+        # One pass at a time in this process. A caller that requests an
+        # intent and then reconciles acts on the result (a step claims the
+        # queued admission): a concurrent pass (the dispatcher's, woken by the
+        # same commit) holding that intent must finish before this one returns.
+        self._reconcile_lock = threading.RLock()
 
     @staticmethod
     def _fingerprint(value: Mapping[str, Any]) -> str:
@@ -199,7 +205,15 @@ class ResourceSaga:
         return release_id
 
     def reconcile(self, *, limit: int = 100) -> int:
-        """Replay claimed resource intents.  A crash leaves the lease reclaimable."""
+        """Replay claimed resource intents.  A crash leaves the lease reclaimable.
+
+        On return, every intent requested before the call has been consumed
+        or put back for retry, including one another thread was consuming.
+        """
+        with self._reconcile_lock:
+            return self._reconcile(limit=limit)
+
+    def _reconcile(self, *, limit: int) -> int:
         self.store.repair_resource_claim_release_pairs()
         completed = 0
         for intent in self.store.claim_resource_intents(owner_id=self.owner_id, limit=limit):

@@ -1,4 +1,8 @@
-"""Credential persistence without filesystem hardening policy."""
+"""Which state files hold secrets, how a backup treats them, and checking them.
+
+The owner-only file I/O they are written through is
+``openprogram.state.private_files``: config, Program directories and
+machines below the models layer write through it too."""
 
 from .audit import (
     CredentialFinding,
@@ -16,45 +20,20 @@ from .inventory import (
     inventory_for_path,
     preserve_local_secret_bytes,
 )
-from .io import (
-    PrivateAtomicWriteError,
-    PrivateAtomicWriteResult,
-    _ensure_private_directory,
-    _private_atomic_update,
-    _private_atomic_write,
-    _private_file_lock,
-    _private_unlink,
-    _read_private_bytes,
-    _revision,
-    private_file_revision,
-    tighten_private_directory,
-)
 from .redaction import is_redacted_value
-from .io import os as os
 
 __all__ = [
     "BackupPolicy",
     "CredentialFinding",
     "CredentialStatus",
     "DeleteAction",
-    "PrivateAtomicWriteError",
-    "PrivateAtomicWriteResult",
     "SECRET_INVENTORY",
     "SecretInventoryEntry",
     "SecretLifecycle",
-    "_ensure_private_directory",
-    "_private_atomic_update",
-    "_private_atomic_write",
-    "_private_file_lock",
-    "_private_unlink",
-    "_read_private_bytes",
-    "_revision",
     "audit_credentials",
     "backup_bytes",
     "inventory_for_path",
     "is_redacted_value",
     "preserve_local_secret_bytes",
-    "private_file_revision",
     "repair_credentials",
-    "tighten_private_directory",
 ]

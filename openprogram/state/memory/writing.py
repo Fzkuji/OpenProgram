@@ -165,10 +165,10 @@ def write_session(
     Returns False without calling a model when the session holds nothing
     new, or when the batch is below the threshold. Both are ordinary.
     """
-    from openprogram.models.usage import usage_scope
-    from openprogram.models.usage.event import CALL_KIND_MEMORY
+    from openprogram.state import model_facts
 
-    with usage_scope(call_kind=CALL_KIND_MEMORY, session_id=session_id):
+    # Counted as the models layer's ``CALL_KIND_MEMORY``.
+    with model_facts.usage_scope(call_kind="memory", session_id=session_id):
         return _write_session(
             session_id, messages,
             token_threshold=token_threshold, force=force, model=model,

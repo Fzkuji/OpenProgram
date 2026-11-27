@@ -1,7 +1,7 @@
 """Running checked steps on a target: the one path an action call and a step of code both take."""
 from __future__ import annotations
 
-from openprogram.programs._host.execution import ToolReturn
+from openprogram.runtime.agent.tool_execution import ToolReturn
 
 from .. import errors
 from . import locks

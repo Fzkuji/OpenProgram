@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 import time
 from typing import Any, Callable, Iterable
 
-from openprogram.programs._host.execution import ToolReturn
+from openprogram.runtime.agent.tool_execution import ToolReturn
 
 from . import errors
 from .routing.locks import Locks

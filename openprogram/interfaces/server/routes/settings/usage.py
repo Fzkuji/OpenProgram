@@ -30,7 +30,7 @@ def _ledger():
 
 
 def _included(provider: str) -> bool:
-    from openprogram.models.usage.provider_status import is_subscription
+    from openprogram.models.listing.provider_status import is_subscription
     return is_subscription(provider or "")
 
 

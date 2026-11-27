@@ -89,45 +89,6 @@ def node_tool_cmd(argv: list[str]) -> list[str]:
     return executable_cmd(argv)
 
 
-def _windows_powershell(script: str, *, timeout: float = 5.0) -> str:
-    """Run one read-only Windows CIM query and return UTF-8 output.
-
-    Kept in the compatibility seam because modern Windows no longer ships
-    WMIC and product modules must not grow their own platform subprocesses.
-    """
-
-    import shutil
-
-    executable = shutil.which("powershell.exe") or shutil.which("pwsh.exe")
-    if executable is None:
-        return ""
-    prefix = (
-        "$ErrorActionPreference='Stop';"
-        "[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new();"
-    )
-    flags = getattr(_subprocess, "CREATE_NO_WINDOW", 0)
-    try:
-        result = _subprocess.run(
-            [
-                executable,
-                "-NoLogo",
-                "-NoProfile",
-                "-NonInteractive",
-                "-Command",
-                prefix + script,
-            ],
-            check=False,
-            capture_output=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=timeout,
-            creationflags=flags,
-        )
-    except (OSError, _subprocess.TimeoutExpired):
-        return ""
-    return result.stdout if result.returncode == 0 else ""
-
-
 def desktop_bundle_metadata(app_path):
     """Read the installed shell version and resources without launching it.
 
@@ -153,7 +114,7 @@ def desktop_bundle_metadata(app_path):
     # A single-quoted PowerShell literal treats all path characters as data;
     # doubling apostrophes also handles installation folders such as O'Brien.
     literal = str(executable.resolve()).replace("'", "''")
-    version = _windows_powershell(
+    version = processes._windows_powershell(
         f"[Diagnostics.FileVersionInfo]::GetVersionInfo('{literal}').ProductVersion",
         timeout=15,
     ).strip()

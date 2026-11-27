@@ -63,7 +63,7 @@ def test_a_provider_with_no_address_here_is_not_configured(monkeypatch):
     probe = SimpleNamespace(status=cr.UNKNOWN, detail=cr.NO_BASE_URL, http_status=None, model=None)
     assert kc.result_of(probe) == "not_configured"
     assert kc.provider_set_up("my-removed-custom") is False
-    assert kc.provider_set_up("openai-codex") is True, "a sign-in provider needs no address"
+    assert kc.provider_set_up("claude-code") is True, "a sign-in provider needs no address"
 
 
 def test_where_a_key_is_made_and_what_a_sign_in_is_called():
@@ -71,8 +71,7 @@ def test_where_a_key_is_made_and_what_a_sign_in_is_called():
     assert provider_auth("opencode").keys_url == "https://opencode.ai/auth"
     assert provider_auth("fireworks-ai").keys_url == "https://fireworks.ai/account/api-keys"
     assert provider_auth("togetherai").keys_url == "https://api.together.ai/settings/api-keys"
-    assert signin_name("openai-codex") == "ChatGPT"
-    assert signin_name("google-gemini-cli") == "Gemini CLI"
+    assert signin_name("claude-code") == "Claude Code"
 
 
 def test_a_refusal_that_echoes_a_dotted_key_has_the_exact_key_cut_out(monkeypatch):

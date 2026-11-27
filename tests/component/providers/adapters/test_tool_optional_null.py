@@ -3,19 +3,17 @@ from __future__ import annotations
 
 import asyncio
 import copy
-from types import SimpleNamespace
 
 from jsonschema import Draft7Validator
 import pytest
 
-from openprogram.models.providers.types import Context, Tool, ToolCall
+from openprogram.models.providers.types import Tool, ToolCall
 from openprogram.models.providers.utils.validation import validate_tool_call
 
 
 def _wire(tool):
-    from openprogram.models.providers.adapters.openai_codex.openai_codex import _build_request_body
-    return _build_request_body(SimpleNamespace(id="fixture", api="openai-codex"),
-                               Context(tools=[tool]), {}, [])["tools"][0]
+    from openprogram.models.providers.shared.openai_responses import convert_responses_tools
+    return convert_responses_tools([tool], "openai-responses", "fixture")[0]
 
 
 def _validate(schema, args):
@@ -80,7 +78,7 @@ def test_optional_strict_enum_null_means_omitted():
 def test_widening_an_optional_enum_leaves_a_shared_enum_list_alone():
     # web_search names its providers once: the optional provider and the
     # providers items share one list. Null belongs to the provider only; a
-    # string-typed item enum holding null makes Codex fail every request.
+    # string-typed item enum holding null makes a strict endpoint fail every request.
     names = ["tavily", "exa"]
     schema = {"type": "object", "properties": {
         "provider": {"type": "string", "enum": names},

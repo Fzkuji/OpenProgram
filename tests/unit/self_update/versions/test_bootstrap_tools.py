@@ -7,7 +7,7 @@ import zipfile
 
 import pytest
 
-from openprogram.operations.self_update.versions import layout as paths
+from openprogram.host._platform import runtime_layout as paths
 from openprogram.operations.self_update.versions import pointer, store
 from tests.support.sealed_versions import BASE, REPOSITORY, make_layout, make_version, point_at
 

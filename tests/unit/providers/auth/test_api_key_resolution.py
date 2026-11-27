@@ -1,5 +1,5 @@
 """Unit tests for provider key resolution in
-``openprogram/models/providers/settings/env_api_keys.py``.
+``openprogram/models/auth/env_api_keys.py``.
 
 A provider's keys are its credentials: the keys added in Settings or with
 ``openprogram providers keys <provider> add``, and a read-only row for each of
@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from openprogram.models.providers.settings import env_api_keys as ek
+from openprogram.models.auth import env_api_keys as ek
 
 _AWS = [
     "AWS_PROFILE", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY",

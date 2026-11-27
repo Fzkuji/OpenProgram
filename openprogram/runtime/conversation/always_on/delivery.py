@@ -212,7 +212,7 @@ def _send_once(target: dict[str, Any], text: str, files: list[str],
     could not connect does not upload the report's files a second time.
     """
     from openprogram.runtime import channel_link
-    from openprogram.state.attachments import find_markers
+    from openprogram.state.attachment_markers import find_markers
 
     try:
         key = _key(target)

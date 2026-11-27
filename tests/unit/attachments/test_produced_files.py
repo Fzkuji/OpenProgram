@@ -16,7 +16,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from openprogram.state import attachments as att
+from openprogram.state import attachment_markers as att
 
 
 @pytest.fixture

@@ -5,7 +5,7 @@ import time
 import pytest
 
 from openprogram.operations.self_update.versions import pointer as pointers
-from openprogram.operations.self_update.versions.layout import Layout
+from openprogram.host._platform.runtime_layout import Layout
 
 BASE = "py3.12-9f2c41aa77d04c11"
 DOCUMENTED = f"""schema=1

@@ -5,7 +5,7 @@ import { MoreHorizontal } from "lucide-react";
 import { MenuRow } from "@/components/ui/menu/menu-parts";
 import { MENU_ITEM_STATES, MENU_PANEL, MENU_SEPARATOR, itemCls } from "@/components/ui/menu/menu-styles";
 import { useTranslation } from "@/lib/i18n";
-import { useRecentsView, setRecentsView } from "@/lib/prefs/recents-view";
+import { pinnedProjectIds, setProjectPinned, useRecentsView, setRecentsView } from "@/lib/prefs/recents-view";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { ProjectEditor, type EditableProject } from "./project-editor";
@@ -34,7 +34,7 @@ export function ProjectMenu({project, children, onOpen, onNewSession, onSaved}: 
   const [addingSection,setAddingSection] = useState(false);
   const [operation,setOperation] = useState<ProjectOperation|null>(null);
   const [error,setError] = useState("");
-  const pinned = view.pinnedProjects.includes(project.id);
+  const pinned = pinnedProjectIds(view, project.is_default ? project.id : null).includes(project.id);
   // The file manager and git worktrees work on this computer's folders only:
   // a project on an SSH host does not offer them.
   const folderHere = projectFolderHere(project, useMachines((s) => s.items));
@@ -43,7 +43,7 @@ export function ProjectMenu({project, children, onOpen, onNewSession, onSaved}: 
   }
   const revealFolder = async()=>{setError("");try{const result=await wsRequest<{ok?:boolean;error?:string}>("project_file_reveal",{project_id:project.id,path:""},"project_file_reveal_result");if(!result?.ok)throw new Error(result?.error||text("Could not reveal folder", "无法显示文件夹"));}catch(err){setError(String(err instanceof Error?err.message:err));}};
   function togglePin() {
-    setRecentsView({pinnedProjects:pinned?view.pinnedProjects.filter(id=>id!==project.id):[...view.pinnedProjects,project.id]});
+    setProjectPinned(project.id, !pinned, !!project.is_default);
   }
   function showMenu(event: MouseEvent<HTMLElement>) {
     menu.show(event, [

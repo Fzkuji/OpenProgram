@@ -21,9 +21,8 @@ import pytest
 
 from openprogram.runtime.context.scope import _call_id
 from openprogram.state.store import SessionNodeWriter, SessionStore, _store as _store_var
-from openprogram.programs.tools.interaction.ask_user import (
-    ask_user, set_ask_user,
-)
+from openprogram.programs.tools.interaction.ask_user import ask_user
+from openprogram.runtime.agent.questions import ask_user_handler, set_ask_user
 
 
 @pytest.fixture
@@ -43,9 +42,7 @@ def store(tmp_path: Path):
 def _install_handler(handler):
     """Set a global ask_user handler for the scope of the test, restore
     whatever was there before on exit."""
-    from openprogram.programs.tools.interaction import ask_user as _au
-    with _au._ask_user_lock:
-        prev = _au._ask_user_handler_global
+    prev = ask_user_handler()
     set_ask_user(handler)
     try:
         yield

@@ -377,6 +377,7 @@ def test_ready_marker_for_unrelated_live_process_is_rejected(tmp_path, monkeypat
         launch_supervisor("su_launch")
 
 
+@pytest.mark.slow
 def test_native_launchd_reuses_running_process_and_restarts_after_death(tmp_path, monkeypatch):
     import shlex
     import sys

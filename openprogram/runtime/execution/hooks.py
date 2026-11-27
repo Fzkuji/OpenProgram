@@ -5,9 +5,10 @@ The control plane never imports an engine. Where it must start or ask one
 settle a session's Goal, read Job records), the engine registers a callable
 here when its package is imported: ``openprogram.runtime.conversation``
 registers the Agent and Goal hooks and ``openprogram.runtime.jobs`` the Job
-hooks. Programs never register here: the Goal tool loads on first use, later
-than startup recovery, so the conversation engine that runs Goal turns
-registers for it and imports it when the hook is first called.
+hooks. Programs never register here: the conversation engine that runs
+Goal turns registers for them and reaches the Goal through its own turn
+moments (``runtime.conversation.turn_hooks``), whose lookup loads the
+Programs when a hook is first called, later than startup recovery.
 
 A required hook that nobody registered means no such engine runs in this
 process; looking it up raises :class:`EngineNotRegistered` instead of

@@ -114,6 +114,7 @@
 <tr><th scope="row"><code translate="no">trial</code></th><td><code translate="no">aborted</code></td><td>Any check failed, or timeout</td></tr>
 <tr><th scope="row"><code translate="no">ready</code></th><td><code translate="no">building</code></td><td><code translate="no">local</code> moved; rebased, <code translate="no">rebases &lt;= 3</code></td></tr>
 <tr><th scope="row"><code translate="no">ready</code></th><td><code translate="no">aborted</code></td><td>Rebase conflict, or too many rebases</td></tr>
+<tr><th scope="row"><code translate="no">ready</code></th><td><code translate="no">aborted</code></td><td>A held official update (prepared, waiting for Restart to update) gives way to another update; it is prepared again later</td></tr>
 <tr><th scope="row"><code translate="no">ready</code></th><td><code translate="no">quiescing</code></td><td><code translate="no">local</code> equals <code translate="no">base_sha</code></td></tr>
 <tr><th scope="row"><code translate="no">quiescing</code></th><td><code translate="no">activating</code></td><td>Tasks idle or checkpointed</td></tr>
 <tr><th scope="row"><code translate="no">quiescing</code></th><td><code translate="no">aborted</code></td><td>Cancelled, or 30 minutes</td></tr>
@@ -244,7 +245,7 @@ writer=controller</pre>
 <tbody>
 <tr><th scope="row">Process</th><td><code translate="no">trial/instance.py</code>. Signed launcher with <code translate="no">--root trials/&lt;update&gt;/fake-root</code>, <code translate="no">HOME</code> and <code translate="no">USERPROFILE</code> = <code translate="no">trials/&lt;update&gt;/home</code>, <code translate="no">OPENPROGRAM_WEB_PORT</code> = free loopback port, <code translate="no">OPENPROGRAM_TRIAL=1</code></td></tr>
 <tr><th scope="row">Started</th><td>Web server, runtime, tools, job runner, startup recovery on the sanitized copy</td></tr>
-<tr><th scope="row">Not started</th><td>Scheduler, cron, always-on ticker, channels, MCP server and clients, release check, service installation, update sweep, idle-session watcher, nightly reorganizer, config hooks, subscription catalog refresher, Programs watcher. Decided in <code translate="no">runner.py:trial_mode()</code></td></tr>
+<tr><th scope="row">Not started</th><td>Scheduler, cron, always-on ticker, channels, MCP server and clients, release check, service installation, update sweep, idle-session watcher, nightly reorganizer, config hooks, Programs watcher. Decided in <code translate="no">runner.py:trial_mode()</code></td></tr>
 <tr><th scope="row">macOS</th><td><code translate="no">sandbox.sb</code>: writes only in the trial directory; live state reads denied except <code translate="no">versions/&lt;id&gt;</code>, <code translate="no">bases/&lt;base&gt;</code>, <code translate="no">trials/&lt;update&gt;</code> and ancestor metadata; network only to the trial's worker port and fake model port</td></tr>
 <tr><th scope="row">Linux</th><td>bubblewrap with the same rules where available</td></tr>
 <tr><th scope="row">Windows</th><td>No OS sandbox: temporary data, a separate port and the sanitized copy are the only isolation. The progress line during the trial and the result both say the test could reach other files on the computer. <code translate="no">PATH</code> is the base's Python plus the Windows system directories. The check that the launcher follows a moved pointer is skipped.</td></tr>
@@ -427,15 +428,15 @@ writer=controller</pre>
 </table>
 
 <h2 id="official">Official updates</h2>
-<p class="note">Discovery stays in <code translate="no">update-service.js</code>. Assets: <code translate="no">version-&lt;platform&gt;.tar.zst</code>, <code translate="no">repo.bundle</code>, <code translate="no">SHA256SUMS</code>, signed manifest, plus <code translate="no">base-</code> and <code translate="no">toolchain-</code> when changed.</p>
+<p class="note">Discovery stays in <code translate="no">update-service.js</code>. The update is a signed pointer and content-addressed layers on the rolling <code translate="no">updates</code> release; only missing files are fetched (<a href="../distribution/automatic-updates.html">automatic updates</a>).</p>
 <ol>
-<li><code translate="no">official/replay.py</code> verifies assets and fetches the bundle into <code translate="no">refs/heads/release</code>.</li>
-<li>No user commits: unpack the prebuilt version, go to trial.</li>
+<li><code translate="no">official/assemble.py</code> writes a new base if one is published, and imports the source tree as the next commit of <code translate="no">refs/heads/release</code>, checked against the published tree id.</li>
+<li>No user commits: build that commit with the prebuilt frontend, go to trial.</li>
 <li>User commits: in <code translate="no">work/official-&lt;version&gt;</code>, cherry-pick <code translate="no">old_release..local</code> oldest first. A conflict saves <code translate="no">unreplayable/&lt;release&gt;/&lt;sha&gt;.patch</code> and continues.</li>
 <li>Build, trial, activate with <code translate="no">kind = official</code>, one record per candidate, by <code translate="no">control/official_update.py</code>. No independent verifier. The old tip is saved under <code translate="no">undone</code>.</li>
 <li>A failed clean replay retries with user commits dropped newest first, at most 5 times, ending at the unmodified release.</li>
 </ol>
-<p class="note">A release needing a <code translate="no">shell_compat</code> outside the shell's range waits for the DMG or EXE shell update.</p>
+<p class="note">A release needing a <code translate="no">shell_compat</code> outside the shell's range waits for the next feature release's installer.</p>
 
 <h2 id="development-instance">Development instance (<code translate="no">dev_deploy</code>)</h2>
 <p class="note">A change made in the development instance is a commit on <code translate="no">dev</code>, and deploying it is the update. The stable instance is the official App, which only its own updater changes, so nothing here waits for it. See <a href="../distribution/dev-instance.html">Development instance</a>. The detached controller runs from a private copy (<code translate="no">delivery/controller_bundle.py</code>) with neither a session nor a profile in its environment.</p>
@@ -472,7 +473,7 @@ writer=controller</pre>
 <tbody>
 <tr><th scope="row">Built</th><td>State machine and schema 2, queue, switch controller and launchers on all platforms, controller exit watch, watchdog, held turns, subsystems, sweep, every <code translate="no">self_update</code> action, version store, pointer, launcher, retention, trial engine, release fetch and replay through <code translate="no">openprogram upgrade</code>, thin shell loader, seed, recovery page, handshake, relaunch, CLI seed installers</td></tr>
 <tr><th scope="row">Unverified</th><td>Windows: no part of the version store has run there. Its branches are tested through stand-ins and a cross-compiled launcher. <code translate="no">windows-desktop</code> runs the shell checks on Windows; <code translate="no">windows-core</code> runs the launcher test only.</td></tr>
-<tr><th scope="row">Not done</th><td>No Windows App or Windows update files are published: the one Release run that built them failed there. Linux thin Apps and signed update files are published; a switch on an installed copy is not yet observed. The macOS App embeds its runtime unless <code translate="no">OPENPROGRAM_RELEASE_MAC_THIN</code> is set. macOS privacy-grant gate needs a human click.</td></tr>
+<tr><th scope="row">Not done</th><td>No Windows App or Windows update files are published: the one Release run that built them failed there. Linux thin Apps and signed update files are published; a switch on an installed copy is not yet observed. The macOS App is thin whenever a release is signed and has the update key; <code translate="no">OPENPROGRAM_RELEASE_MAC_THIN=false</code> keeps it full. macOS privacy-grant gate needs a human click.</td></tr>
 <tr><th scope="row">Kept for now</th><td><code translate="no">legacy_app</code>, <code translate="no">delivery/bootstrap.py</code>, the App path of <code translate="no">control/supervisor.py</code>, <code translate="no">repair/owner_repair.py</code>, <code translate="no">owner_terminal.py</code>, until published Apps are thin. <code translate="no">package_protocol.py</code> while <code translate="no">native_checks.py</code> and <code translate="no">ui_checks.py</code> read it.</td></tr>
 </tbody>
 </table>

@@ -1,6 +1,5 @@
 from .streams.event_stream import EventStream, AssistantMessageEventStream, create_assistant_message_event_stream
 from .hash import short_hash
-from .http_transport.http_proxy import get_proxy_mounts
 from .streams.json_parse import parse_partial_json, parse_streaming_json
 from .failures.overflow import get_overflow_patterns, is_context_overflow
 from .sanitize_unicode import sanitize_surrogates
@@ -11,7 +10,6 @@ __all__ = [
     "EventStream",
     "create_assistant_message_event_stream",
     "get_overflow_patterns",
-    "get_proxy_mounts",
     "is_context_overflow",
     "parse_partial_json",
     "parse_streaming_json",

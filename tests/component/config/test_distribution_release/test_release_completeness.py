@@ -79,7 +79,6 @@ def _built_tree(root: Path, plan: dict, version: str) -> None:
     """What ``actions/download-artifact`` leaves when every job succeeded."""
     _file(root / "developer-python-distributions" / f"openprogram-{version}-py3-none-any.whl")
     _file(root / "office-assets" / _office_name())
-    update_platforms = {}
     for row in plan["runtime"]:
         key = f"{row['platform']}-{row['arch']}"
         extension = "zip" if row["platform"] == "windows" else "tar.gz"
@@ -87,11 +86,6 @@ def _built_tree(root: Path, plan: dict, version: str) -> None:
         _file(root / f"product-runtime-{key}" / archive)
         _file(root / f"product-runtime-{key}" / f"{archive}.sha256")
         _file(root / f"cli-verified-{key}" / "verified.txt")
-        # With a trusted key every runtime leg builds update files, whatever reads them.
-        if plan["update_files"]:
-            update_platforms[key] = {}
-            for part in ("version", "base", "toolchain"):
-                _file(root / "official-update" / f"{part}-{key}.tar.zst")
     for row in plan["seed"]:
         key = f"{row['platform']}-{row['arch']}"
         _file(root / f"seed-{key}" / f"seed-{key}.tar")
@@ -99,12 +93,6 @@ def _built_tree(root: Path, plan: dict, version: str) -> None:
         directory = root / _desktop_directory(row)
         for suffix in INSTALLERS[(row["platform"], row["arch"])][0]:
             _file(directory / _installer_name(version, suffix, row["signing"]))
-    if update_platforms:
-        (root / "official-update" / "update-manifest.json").write_text(
-            json.dumps({"platforms": update_platforms}), encoding="utf-8",
-        )
-        _file(root / "official-update" / "update-manifest.json.sig")
-        _file(root / "official-update" / "SHA256SUMS")
 
 
 def _assemble(root: Path, plan: dict, version: str, work: Path, notes: Path) -> dict:
@@ -160,8 +148,6 @@ def test_a_release_whose_jobs_all_passed_carries_an_installer_for_every_planned_
             name = _installer_name(version, suffix, row["signing"])
             assert name in release["published"], f"{key} has no {suffix} in the release"
             assert name in release["manifest"]
-        if row["layout"] == "thin":
-            assert f"version-{row['runtime_platform']}-{row['arch']}.tar.zst" in release["published"]
         assert _installer_name(version, main, row["signing"]) in release["published"]
     for row in plan["runtime"]:
         extension = "zip" if row["platform"] == "windows" else "tar.gz"
@@ -193,20 +179,15 @@ def _break(root: Path, row: dict, how: str) -> None:
         for path in directory.iterdir():
             path.unlink()
         directory.rmdir()
-    elif how == "no installer uploaded":
+    else:
         # The leg uploaded something, but not the file users install with.
         installer = INSTALLERS[(row["platform"], row["arch"])][1].rpartition(".")[2]
         for path in directory.iterdir():
             if path.suffix == f".{installer}":
                 path.unlink()
-    else:
-        manifest = root / "official-update" / "update-manifest.json"
-        content = json.loads(manifest.read_text(encoding="utf-8"))
-        del content["platforms"][f"{row['runtime_platform']}-{row['arch']}"]
-        manifest.write_text(json.dumps(content), encoding="utf-8")
 
 
-@pytest.mark.parametrize("how", ["job failed", "no installer uploaded", "update files missing"])
+@pytest.mark.parametrize("how", ["job failed", "no installer uploaded"])
 def test_a_planned_platform_without_an_installer_is_named(how: str, tmp_path: Path) -> None:
     version, notes = _latest_notes()
     plan = _plan({**EVERYTHING, "OPENPROGRAM_RELEASE_WINDOWS_ARM64": "true"})
@@ -216,8 +197,6 @@ def test_a_planned_platform_without_an_installer_is_named(how: str, tmp_path: Pa
         ("linux", "x86_64"): "Linux x86_64 App", ("linux", "arm64"): "Linux arm64 App",
     }
     for index, row in enumerate(plan["desktop"]):
-        if how == "update files missing" and row["layout"] != "thin":
-            continue
         work = tmp_path / str(index)
         root = work / "release-artifacts"
         _built_tree(root, plan, version)
@@ -243,59 +222,6 @@ def test_a_runtime_job_that_uploaded_no_archive_is_named(tmp_path: Path) -> None
     release = _assemble(root, plan, version, tmp_path, notes)
     assert release["incomplete"] == ["Windows x64 command-line runtime: its build left no archive."]
     assert not (root / "product-runtime-windows-x86_64").exists()
-
-
-def _drop_update_platform(root: Path, key: str) -> None:
-    manifest = root / "official-update" / "update-manifest.json"
-    content = json.loads(manifest.read_text(encoding="utf-8"))
-    del content["platforms"][key]
-    manifest.write_text(json.dumps(content), encoding="utf-8")
-
-
-def test_update_files_missing_for_a_platform_whose_app_does_not_read_them_are_named(tmp_path: Path) -> None:
-    version, notes = _latest_notes()
-    plan = _plan(EVERYTHING)
-    assert plan["update_files"] is True
-    full = [row for row in plan["desktop"] if row["layout"] == "full"]
-    assert {(row["platform"], row["arch"]) for row in full} == {("mac", "arm64"), ("mac", "x86_64")}
-    root = tmp_path / "release-artifacts"
-    _built_tree(root, plan, version)
-    _drop_update_platform(root, "macos-arm64")
-    release = _assemble(root, plan, version, tmp_path, notes)
-    assert release["incomplete"] == ["macOS Apple Silicon update files: could not be built."]
-    assert release["incomplete"][0] in release["notes"]
-    # The App and the runtime do not depend on them, so both still ship.
-    assert f"OpenProgram-{version}-mac-arm64.dmg" in release["published"]
-    assert f"OpenProgram-{version}-runtime-macos-arm64.tar.gz" in release["published"]
-
-
-def test_update_files_that_could_not_be_signed_are_named_for_every_platform(tmp_path: Path) -> None:
-    version, notes = _latest_notes()
-    plan = _plan(EVERYTHING)
-    root = tmp_path / "release-artifacts"
-    _built_tree(root, plan, version)
-    for path in (root / "official-update").iterdir():
-        path.unlink()
-    (root / "official-update").rmdir()
-    release = _assemble(root, plan, version, tmp_path, notes)
-    # One line per platform: the thin App's line already says why.
-    assert sorted(release["incomplete"]) == sorted([
-        "macOS Apple Silicon update files: could not be built.",
-        "macOS Intel update files: could not be built.",
-        "Windows x64 App: its update files could not be built, so it could never update.",
-        "Linux x86_64 App: its update files could not be built, so it could never update.",
-        "Linux arm64 App: its update files could not be built, so it could never update.",
-    ])
-
-
-def test_no_trusted_update_key_plans_no_update_files(tmp_path: Path) -> None:
-    version, notes = _latest_notes()
-    plan = _plan({})
-    assert plan["update_files"] is False
-    root = tmp_path / "release-artifacts"
-    _built_tree(root, plan, version)
-    assert not (root / "official-update").exists()
-    assert _assemble(root, plan, version, tmp_path, notes)["incomplete"] == []
 
 
 def test_what_a_switch_or_a_missing_key_leaves_out_is_not_an_incomplete_release(tmp_path: Path) -> None:
@@ -346,9 +272,15 @@ def test_a_rehearsal_builds_and_checks_everything_and_publishes_nothing() -> Non
     workflow = yaml.safe_load(text)
     inputs = workflow[True]["workflow_dispatch"]["inputs"]  # YAML reads the key `on` as true
     assert inputs["rehearse"]["type"] == "boolean" and inputs["rehearse"]["default"] is False
-    # A tag push has no inputs, so it builds the tag; a rehearsal builds the commit it started on.
-    assert workflow["env"]["RELEASE_REF"] == "${{ inputs.rehearse && github.sha || inputs.tag || github.ref_name }}"
-    assert workflow["env"]["RELEASE_TAG"] == "${{ inputs.tag || github.ref_name }}"
+    # Only a dispatch starts it: pushing a tag starts nothing. It builds the
+    # tag; a rehearsal (or runtime layers alone) builds the commit it started on.
+    assert list(workflow[True]) == ["workflow_dispatch"]
+    assert workflow["env"]["RELEASE_REF"] == (
+        "${{ (inputs.rehearse || inputs.runtime_layers_only) && github.sha || inputs.tag }}"
+    )
+    assert workflow["env"]["RELEASE_TAG"] == "${{ inputs.tag }}"
+    # A rehearsal uploads no runtime layer either.
+    assert "!inputs.rehearse" in workflow["jobs"]["runtime-layer"]["if"]
     checkouts = [
         step for job in workflow["jobs"].values() for step in job["steps"]
         if str(step.get("uses", "")).startswith("actions/checkout@")

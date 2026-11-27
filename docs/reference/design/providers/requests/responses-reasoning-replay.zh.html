@@ -12,7 +12,7 @@
 <tr><th scope="row">服务器分配的 ID、跨模型签名</th><td>沿用现有处理</td></tr>
 <tr><th scope="row">已存历史</th><td>绝不改写，逐字节不变</td></tr>
 <tr><th scope="row">之后的轮次</th><td>回复把每个 reasoning 项整个存成思考块的签名，有没有摘要都存；文字存在模型服务给的消息 id 下。下一轮、重试和从日志恢复的轮次都会把它们再次发给同一个模型，所以下一个请求以上一个请求的字节开头；换了模型就不发之前的推理（<a href="../../context/overview.zh.html#rendering-aging-and-compaction">渲染</a>）</td></tr>
-<tr><th scope="row">要回推理</th><td>推理模型的每次请求不论强度都发 <code translate="no">include: ["reasoning.encrypted_content"]</code>（<code translate="no">xai-subscription</code> 不发；Azure 的请求会被服务端保存，只在带推理字段时发）。<code translate="no">store: false</code> 时没有别的办法把推理带到下一轮；Codex 也是这样要的</td></tr>
+<tr><th scope="row">要回推理</th><td>推理模型的每次请求不论强度都发 <code translate="no">include: ["reasoning.encrypted_content"]</code>（Azure 的请求会被服务端保存，只在带推理字段时发）。<code translate="no">store: false</code> 时没有别的办法把推理带到下一轮；Codex 也是这样要的</td></tr>
 <tr><th scope="row">载荷</th><td>绝不解密</td></tr>
 <tr><th scope="row">权限、失败的外部操作</th><td>不改变，不重试</td></tr>
 </tbody>

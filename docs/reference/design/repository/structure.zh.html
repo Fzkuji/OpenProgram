@@ -32,6 +32,32 @@
 </tbody>
 </table>
 
+<h2 id="layers">层次顺序</h2>
+<p>Python 核心分九层。一个模块只导入本层和下面的层，不导入上面的层，模块顶部和函数内部都一样。把各层看作功能需求和设计参数，设计矩阵是下三角的：改一层不会反过来牵动下面的层。</p>
+<table class="stack fixed">
+<thead><tr><th scope="col">层，从下到上</th><th scope="col">上层通过什么告诉它</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">host._platform</code></th><td><code translate="no">host_facts</code>：某个设置的值、沙箱是否开着</td></tr>
+<tr><th scope="row"><code translate="no">state</code></th><td><code translate="no">host_facts</code>、<code translate="no">model_facts</code>、<code translate="no">program_facts</code>、<code translate="no">execution_facts</code>、<code translate="no">setting_rules</code>（每个设置的检查）</td></tr>
+<tr><th scope="row"><code translate="no">host</code></th><td><code translate="no">runtime_facts</code>，包括 <code translate="no">load_programs</code></td></tr>
+<tr><th scope="row"><code translate="no">models</code></th><td><code translate="no">usage.goal_port</code>、录制器的系统分段</td></tr>
+<tr><th scope="row"><code translate="no">runtime</code></th><td><code translate="no">program_host</code>（工具注册表）、<code translate="no">maintenance</code>（自更新的闸门）、<code translate="no">extension_link</code>，以及 Programs 登记的轮次、循环和权限钩子</td></tr>
+<tr><th scope="row"><code translate="no">extensions</code></th><td>—</td></tr>
+<tr><th scope="row"><code translate="no">operations</code></th><td>—</td></tr>
+<tr><th scope="row"><code translate="no">programs</code></th><td>—</td></tr>
+<tr><th scope="row"><code translate="no">interfaces</code></th><td>—</td></tr>
+</tbody>
+</table>
+<p>每个上层在自己的 <code translate="no">lower_layers.py</code> 里填下面各层的端口。只有三个组合根可以导入任意层：<code translate="no">openprogram/__init__.py</code>（安装 Programs 的加载方式）、<code translate="no">__main__.py</code> 和 worker 的 <code translate="no">runner.py</code>。<a href="https://github.com/Fzkuji/OpenProgram/blob/main/tests/contracts/repository/test_layer_order.py">合约测试</a>扫描所有导入，包括函数内的导入和字符串导入，不留例外。</p>
+<p>每层内部的组成部分（它的直接子包和模块）之间的导入也没有环，并且都不导入本层的 <code translate="no">__init__</code> 或 <code translate="no">lower_layers</code>（<a href="https://github.com/Fzkuji/OpenProgram/blob/main/tests/contracts/repository/test_layer_internals.py">合约测试</a>）。</p>
+<ul>
+<li>Programs：<code translate="no">_authoring</code> &lt; <code translate="no">_host</code> &lt; <code translate="no">tools</code> &lt; <code translate="no">applications</code>；<code translate="no">_authoring</code> 里的报告辅助通过 <code translate="no">reports.tool_port</code> 使用工具。</li>
+<li>State：<code translate="no">attachment_markers</code> 和 <code translate="no">paths</code> &lt; <code translate="no">store</code> &lt; <code translate="no">attachments</code> &lt; <code translate="no">worktree</code> &lt; <code translate="no">project_commit</code>。</li>
+<li>Host：<code translate="no">security</code> &lt; <code translate="no">worker</code> &lt; <code translate="no">backend</code> &lt; <code translate="no">machines</code> &lt; <code translate="no">processes</code>；<code translate="no">host._platform</code> 里 <code translate="no">processes</code> &lt; <code translate="no">terminal</code>，<code translate="no">process_exits</code> &lt; <code translate="no">changes</code>。</li>
+</ul>
+<p>运行时内部的各部分也有顺序：<code translate="no">agent_registry</code> &lt; <code translate="no">jobs</code> &lt; <code translate="no">conversation</code> &lt; <code translate="no">scheduler</code> &lt; <code translate="no">harnesses</code>，以及 <code translate="no">context</code> &lt; <code translate="no">execution</code> &lt; <code translate="no">permissions</code>。低的部分经过由 <code translate="no">runtime/lower_layers.py</code> 填入的连接模块用到高的部分：Job 用 <code translate="no">conversation_link</code>，对话用 <code translate="no">scheduler_link</code> 和 <code translate="no">harness_link</code>。</p>
+<p><code translate="no">models</code> 内部的部分按 <code translate="no">auth</code> &lt; <code translate="no">providers</code> &lt; <code translate="no">usage</code> &lt; <code translate="no">listing</code> &lt; <code translate="no">gateway</code> 排序：凭据、用凭据发请求的适配器、对已发请求的记账、界面展示的内容。下面的部分只通过自己的端口（<code translate="no">auth.provider_port</code>、<code translate="no">providers.usage_port</code>）用到上面的部分，由 <code translate="no">models/lower_layers.py</code> 填入。</p>
+
 <h2 id="packages">Python 核心与打包</h2>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>

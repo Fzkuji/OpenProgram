@@ -7,7 +7,7 @@ from starlette.testclient import TestClient
 
 from openprogram.interfaces.server.owner_auth import OwnerAuthMiddleware, OwnerAuthState
 from openprogram.interfaces.server.routes.settings import versions
-from openprogram.operations.self_update.versions import layout as paths
+from openprogram.host._platform import runtime_layout as paths
 from openprogram.operations.self_update.versions import overview, pointer as pointers
 from openprogram.operations.self_update.versions import store as sealed
 from openprogram.runtime.permissions import authority

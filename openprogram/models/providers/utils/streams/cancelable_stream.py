@@ -1,6 +1,6 @@
 """Poll a cancel signal while waiting for the next stream event.
 
-Mirrors openai_codex: Stop must not wait for the next SSE token
+Stop must not wait for the next SSE token
 (Vercel AI SDK / 0ms occupancy). async for event in stream only
 notices cancel between chunks; mid-reasoning that is seconds.
 

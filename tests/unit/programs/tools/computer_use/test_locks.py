@@ -123,7 +123,7 @@ def test_a_step_holds_its_providers_locks_while_it_runs():
 
     def act(subject, steps, call):
         seen.append(_free(MACHINE))
-        from openprogram.programs._host.execution import ToolReturn
+        from openprogram.runtime.agent.tool_execution import ToolReturn
         return ToolReturn(text="Done")
 
     provider = FakeProvider("screen", "lab", locks=lambda subject, steps: Locks(exclusive=(MACHINE,)),

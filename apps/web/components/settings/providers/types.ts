@@ -56,7 +56,7 @@ export type CredentialStatus = "ready" | "cooling" | "quota" | "invalid_key" | "
 export type CredentialStrategy = "in_order" | "evenly" | "least_used";
 
 /** One credential of a provider as GET /api/providers/{p}/credentials lists
- *  it (openprogram/models/auth/manage.py): never its secret, only the last
+ *  it (openprogram/models/listing/manage.py): never its secret, only the last
  *  four characters of a key. */
 export interface CredentialRow {
   id: string;
@@ -64,7 +64,7 @@ export interface CredentialRow {
   /** The server's name (English): the label, else the email, else "Key ····tail".
    *  The page names a row with `credentialName`, in the reader's language. */
   display_label: string;
-  /** What a sign-in of the provider is called ("ChatGPT"). */
+  /** What a sign-in of the provider is called ("Qwen"). */
   signin_name?: string;
   kind: string;
   /** web | cli | import | env */

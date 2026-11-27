@@ -12,7 +12,7 @@ import logging
 import os
 import sys
 
-from openprogram.operations.worker.ports import (
+from openprogram.host.worker.ports import (
     backend_is_ours as _backend_is_ours,
     port_in_use as _port_in_use,
     port_owner_hint,
@@ -53,7 +53,7 @@ def _browser_url(port: int) -> str:
 
 def _active_owner_auth_url(base_url: str, port: int) -> str:
     """Return a bootstrap URL only when ``base_url`` is an effective Origin."""
-    from openprogram.operations.worker.ports import backend_accepts_owner_challenge
+    from openprogram.host.security.backend_endpoint import backend_accepts_owner_challenge
     from openprogram.host.security.backend_endpoint import (
         build_owner_auth_url,
         read_active_web_access,

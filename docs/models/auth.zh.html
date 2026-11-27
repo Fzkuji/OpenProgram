@@ -11,20 +11,17 @@
 <tbody>
 <tr><th scope="row">API 密钥</th><td><code translate="no">openprogram providers login deepseek</code>，或 <code translate="no">printf %s "$KEY" | openprogram providers login deepseek --api-key-stdin</code>。<code translate="no">--api-key</code> 也可用，但会留在 shell 历史里。</td></tr>
 <tr><th scope="row">Anthropic</th><td><code translate="no">openprogram providers login anthropic</code>，再输入 Anthropic API 密钥</td></tr>
-<tr><th scope="row"><code translate="no">openai-codex</code></th><td>ChatGPT 订阅，浏览器 PKCE；或导入已有的 <code translate="no">codex</code> 登录</td></tr>
-<tr><th scope="row"><code translate="no">gemini-subscription</code></th><td>导入 <code translate="no">~/.gemini/oauth_creds.json</code>；先用 Gemini CLI 登录</td></tr>
-<tr><th scope="row"><code translate="no">google-gemini-cli</code></th><td>直接读 <code translate="no">~/.gemini/oauth_creds.json</code>，不经 discover</td></tr>
-<tr><th scope="row"><code translate="no">github-copilot</code></th><td>浏览器里的 GitHub 设备码，或导入 <code translate="no">COPILOT_GITHUB_TOKEN</code>、<code translate="no">GH_TOKEN</code>、<code translate="no">GITHUB_TOKEN</code>。短期 Copilot token 按需换取，从不落盘。</td></tr>
 </tbody>
 </table>
 <p class="note"><code translate="no">login</code> 自动选择方式；<code translate="no">--method</code> 可强制指定。</p>
+<h3>订阅</h3>
+<p>ChatGPT 或 Claude 套餐，通过把厂商自己的程序作为外部 Agent 运行来使用：<a href="third-party-harnesses.html">第三方 Harness</a>。OpenProgram 自己不登录任何套餐（<a href="../reference/design/providers/auth/subscription-policy.html">原因</a>）。</p>
 <h3>从本机导入</h3>
 <pre translate="no"><code>openprogram providers discover        # 只列出，不写入
-openprogram providers adopt codex_cli # 导入一项；--all 导入全部</code></pre>
+openprogram providers adopt qwen_cli  # 导入一项；--all 导入全部</code></pre>
 <table class="stack">
 <thead><tr><th scope="col">来源</th><th scope="col">位置</th><th scope="col">导入到</th></tr></thead>
 <tbody>
-<tr><th scope="row">Codex CLI</th><td><code translate="no">~/.codex/auth.json</code></td><td><code translate="no">openai-codex</code></td></tr>
 <tr><th scope="row">Qwen CLI</th><td><code translate="no">~/.qwen/oauth_creds.json</code></td><td><code translate="no">qwen</code></td></tr>
 <tr><th scope="row">gh CLI</th><td><code translate="no">~/.config/gh/hosts.yml</code></td><td><code translate="no">github</code></td></tr>
 <tr><th scope="row">环境变量</th><td><code translate="no">OPENAI_API_KEY</code>、<code translate="no">ANTHROPIC_API_KEY</code> 等</td><td>对应的 Provider</td></tr>
@@ -53,21 +50,4 @@ openprogram providers adopt codex_cli # 导入一项；--all 导入全部</code>
 openprogram providers keys openai add --name work
 openprogram providers keys openai move work --to 1
 openprogram providers keys openai strategy evenly</code></pre>
-<details>
-<summary>Codex 登录</summary>
-<ul>
-<li>Program 调用和对话一样使用 Provider 的列表：按 <code translate="no">openprogram providers keys openai-codex list</code> 显示的顺序，用第一个可用的登录。用同一个 ChatGPT 账号重新登录会更新它原来那一行。</li>
-<li>终端认证失败和标记为不可重试的错误在一次请求后停止，错误类别在 Program 运行时中保留。其他回调失败仍走 Program 的有界恢复。</li>
-<li>回调监听在授权页打开前启动。保持 Provider 面板打开，直到显示成功。</li>
-</ul>
-<table class="stack">
-<thead><tr><th scope="col">问题</th><th scope="col">做法</th></tr></thead>
-<tbody>
-<tr><th scope="row">页面没打开</th><td><strong>Open sign-in page</strong></td></tr>
-<tr><th scope="row">回调到不了 App</th><td>把回调 URL 粘贴到登录面板；必须属于当前这次登录</td></tr>
-<tr><th scope="row">授权码过期或已用过</th><td>重新登录</td></tr>
-<tr><th scope="row">token 交换返回 HTTP 403</th><td>OpenAI 拒绝了；原因可能是账户权限或网络。面板会标出已识别的授权错误，并显示连接重试。</td></tr>
-</tbody>
-</table>
-<p class="note">取消或离开面板即结束这次登录。</p>
-</details>
+

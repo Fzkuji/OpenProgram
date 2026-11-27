@@ -6,7 +6,7 @@ from openprogram.models.providers.shared.openai_responses import convert_respons
 from openprogram.models.providers.types import Tool
 
 
-def test_codex_tool_schema_drops_unsupported_all_of_without_mutating_tool() -> None:
+def test_responses_tool_schema_drops_unsupported_all_of_without_mutating_tool() -> None:
     parameters = {
         "type": "object",
         "properties": {
@@ -27,7 +27,7 @@ def test_codex_tool_schema_drops_unsupported_all_of_without_mutating_tool() -> N
 
     converted = convert_responses_tools(
         [Tool(name="page_tool", description="Browser action", parameters=parameters)],
-        "openai-codex",
+        "openai-responses",
         "gpt-5.6-luna",
     )
 
@@ -58,7 +58,7 @@ def test_strict_optional_enum_accepts_null() -> None:
 
     converted = convert_responses_tools(
         [Tool(name="memory_search", description="Search", parameters=parameters)],
-        "openai-codex",
+        "openai-responses",
         "gpt-5.6-luna",
     )[0]["parameters"]["properties"]
 

@@ -335,6 +335,31 @@ def open_task(tasks: list[dict[str, Any]], scope: str) -> Optional[dict[str, Any
                  if t.get("status") == "open" and (t.get("scope") or "") == scope), None)
 
 
+def open_task_lines(session_id: str) -> list[str]:
+    """The task the running agent has open, as a compaction restores it
+    (``runtime.context.compaction.restore``): its title, purpose, numbered
+    steps with status and result, and the step in progress. Tasks already
+    closed are in the summary, not here."""
+    task = open_task(load_tasks(session_id), current_scope())
+    if task is None:
+        return []
+    lines = [str(task.get("title") or "").strip()]
+    if task.get("purpose"):
+        lines.append(str(task["purpose"]).strip())
+    steps = steps_of(load(session_id), str(task.get("id")))
+    current = None
+    for number, step in enumerate(steps, 1):
+        line = f"- [{step.get('status') or 'pending'}] {number} {str(step.get('subject') or '').strip()}"
+        if step.get("result"):
+            line += f" — {step['result']}"
+        lines.append(line)
+        if step.get("status") == "in_progress":
+            current = number
+    if current is not None:
+        lines.append(f"Current step: {current}")
+    return lines
+
+
 def next_task_id(tasks: list[dict[str, Any]]) -> str:
     highest = 0
     for task in tasks:

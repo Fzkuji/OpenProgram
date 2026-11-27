@@ -54,9 +54,9 @@ def test_classifier_runs_on_the_conversation_model(monkeypatch):
     sol, flash = object(), object()
     _candidates(
         monkeypatch,
-        session=("openai-codex", "gpt-6.1-sol"),
+        session=("openai", "gpt-6.1-sol"),
         last=("deepseek", "deepseek-flash"),
-        models={"openai-codex/gpt-6.1-sol": sol, "deepseek/deepseek-flash": flash},
+        models={"openai/gpt-6.1-sol": sol, "deepseek/deepseek-flash": flash},
     )
 
     async def classify(model, *_args):
@@ -75,9 +75,9 @@ def test_classifier_falls_back_to_last_used_model(monkeypatch):
     sol, flash = object(), object()
     _candidates(
         monkeypatch,
-        session=("openai-codex", "gpt-6.1-sol"),
+        session=("openai", "gpt-6.1-sol"),
         last=("deepseek", "deepseek-flash"),
-        models={"openai-codex/gpt-6.1-sol": sol, "deepseek/deepseek-flash": flash},
+        models={"openai/gpt-6.1-sol": sol, "deepseek/deepseek-flash": flash},
     )
 
     async def classify(model, *_args):

@@ -9,6 +9,7 @@ from __future__ import annotations
 import pytest
 
 from openprogram.runtime.context.prompt_assembly import turn_context as tc
+from openprogram.runtime.execution.run_control.stop_reasons import interruption_note
 
 
 @pytest.mark.parametrize("reason, start", [
@@ -22,19 +23,19 @@ from openprogram.runtime.context.prompt_assembly import turn_context as tc
     ("wait_declined", "Your previous reply was stopped before it finished."),
 ])
 def test_each_reason_has_its_note(reason, start) -> None:
-    note = tc.interruption_note({"reason_code": reason, "cut_tools": False})
+    note = interruption_note({"reason_code": reason, "cut_tools": False})
     assert note.startswith(start)
     assert "partly run" not in note
 
 
 def test_a_cut_tool_call_adds_that_it_may_have_partly_run() -> None:
-    note = tc.interruption_note({"reason_code": "cancel.user", "cut_tools": True})
+    note = interruption_note({"reason_code": "cancel.user", "cut_tools": True})
     assert note == ("The user stopped your previous reply before it finished; its last part is incomplete."
                     " A tool call that was stopped may have partly run.")
 
 
 def test_no_interruption_no_note() -> None:
-    assert tc.interruption_note(None) == ""
+    assert interruption_note(None) == ""
     assert tc.reply_interruption({"role": "assistant", "status": "done"}) is None
     assert tc.reply_interruption({"role": "user", "status": "cancelled"}) is None
 

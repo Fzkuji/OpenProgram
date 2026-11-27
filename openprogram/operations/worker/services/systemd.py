@@ -19,7 +19,7 @@ import subprocess
 from pathlib import Path
 
 from openprogram.state.paths import get_active_profile
-from openprogram.operations.worker import paths as worker_paths
+from openprogram.host.worker import paths as worker_paths
 from openprogram.host._platform.filesystem import replace_file
 
 UNIT_NAME = "openprogram-worker.service"

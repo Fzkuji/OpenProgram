@@ -7,13 +7,14 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from openprogram.models.usage import provider_status, quota, quota_fetchers
+from openprogram.models.listing import provider_status
+from openprogram.models.usage import quota, quota_fetchers
 from openprogram.models.usage.event import UsageEvent
 from openprogram.models.usage.ledger import UsageLedger
 from openprogram.models.usage.quota import QuotaLimit
 
 ROWS = [{"id": "openrouter", "label": "OpenRouter", "enabled": True},
-        {"id": "openai-codex", "label": "OpenAI Codex", "enabled": True}]
+        {"id": "kimi-coding", "label": "Kimi Coding", "enabled": True}]
 
 
 @pytest.fixture
@@ -37,7 +38,7 @@ def client(tmp_path, monkeypatch):
         return {"openrouter": 1}
 
     monkeypatch.setattr(quota_fetchers, "refresh", fake_refresh)
-    ledger.append(UsageEvent(ts=time.time(), session_id="s", call_kind="chat", provider="openai-codex",
+    ledger.append(UsageEvent(ts=time.time(), session_id="s", call_kind="chat", provider="kimi-coding",
                              model_id="gpt-6.1-sol", input_tokens=100, output_tokens=10, cache_read_tokens=900,
                              total_tokens=1010, cost_total=2.0, cost_source="model_catalog"))
     app = FastAPI()
@@ -52,18 +53,18 @@ def client(tmp_path, monkeypatch):
 def test_status_lists_every_connected_provider(client):
     payload = client.get("/api/providers/status").json()
     by_id = {p["id"]: p for p in payload["providers"]}
-    codex = by_id["openai-codex"]
-    assert codex["billing"] == "subscription"
-    assert codex["spend"]["included"] is True and codex["spend"]["cost_usd"] is None
-    assert codex["spend"]["cache_share"] == pytest.approx(0.9)
-    assert codex["default_model"] == "gpt-6.1-sol"
+    kimi = by_id["kimi-coding"]
+    assert kimi["billing"] == "subscription"
+    assert kimi["spend"]["included"] is True and kimi["spend"]["cost_usd"] is None
+    assert kimi["spend"]["cache_share"] == pytest.approx(0.9)
+    assert kimi["default_model"] == "gpt-6.1-sol"
     assert by_id["openrouter"]["quota"]["kind"] == "none"
-    assert set(codex) == set(provider_status.ProviderStatus.__annotations__)
+    assert set(kimi) == set(provider_status.ProviderStatus.__annotations__)
     # A page opening reads endpoints older than ten minutes, after answering.
     deadline = time.time() + 2
     while not client.reads and time.time() < deadline:
         time.sleep(0.01)
-    assert client.reads == [(("openrouter", "openai-codex"), "open")]
+    assert client.reads == [(("openrouter", "kimi-coding"), "open")]
 
 
 def test_refresh_reads_now_and_answers_with_the_new_values(client):
@@ -87,31 +88,31 @@ def test_one_provider_refreshes_on_its_own(client):
 
 
 def test_usage_of_one_provider(client):
-    usage = client.get("/api/providers/openai-codex/usage?days=7&group=day,model").json()
+    usage = client.get("/api/providers/kimi-coding/usage?days=7&group=day,model").json()
     assert usage["totals"]["included"] is True and usage["totals"]["cost_usd"] is None
     assert usage["totals"]["list_price_usd"] == 2.0 and len(usage["series"]) == 7
     assert usage["series"][-1]["models"]["gpt-6.1-sol"]["tokens"] == 1010
     assert usage["models"][0]["model_id"] == "gpt-6.1-sol"
-    assert client.get("/api/providers/openai-codex/usage?group=week").status_code == 400
-    assert client.get("/api/providers/openai-codex/usage?days=365").status_code == 400
+    assert client.get("/api/providers/kimi-coding/usage?group=week").status_code == 400
+    assert client.get("/api/providers/kimi-coding/usage?days=365").status_code == 400
 
 
 def test_detected_and_fallback_routes(client, monkeypatch):
     from openprogram.models.listing import detected
-    from openprogram.models.usage import provider_views
+    from openprogram.models.listing import provider_views
     monkeypatch.setattr(detected, "detected", lambda: {"env": [], "local": [], "popular": [], "catalogue_count": 0})
     assert client.get("/api/providers/detected").json()["catalogue_count"] == 0
     monkeypatch.setattr(provider_views, "fallback_for",
                         lambda provider, model, context_tokens=0: {"suggestion": None, "alternatives": [],
                                                                     "asked": [provider, model, context_tokens]})
-    got = client.get("/api/providers/fallback?provider=openai-codex&model=gpt&context_tokens=900").json()
-    assert got["asked"] == ["openai-codex", "gpt", 900]
+    got = client.get("/api/providers/fallback?provider=kimi-coding&model=gpt&context_tokens=900").json()
+    assert got["asked"] == ["kimi-coding", "gpt", 900]
     assert client.get("/api/providers/fallback?provider=&model=gpt").status_code == 400
 
 
 def test_the_model_picker_list_carries_each_providers_state(client, monkeypatch):
     from openprogram.models import listing
-    from openprogram.models.usage import provider_views
+    from openprogram.models.listing import provider_views
     monkeypatch.setattr(listing, "list_enabled_models", lambda: [{"provider": "deepseek", "id": "flash"}])
     probes: list[bool] = []
 
@@ -144,16 +145,16 @@ def _hooks(monkeypatch, provider: str, **hooks):
 
 def test_refresh_reads_the_login_again_before_the_quota_and_says_when(client, monkeypatch):
     order: list[str] = []
-    _hooks(monkeypatch, "openai-codex", reread_login=lambda: order.append("login"))
+    _hooks(monkeypatch, "kimi-coding", reread_login=lambda: order.append("login"))
     before = client.get("/api/providers/status").json()
-    assert {p["id"]: p["checked_at"] for p in before["providers"]}["openai-codex"] is None
+    assert {p["id"]: p["checked_at"] for p in before["providers"]}["kimi-coding"] is None
 
     started = time.time()
-    status = client.post("/api/providers/openai-codex/refresh").json()
+    status = client.post("/api/providers/kimi-coding/refresh").json()
 
     assert order == ["login"]
     # The page's own background read ("open") may land at any time; Refresh is the manual one.
-    assert [read for read in client.reads if read[1] == "manual"] == [(("openai-codex",), "manual")]
+    assert [read for read in client.reads if read[1] == "manual"] == [(("kimi-coding",), "manual")]
     assert status["checked_at"] >= started
     # Only the provider that was asked is stamped.
     after = {p["id"]: p for p in client.get("/api/providers/status").json()["providers"]}
@@ -164,25 +165,25 @@ def test_a_login_that_cannot_be_reread_does_not_fail_refresh(client, monkeypatch
     def broken():
         raise RuntimeError("store unreadable")
 
-    _hooks(monkeypatch, "openai-codex", reread_login=broken)
-    response = client.post("/api/providers/openai-codex/refresh")
-    assert response.status_code == 200 and response.json()["id"] == "openai-codex"
+    _hooks(monkeypatch, "kimi-coding", reread_login=broken)
+    response = client.post("/api/providers/kimi-coding/refresh")
+    assert response.status_code == 200 and response.json()["id"] == "kimi-coding"
 
 
 def test_a_subscription_names_its_plan_and_an_api_key_provider_never_does(client, monkeypatch):
-    _hooks(monkeypatch, "openai-codex", plan=lambda: "Plus")
+    _hooks(monkeypatch, "kimi-coding", plan=lambda: "Plus")
     by_id = {p["id"]: p for p in client.get("/api/providers/status").json()["providers"]}
-    assert by_id["openai-codex"]["plan"] == "plus"
+    assert by_id["kimi-coding"]["plan"] == "plus"
     assert by_id["openrouter"]["plan"] is None
 
 
 def test_the_plan_a_reply_named_wins_over_the_sign_in(client, monkeypatch):
-    _hooks(monkeypatch, "openai-codex", plan=lambda: "plus")
-    quota.default_store.note_plan("openai-codex", "", "pro")
+    _hooks(monkeypatch, "kimi-coding", plan=lambda: "plus")
+    quota.default_store.note_plan("kimi-coding", "", "pro")
     by_id = {p["id"]: p for p in client.get("/api/providers/status").json()["providers"]}
-    assert by_id["openai-codex"]["plan"] == "pro"
+    assert by_id["kimi-coding"]["plan"] == "pro"
 
 
 def test_an_unknown_plan_is_null(client):
     by_id = {p["id"]: p for p in client.get("/api/providers/status").json()["providers"]}
-    assert by_id["openai-codex"]["plan"] is None
+    assert by_id["kimi-coding"]["plan"] is None

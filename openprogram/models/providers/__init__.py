@@ -3,10 +3,8 @@ pi_ai — Unified LLM API
 Python mirror of @mariozechner/pi-ai.
 
 Provider detection is :func:`detect_provider`. Building a Runtime is the
-runtime layer's (``openprogram.runtime.agent.runtime.factory.create_runtime``,
-with the provider-specific classes in
-``openprogram.runtime.agent.provider_runtimes``); the provider packages
-here hold only model, auth and wire code.
+runtime layer's (``openprogram.runtime.agent.runtime.factory.create_runtime``);
+the provider packages here hold only model, auth and wire code.
 """
 
 # Core types
@@ -91,9 +89,6 @@ from .catalog.api_registry import (
     register_api_provider,
 )
 
-# Environment API keys
-from .settings.env_api_keys import resolve_provider_key
-
 # Streaming functions
 from .streaming.stream import complete, complete_simple, stream, stream_simple
 
@@ -135,7 +130,6 @@ __all__ = [
     # Detection
     "PROVIDERS", "detect_provider", "check_providers",
     # Keys
-    "resolve_provider_key",
     # Streaming
     "stream", "complete", "stream_simple", "complete_simple",
     # Utils

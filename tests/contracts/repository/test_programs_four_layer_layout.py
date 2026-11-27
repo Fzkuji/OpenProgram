@@ -28,12 +28,12 @@ AUTHORING = {
     "providers.py", "guides.py", "prechecks.py", "application_client.py", "testing.py",
 }
 HOST = {
-    "__init__.py", "runtime.py", "execution.py", "context.py", "services.py",
+    "__init__.py", "runtime.py", "context.py", "services.py",
     "registry.py", "packages.py", "source_loader.py", "sources.py", "check.py",
     "watcher.py", "meta_storage.py", "identity.py", "lower_layers.py", "tool_rank.py", "ui", "framework",
 }
 HOST_UI = {
-    "__init__.py", "audio.py", "bindings.py", "catalog.py", "catalog_store.py", "driver.py",
+    "__init__.py", "audio.py", "bindings.py", "catalog.py", "catalog_store.py", "driver.py", "export.py",
     "host_calls.py", "loader.py", "resource_provider.py", "runner.py", "scaffold.py", "service.py",
     "state.py",
 }

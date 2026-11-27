@@ -91,9 +91,13 @@ class DeepSeekHarnessEngine:
     provider = PROVIDER
     label = "DeepSeek Harness"
 
+    @property
+    def turn(self) -> type:
+        return DshTurn
+
     def run_turn(self, *, req, history, on_event, cancel_event, assistant_msg_id,
                  ordered_blocks_out, execution_context) -> tuple[str, dict, list[dict]]:
-        return DshTurn(
+        return self.turn(
             req=req, history=history or [], on_event=on_event, cancel_event=cancel_event,
             assistant_msg_id=assistant_msg_id or f"{req.user_msg_id}_reply",
             ordered_blocks_out=ordered_blocks_out, execution_context=execution_context,
@@ -101,6 +105,20 @@ class DeepSeekHarnessEngine:
 
 
 class DshTurn:
+    """One turn in an ACP agent; another ACP agent's turn (Gemini CLI's) sets its own
+    names, client module and session calls on a subclass."""
+
+    provider = PROVIDER
+    harness_id = HARNESS_ID
+    label = "DeepSeek Harness"
+    #: The client module: ``pool()``, ``model_id``, ``option_value``, ``read_options``.
+    acp: Any = client
+    #: The ACP call that reopens a saved session.
+    resume_method = "session/resume"
+    #: The session keeps the person's message once the prompt was sent, though the turn
+    #: failed. Without it only messages the agent wrote (their ``messageId``) say so.
+    holds_sent_prompt = False
+
     def __init__(self, *, req, history, on_event, cancel_event, assistant_msg_id,
                  ordered_blocks_out, execution_context) -> None:
         self.req = req
@@ -187,11 +205,37 @@ class DshTurn:
         self.on_event({"type": "chat_response", "data": {
             "type": "context_usage", "session_id": self.req.session_id, "msg_id": self.req.user_msg_id,
             "usage": {"input_tokens": 0, "output_tokens": 0, "cache_read_tokens": 0, "cache_write_tokens": 0},
-            "model": f"{PROVIDER}/{self.model_id}" if self.model_id else PROVIDER,
+            "model": f"{self.provider}/{self.model_id}" if self.model_id else self.provider,
             "context_window": size, "context_tokens": used,
         }})
 
     # -- setup ------------------------------------------------------------
+
+    def _launch(self) -> tuple[list[str], dict[str, str]]:
+        """The process's extra arguments and environment: the person's own
+        setup over OpenProgram's gateway while their dsh is on it."""
+        return client.launch_args(), {}
+
+    def _options_of(self, answer: Any) -> list:
+        """The session's config options in an answer to ``session/new`` or its reopening."""
+        return (answer or {}).get("configOptions") or []
+
+    def _reason(self, message: str):
+        return _error_reason(message)
+
+    def _settled(self, answer: Any) -> None:
+        """The prompt's answer, once its turn ended."""
+
+    def _reopened(self) -> None:
+        """A saved session was reopened in this process."""
+
+    def _remember_models(self, options: list) -> None:
+        """Keep the models a live session offers as the harness's listing."""
+        try:
+            from openprogram.runtime.harnesses.models import remember_options
+            remember_options(self.harness_id, options)
+        except Exception:  # noqa: BLE001 - the listing is read again later
+            _log.debug("%s models not kept", self.label, exc_info=True)
 
     def _workdir(self) -> str:
         import os
@@ -210,7 +254,7 @@ class DshTurn:
 
         db = default_db()
         key = handoff.branch_key(self.req)
-        records = handoff.read_records(db, self.req.session_id, PROVIDER)
+        records = handoff.read_records(db, self.req.session_id, self.provider)
         plan = handoff.plan_thread(records, key, self.history, getattr(self.req, "user_text", None))
         loaded: set = server.__dict__.setdefault("loaded_sessions", set())
         loaded_at: dict = server.__dict__.setdefault("loaded_at", {})
@@ -233,16 +277,17 @@ class DshTurn:
                     if exc.exited:
                         raise
                     # Still open here: the turn goes on in it rather than in a new session.
-                    _log.info("DeepSeek Harness session %s not reloaded (%s)", session_id, exc)
+                    _log.info("%s session %s not reloaded (%s)", self.label, session_id, exc)
             if fresh or session_id not in loaded:
                 try:
-                    answer = server.request("session/resume", {"sessionId": session_id, "cwd": cwd, "mcpServers": []},
+                    answer = server.request(self.resume_method, {"sessionId": session_id, "cwd": cwd, "mcpServers": []},
                                             timeout=120)
-                    options = (answer or {}).get("configOptions") or []
+                    options = self._options_of(answer)
+                    self._reopened()
                 except AppServerError as exc:
                     if exc.exited:
                         raise
-                    _log.info("DeepSeek Harness session %s not resumed (%s); starting another", session_id, exc)
+                    _log.info("%s session %s not resumed (%s); starting another", self.label, session_id, exc)
                     session_id, plan = None, handoff.ThreadPlan("start", missed=list(self.history))
                     cwd = self._workdir()
             note = handoff.handoff_text(plan.missed) if session_id else None
@@ -252,8 +297,8 @@ class DshTurn:
             answer = server.request("session/new", {"cwd": cwd, "mcpServers": []}, timeout=120)
             session_id = (answer or {}).get("sessionId")
             if not session_id:
-                raise AppServerError("DeepSeek Harness did not start a session")
-            options = (answer or {}).get("configOptions") or []
+                raise AppServerError(f"{self.label} did not start a session")
+            options = self._options_of(answer)
             note = handoff.handoff_text(missed)
         if session_id not in loaded:
             loaded_at[session_id] = time.time()
@@ -266,10 +311,10 @@ class DshTurn:
             # history up to the handoff it has yet to read, a new one nothing yet.
             record.update(seen=None if created else handoff.resumed_position(self.history, plan),
                           own_turns=[], shared=False)
-        handoff.write_record(db, self.req.session_id, PROVIDER, key, record)
+        handoff.write_record(db, self.req.session_id, self.provider, key, record)
         if created:
             # A new session's current model is the harness's default; a resumed one's is its own.
-            _remember_models(options)
+            self._remember_models(options)
         return note, options
 
     def _configure(self, server: AppServer, options: list) -> None:
@@ -283,12 +328,20 @@ class DshTurn:
             return (answer or {}).get("configOptions") or options
 
         model = self.model_id
+        on_gateway = getattr(self.acp, "gateway_model", None)
+        if model and on_gateway is not None and on_gateway(model):
+            model = None  # never through OpenProgram's own gateway: the session's own start
         if model and model.lower() not in ("default", "auto"):
             now = current(options).get("model")
-            if not now or client.model_id(str(now)) != model:
-                options = setting("model", client.option_value(model))
+            if not now or self.acp.model_id(str(now)) != model:
+                options = setting("model", self.acp.option_value(model))
+        now = current(options).get("model")
+        own = self.acp.own_model() if on_gateway is not None and now and on_gateway(self.acp.model_id(str(now))) else ""
+        if own:
+            # a session the person's dsh started on the gateway goes on their own start here
+            options = setting("model", self.acp.option_value(own))
         # The model's own effort levels, read after it is chosen.
-        _, efforts, _ = client.read_options(options)
+        _, efforts, _ = self.acp.read_options(options)
         # A model with no effort levels takes none; Auto asks for the model's own again,
         # since an effort set earlier stays with the session.
         effort = (dsh_effort(getattr(self.req, "thinking_effort", None), efforts)
@@ -300,21 +353,20 @@ class DshTurn:
     def _default_effort(self) -> Optional[str]:
         try:
             from openprogram.runtime.harnesses.models import harness_model
-            return (harness_model(PROVIDER, self.model_id or "default") or {}).get("default_effort")
+            return (harness_model(self.provider, self.model_id or "default") or {}).get("default_effort")
         except Exception:  # noqa: BLE001 - the session keeps its effort
             return None
 
     def _prompt_text(self, note: Optional[str]) -> str:
         text = self.req.user_text or ""
-        try:
-            from openprogram.runtime.permissions.authority import render_model_input_from
-            text = render_model_input_from(self.req, text)
-        except Exception:  # noqa: BLE001 - the person's own text still goes
-            pass
+        # Anyone but the local owner goes in the speaker envelope; a failure here must
+        # not send their words as the owner's, so it is not caught.
+        from openprogram.state.authority import render_outside_input
+        text = render_outside_input(self.req, text)
         return f"{note}\n\n{text}" if note else text
 
     def _prompt(self, server: AppServer, note: Optional[str]) -> list[dict]:
-        """The prompt's blocks: the text, and the attached images where DeepSeek Harness reads them."""
+        """The prompt's blocks: the text, and the attached images where the agent reads them."""
         images = [a for a in self.req.attachments or [] if isinstance(a, dict) and a.get("type") == "image"]
         blocks: list[dict] = []
         left = 0
@@ -336,20 +388,24 @@ class DshTurn:
         if left:
             # Never dropped unsaid: the agent can tell the person it did not see them.
             text += (f"\n\n[{left} attached image{'s' if left > 1 else ''} could not be passed on "
-                     "to DeepSeek Harness.]")
+                     f"to {self.label}.]")
         return [{"type": "text", "text": text}, *blocks]
 
     # -- the turn ---------------------------------------------------------
 
     def run(self) -> tuple[str, dict, list[dict]]:
-        server, fresh = client.pool().acquire(self.pool_key, extra_args=[], env={})
+        self.acp.pool().wait_closed(self.pool_key, self.cancel_event)
+        if self.cancel_event.is_set():
+            return "", self.usage, self.tool_calls  # stopped before it started
+        extra_args, env = self._launch()
+        server, fresh = self.acp.pool().acquire(self.pool_key, extra_args=extra_args, env=env)
         self.server = server
         unlisten = server.listen(self._listen)
         crashed = finished = False
         marked: Optional[tuple[str, str]] = None
         try:
             note, options = self._session(server, fresh)
-            marked = (PROVIDER, str(self.session_id))
+            marked = (self.provider, str(self.session_id))
             handoff.enter_running(marked)
             if self.cancel_event.is_set():
                 return "", self.usage, self.tool_calls  # stopped before it was sent
@@ -372,6 +428,8 @@ class DshTurn:
 
             threading.Thread(target=prompt, name="dsh-prompt", daemon=True).start()
             self._drain()
+            if "answer" in outcome:
+                self._settled(outcome["answer"])
             error = outcome.get("error")
             if isinstance(error, AppServerError):
                 if error.exited:
@@ -379,8 +437,8 @@ class DshTurn:
                 if not self.cancel_event.is_set():
                     from openprogram.models.providers.utils.failures.errors import LLMError
                     message = str(error).removeprefix("Internal error: ").removeprefix("turn failed: ")
-                    raise LLMError(message=f"DeepSeek Harness: {message}", reason=_error_reason(message),
-                                   provider=PROVIDER, model=self.model_id)
+                    raise LLMError(message=f"{self.label}: {message}", reason=self._reason(message),
+                                   provider=self.provider, model=self.model_id)
             finished = True
         except AppServerError as exc:
             crashed = exc.exited or not server.alive or self.prompt_sent.is_set() and not self.settled
@@ -389,9 +447,10 @@ class DshTurn:
             else:
                 from openprogram.models.providers.utils.failures.errors import ErrorReason, LLMError
                 tail = server.stderr_tail().splitlines()[-1:] if crashed else []
-                message = str(exc) if not crashed else "DeepSeek Harness stopped unexpectedly" + (f": {tail[0]}" if tail else ".")
-                raise LLMError(message=message, reason=ErrorReason.PROVIDER_INTERNAL if crashed else ErrorReason.UNKNOWN,
-                               provider=PROVIDER, model=self.model_id) from exc
+                said = str(exc) if str(exc).startswith(self.label) else f"{self.label}: {exc}"
+                message = said if not crashed else f"{self.label} stopped unexpectedly" + (f": {tail[0]}" if tail else ".")
+                raise LLMError(message=message, reason=ErrorReason.PROVIDER_INTERNAL if crashed else self._reason(str(exc)),
+                               provider=self.provider, model=self.model_id) from exc
         except BaseException:
             # Anything else leaves a prompt running with nobody reading it: stop it and the process.
             if self.prompt_sent.is_set() and not self.settled:
@@ -406,12 +465,12 @@ class DshTurn:
             for call_id in list(self.open_cards):
                 self._end_card(call_id, "Stopped", True, "cancelled")
             if crashed or not server.alive:
-                client.pool().discard(self.pool_key, server)
+                self.acp.pool().discard(self.pool_key, server)
             else:
-                client.pool().release(self.pool_key, server)
+                self.acp.pool().release(self.pool_key, server)
             if finished:
                 self._remember_seen()
-            elif self.message_ids:
+            elif self.message_ids or (self.holds_sent_prompt and self.prompt_sent.is_set()):
                 # What it wrote is the session's, though the turn failed: the session holds the
                 # person's message, so the next turn hands over only what comes after it.
                 self._remember_seen(seen=False, holds=getattr(self.req, "user_msg_id", None))
@@ -427,16 +486,16 @@ class DshTurn:
             from openprogram.runtime.context.session_db import default_db
             db = default_db()
             key = handoff.branch_key(self.req)
-            own = list((handoff.read_records(db, self.req.session_id, PROVIDER).get(key) or {}).get("own_turns") or [])
+            own = list((handoff.read_records(db, self.req.session_id, self.provider).get(key) or {}).get("own_turns") or [])
             own = (own + [m for m in self.message_ids if m not in own])[-_OWN_TURNS_KEPT:]
             update: dict = {"thread_id": self.session_id, "cwd": self.cwd, "own_turns": own}
             if seen:
                 update.update(seen=self.assistant_msg_id, at=time.time())
             elif holds:
                 update.update(handoff.held_record(self.history, holds, getattr(self.req, "user_text", None)))
-            handoff.write_record(db, self.req.session_id, PROVIDER, key, update)
+            handoff.write_record(db, self.req.session_id, self.provider, key, update)
         except Exception:  # noqa: BLE001 - the next turn hands off what it cannot tell
-            _log.warning("DeepSeek Harness session record not kept for %s", self.req.session_id, exc_info=True)
+            _log.warning("%s session record not kept for %s", self.label, self.req.session_id, exc_info=True)
 
     def _listen(self, message: dict) -> bool:
         params = message.get("params") if isinstance(message.get("params"), dict) else {}
@@ -459,7 +518,7 @@ class DshTurn:
                         assert self.server is not None
                         self.server.notify("session/cancel", {"sessionId": self.session_id})
                     except AppServerError:
-                        _log.debug("DeepSeek Harness cancel not sent", exc_info=True)
+                        _log.debug("%s cancel not sent", self.label, exc_info=True)
                 elif time.monotonic() - stop_seen > CANCEL_GRACE_SECONDS:
                     assert self.server is not None
                     self.server.kill()
@@ -473,7 +532,7 @@ class DshTurn:
                 self.settled = True
                 return
             if method == "openprogram/exited":
-                raise AppServerError("DeepSeek Harness stopped", exited=True)
+                raise AppServerError(f"{self.label} stopped", exited=True)
             if method == "session/request_permission":
                 self._answer(message)
             else:
@@ -515,7 +574,7 @@ class DshTurn:
             self.server.respond(message["id"], allow)
             return
         from openprogram.runtime.permissions.approvals.live import ask_live_approval, live_owner_from
-        owner = live_owner_from(self.execution_context, self.req.session_id, HARNESS_ID)
+        owner = live_owner_from(self.execution_context, self.req.session_id, self.harness_id)
         if owner is None:
             self.server.respond(message["id"], reject)
             return
@@ -556,12 +615,3 @@ def _synced_since(records: dict, session_id: str, since: float) -> bool:
     """The app sync moved ``session_id`` on after ``since``."""
     return any(isinstance(r, dict) and r.get("thread_id") == session_id
                and float(r.get("synced_at") or 0) > since for r in (records or {}).values())
-
-
-def _remember_models(options: list) -> None:
-    """Keep the models a live session offers as the harness's listing."""
-    try:
-        from openprogram.runtime.harnesses.models import remember_options
-        remember_options(HARNESS_ID, options)
-    except Exception:  # noqa: BLE001 - the listing is read again later
-        _log.debug("DeepSeek Harness models not kept", exc_info=True)

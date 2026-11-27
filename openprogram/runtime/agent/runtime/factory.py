@@ -8,9 +8,8 @@
 
 The provider side (the ``PROVIDERS`` table, detection, credential
 resolution) lives in ``openprogram.models.providers.catalog.registry``; this
-module turns it into a Runtime. The subscription/CLI-credential backends
-get the class registered in ``openprogram.runtime.agent.provider_runtimes``;
-plain API-key HTTP providers get the base ``Runtime`` with the key
+module turns it into a Runtime. Plain API-key HTTP providers get the
+base ``Runtime`` with the key
 resolved up front; every other provider gets the base ``Runtime`` routed
 through its model's ``api``. Every runtime carries an authoritative
 ``provider_id``.
@@ -103,8 +102,8 @@ def create_runtime(provider: str = None, model: str = None, **kwargs):
     """Create a Runtime instance with auto-detection or explicit provider.
 
     Args:
-        provider:  Provider name (e.g. "anthropic", "claude-code",
-                   "openai", "gemini-cli"). Pass "auto" or None to
+        provider:  Provider name (e.g. "anthropic", "openai",
+                   "deepseek"). Pass "auto" or None to
                    auto-detect the best available provider via
                    detect_provider().
         model:     Model name override.
@@ -113,7 +112,7 @@ def create_runtime(provider: str = None, model: str = None, **kwargs):
     Returns:
         A Runtime instance ready to use. Every runtime carries an
         authoritative ``provider_id`` attribute (derived from its model
-        namespace, or set by the subscription runtime classes).
+        namespace).
     """
     from openprogram.models.auth.provider_policy import UNSUPPORTED_PROVIDERS, API_KEY_REQUIRED
     if provider in UNSUPPORTED_PROVIDERS:
@@ -157,8 +156,8 @@ def create_runtime(provider: str = None, model: str = None, **kwargs):
     if provider and provider != "auto":
         if provider not in _registry.PROVIDERS:
             # ``PROVIDERS`` is NOT the list of supported providers — it
-            # only holds the 6 built-in backends (claude-code,
-            # openai-codex, gemini-cli, anthropic, openai, gemini). Every
+            # only holds the built-in backends (anthropic, openai,
+            # gemini). Every
             # other provider — deepseek, groq, openrouter, minimax, kimi,
             # everything models.dev knows — is supported through its
             # model's ``api`` + the api_registry, exactly how the chat
@@ -175,23 +174,15 @@ def create_runtime(provider: str = None, model: str = None, **kwargs):
         if provider not in _registry.PROVIDERS:
             return _api_routed_runtime(provider, model, **kwargs)
         entry = _registry.PROVIDERS[provider]
-        # detect_provider returns None for CLI providers ("we found
-        # the binary but don't have an opinion on which model") — the
-        # table default below covers that.
 
     use_model = model or _table_default(entry)
-
-    from openprogram.runtime.agent.provider_runtimes import runtime_class_for
-    cls = runtime_class_for(provider)
-    if cls is not None:
-        return cls(model=use_model, **kwargs)
 
     # Plain API-key HTTP provider: the base Runtime + the api_registry wire
     # IS the runtime. A provider with no key at all fails here with
     # guidance instead of at first exec. Only that a key exists is checked:
     # one cooling down or out of quota is still the provider's key, and the
     # credential layer chooses, waits or says why per request
-    # (models/auth/selection.py). A caller's own ``api_key`` is sent as given.
+    # (models/providers/streaming/credential_failover.py). A caller's own ``api_key`` is sent as given.
     from openprogram.models.auth.resolver import has_key
     from openprogram.runtime.agent.runtime import Runtime
     if not kwargs.get("api_key") and not has_key(entry["credential"]) \

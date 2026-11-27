@@ -45,7 +45,7 @@ CredentialKind = Literal[
     "oauth",              # access + refresh token from a browser sign-in
     "device_code",        # same payload as oauth, obtained through a device code
     "import",             # another tool's login file, read where it lives
-    "token",              # a pasted access token (a GitHub token for Copilot)
+    "token",              # a pasted access token
     "credential_process", # a helper command prints the key on each use
 ]
 
@@ -402,8 +402,8 @@ class AuthPoolExhaustedError(AuthError):
 class RemovalStep:
     """One concrete cleanup action needed to fully forget a credential.
 
-    Example: a credential imported from ``~/.codex/auth.json`` needs one
-    step — a note that the user must ``codex logout`` to remove the
+    Example: a credential imported from ``~/.qwen/oauth_creds.json`` needs one
+    step — a note that the user must log out of Qwen Code to remove the
     underlying file (we don't touch external CLI stores). A credential
     we created via PKCE needs none beyond removing it from the provider's
     credential list. A credential that was also referenced by an env var
@@ -434,7 +434,6 @@ class CredentialSource(Protocol):
 
     Implementations live in ``auth/sources/``:
       * ``env.py`` — ``OPENAI_API_KEY`` style env lookups
-      * ``codex_cli.py`` — parses ``~/.codex/auth.json``
       * ``claude_code.py`` — parses Claude Code's oauth file
       * ``qwen_cli.py``, ``gh_cli.py`` — same pattern
 

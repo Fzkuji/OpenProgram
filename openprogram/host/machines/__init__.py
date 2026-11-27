@@ -62,6 +62,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 from urllib.parse import urlsplit
 
+from openprogram.host.backend import docker as _docker
 from openprogram.host.machines import here, kinds
 from openprogram.host.machines.kinds import Kind, KindError
 from openprogram.state import config as user_config
@@ -307,7 +308,7 @@ def _read_secrets(machine_id: str) -> dict[str, str]:
 
 
 def _write_secrets(machine_id: str, values: dict[str, str]) -> None:
-    from openprogram.models.auth.credentials.io import _private_atomic_write
+    from openprogram.state.private_files import _private_atomic_write
     path = _secrets_path(machine_id)
     if not values:
         with contextlib.suppress(OSError):
@@ -743,6 +744,35 @@ def current_environment() -> Machine:
     return resolve_for_session(current_session_id())
 
 
+def get_active_backend():
+    """The backend for the running session's environment."""
+    from openprogram.host.backend import UnavailableBackend, backend_for
+    try:
+        machine = current_environment()
+    except MachineError as exc:
+        return UnavailableBackend("unavailable", str(exc))
+    from openprogram.state.execution_facts import current_session_id
+    session_id = current_session_id()
+    try:
+        return backend_for(machine, session_id)
+    except Exception as exc:
+        return UnavailableBackend(machine.method or "unavailable", f"machine {machine.id!r}: {exc}")
+
+
+def _container_refusal(machine_id: str) -> str | None:
+    """Why no container may start for ``machine_id`` now, or None."""
+    machine = get_machine(machine_id)
+    if machine is None:
+        return f"machine {machine_id!r} was removed"
+    if not machine.enabled:
+        return f"machine {machine_id!r} was switched off"
+    return None
+
+
+# A backend is bound to a machine only by a machine from here, so the Docker
+# backend asks this before it starts a machine's container.
+_docker.refuse_containers_with(_container_refusal)
+
 __all__ = [
     "Connection",
     "Kind",
@@ -757,6 +787,7 @@ __all__ = [
     "delete_machine",
     "discovered_machines",
     "get_environment",
+    "get_active_backend",
     "get_machine",
     "kinds",
     "list_environments",

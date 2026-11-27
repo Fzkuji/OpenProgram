@@ -7,23 +7,23 @@ const path = require("node:path");
 const {
   DesktopUpdateService,
   compareVersions,
+  hasShellLayer,
+  shellLayerVersion,
   desktopAssetNames,
   desktopAssetSpec,
   desktopUpdateFetch,
   downloadVerified,
-  nextAutomaticCheckAt,
   normalizePersistedState,
   parseUpgradeOutcome,
   readStateFile,
   readUpdateSource,
-  replaceAppImage,
   requestWithRedirects,
   resolveDesktopRelease,
   saveStateFileAtomic,
   validateUpdateUrl,
   writeAll,
 } = require("../../main/self-update/update-service");
-const { MAC_SWAP_SCRIPT } = require("../../main/self-update/app-replace");
+const { POSIX_SWAP_SCRIPT, WINDOWS_SWAP_SCRIPT, shellSwap, stagingRoot } = require("../../main/self-update/app-replace");
 const { spawnSync } = require("node:child_process");
 const crypto = require("node:crypto");
 
@@ -31,6 +31,10 @@ assert.equal(compareVersions("0.6.7", "0.6.6"), 1);
 assert.equal(compareVersions("0.6.6", "0.6.6"), 0);
 assert.equal(compareVersions("0.6.6", "0.7.0"), -1);
 assert.throws(() => compareVersions("main", "0.6.6"), /version/);
+assert.equal(compareVersions("1.2.1.1", "1.2.1"), 1, "a fourth part counts");
+assert.equal(compareVersions("1.2.1.0", "1.2.1"), 0);
+assert.equal(compareVersions("v1.2.2", "1.2.1.9"), 1);
+assert.throws(() => compareVersions("1.2.1.1.1", "1.2.1"), /version/);
 
 const release = {
   tag_name: "v0.6.7",
@@ -142,8 +146,6 @@ assert.throws(() => validateUpdateUrl("http://github.com/file"), /HTTPS/);
 assert.throws(() => validateUpdateUrl("https://example.com/file"), /host/);
 assert.throws(() => validateUpdateUrl("https://user:pass@github.com/file"), /credentials/);
 
-assert.equal(nextAutomaticCheckAt({ lastSuccessAt: 1_000, lastAttemptAt: 1_000 }), 1_000 + 24 * 3600_000);
-assert.equal(nextAutomaticCheckAt({ lastSuccessAt: 0, lastAttemptAt: 2_000 }), 2_000 + 6 * 3600_000);
 
 const defaults = normalizePersistedState({ schema: 99, automaticChecks: false });
 assert.equal(defaults.schema, 1);
@@ -188,8 +190,7 @@ try {
     openPath: async () => "",
     now: () => 10,
   });
-  assert.equal(missingReleaseApp.automaticCheckDueAt(), 0);
-  assert.equal(JSON.parse(fs.readFileSync(statePath, "utf8")).lastSuccessAt, 0);
+  assert.equal(missingReleaseApp.getState().release, null);
   saveStateFileAtomic(statePath, {
     schema: 1,
     automaticChecks: true,
@@ -223,7 +224,7 @@ try {
     openPath: async () => "",
     now: () => 40,
   });
-  assert.equal(futureTimestampApp.automaticCheckDueAt(), 0);
+  assert.equal(futureTimestampApp.getState().release?.latestVersion, "0.6.7");
   fs.writeFileSync(statePath, "not-json");
   assert.equal(readStateFile(statePath).automaticChecks, true);
   new DesktopUpdateService({
@@ -251,10 +252,11 @@ assert.match(String(desktopUpdateFetch), /\bfetch\(/);
 assert.doesNotMatch(String(desktopUpdateFetch), /net\.fetch/);
 assert.match(mainSource, /ipcMain\.handle\("updates:get-state"/);
 assert.match(mainSource, /ipcMain\.handle\("updates:check"/);
-assert.match(mainSource, /updates:check"[\s\S]*scheduleAutomaticUpdateCheck\(\)/);
+assert.match(mainSource, /UPDATE_INITIAL_DELAY_MS = 30_000/);
+assert.match(mainSource, /UPDATE_CHECK_INTERVAL_MS = 3600_000/);
+assert.match(mainSource, /setInterval\(run, UPDATE_CHECK_INTERVAL_MS\)/);
 assert.match(mainSource, /ipcMain\.handle\("updates:download"/);
-assert.match(mainSource, /powerMonitor\.on\("resume"/);
-assert.match(mainSource, /finally\s*{\s*scheduleAutomaticUpdateCheck\(\)/);
+assert.doesNotMatch(mainSource, /automaticCheckDueAt|scheduleAutomaticUpdateCheck/);
 assert.match(mainSource, /webContents\.isDestroyed\(\)/);
 assert.match(preloadSource, /updates:\s*\{/);
 assert.match(preloadSource, /getState:\s*\(\)\s*=>\s*ipcRenderer\.invoke\("updates:get-state"\)/);
@@ -438,7 +440,7 @@ async function checkNetworkBoundaries() {
 
   const retryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "openprogram-check-retry-"));
   try {
-    let now = 1_000;
+    const now = 1_000;
     let retryFetches = 0;
     const retryService = new DesktopUpdateService({
       currentVersion: "0.6.6",
@@ -455,10 +457,8 @@ async function checkNetworkBoundaries() {
     });
     assert.equal((await retryService.check({ force: true })).status, "error");
     assert.equal(retryFetches, 2, "the API, then the latest-release page");
+    // The hourly timer in main.js paces checks; each one asks again.
     assert.equal((await retryService.check()).status, "error");
-    assert.equal(retryFetches, 2);
-    now += 6 * 3600_000;
-    await retryService.check();
     assert.equal(retryFetches, 4);
   } finally {
     fs.rmSync(retryRoot, { recursive: true, force: true });
@@ -649,77 +649,154 @@ function checkAssetNames() {
   assert.deepEqual(desktopAssetNames("1.2.3", "win32", "arm64", { windowsSignedOnly: false }),
     ["OpenProgram-1.2.3-win-arm64.exe", "OpenProgram-1.2.3-win-arm64-unsigned.exe"]);
   assert.deepEqual(desktopAssetNames("1.2.3", "darwin", "arm64"),
-    ["OpenProgram-1.2.3-mac-arm64.dmg", "OpenProgram-1.2.3-mac-arm64-unsigned.dmg"]);
-  assert.deepEqual(desktopAssetNames("1.2.3", "darwin", "arm64", { inPlace: true }), [
-    "OpenProgram-1.2.3-mac-arm64.zip", "OpenProgram-1.2.3-mac-arm64.dmg", "OpenProgram-1.2.3-mac-arm64-unsigned.dmg",
-  ], "a Mac that replaces itself takes the .zip first");
+    ["OpenProgram-1.2.3-mac-arm64.dmg", "OpenProgram-1.2.3-mac-arm64-unsigned.dmg"],
+    "a Mac never downloads its App whole: a version-store App takes its shell layer");
 }
 
 /**
- * An App that replaces itself downloads and prepares a new release on its
- * own, offers the restart, keeps the offer across a later check, and an
- * install hands the prepared file over.
+ * The swap waits for the App to exit, puts the new bundle in place, drops the
+ * old one and only then leaves the marker the new App switches on; a failed
+ * second rename puts the old App back and leaves no marker.
  */
-async function checkInPlace(directory) {
-  const bytes = Buffer.from("the new App");
-  const sha256 = crypto.createHash("sha256").update(bytes).digest("hex");
-  const zip = "OpenProgram-1.1.0-mac-x64.zip";
-  const dmg = "OpenProgram-1.1.0-mac-x64.dmg";
-  const files = releaseWith("1.1.0", [zip, dmg]);
-  for (const item of files.release.assets) if (item.name !== "release-manifest.json") item.size = bytes.length;
-  for (const item of files.manifest.files) Object.assign(item, { bytes: bytes.length, sha256 });
-  const standIn = githubStandIn(files);
-  const fetchImpl = async (requestUrl, options) => (
-    requestUrl.endsWith(zip) ? new Response(bytes) : standIn.fetchImpl(requestUrl, options)
-  );
-  const prepared = [];
-  const installed = [];
-  const inPlace = {
-    kind: "app-archive",
-    downloadPath: (name) => path.join(directory, "in-place", name),
-    prepare: async (file, release) => { prepared.push([fs.readFileSync(file, "utf8"), release.latestVersion]); },
-    install: async (file) => { installed.push(file); return ""; },
-  };
-  const service = serviceIn(directory, { platform: "darwin", fetchImpl, inPlace });
-  const checked = await service.check({ force: true });
-  assert.equal(checked.release.artifactKind, "app-archive");
-  assert.equal(checked.installsInPlace, true);
-  await service.downloadPromise;
-  const ready = service.getState();
-  assert.equal(ready.status, "ready");
-  assert.equal(ready.readyVersion, "1.1.0");
-  assert.deepEqual(prepared, [["the new App", "1.1.0"]]);
-
-  const again = await service.check({ force: true });
-  assert.equal(again.status, "ready", "a later check of the same release keeps the restart offer");
-  assert.equal(service.downloadPromise, null, "and does not fetch it again");
-
-  await service.install();
-  assert.deepEqual(installed, [path.join(directory, "in-place", zip)]);
-
-  // An App that cannot replace itself keeps the disk image and asks first.
-  const manual = serviceIn(directory, { platform: "darwin", fetchImpl });
-  const offered = await manual.check({ force: true });
-  assert.equal(offered.release.artifactKind, "dmg");
-  assert.equal(offered.installsInPlace, false);
-  assert.equal(manual.downloadPromise, null);
-  await assert.rejects(manual.install(), /no prepared update/);
-}
-
-/** The swap waits for the App to exit, puts the new bundle in place and drops the old one. */
-function checkMacSwap(directory) {
+function checkPosixSwap(directory) {
   const root = path.join(directory, "swap");
   const app = path.join(root, "OpenProgram.app");
-  const staged = path.join(root, "staged", "OpenProgram.app");
+  const staged = path.join(stagingRoot(app), "staged", "OpenProgram.app");
+  const marker = path.join(root, "activate");
   fs.mkdirSync(path.join(app, "Contents"), { recursive: true });
   fs.mkdirSync(path.join(staged, "Contents"), { recursive: true });
   fs.writeFileSync(path.join(app, "Contents", "version"), "old");
   fs.writeFileSync(path.join(staged, "Contents", "version"), "new");
-  const result = spawnSync("/bin/sh", ["-c", MAC_SWAP_SCRIPT, "swap", "999999", app, staged, "true"], { encoding: "utf8" });
+  const swap = (from) => spawnSync("/bin/sh", ["-c", POSIX_SWAP_SCRIPT, "swap", "999999", app, from, "true", marker, "1.1.0#42"],
+    { encoding: "utf8" });
+  const result = swap(staged);
   assert.equal(result.status, 0, result.stderr);
   assert.equal(fs.readFileSync(path.join(app, "Contents", "version"), "utf8"), "new");
   assert.equal(fs.existsSync(staged), false);
-  assert.deepEqual(fs.readdirSync(root).sort(), ["OpenProgram.app", "staged"]);
+  assert.equal(fs.readFileSync(marker, "utf8"), "1.1.0#42");
+  assert.deepEqual(fs.readdirSync(root).sort(), ["OpenProgram.app", "activate"], "the staging folder is gone");
+  fs.rmSync(marker);
+  assert.equal(swap(path.join(stagingRoot(app), "staged", "missing.app")).status, 0);
+  assert.equal(fs.readFileSync(path.join(app, "Contents", "version"), "utf8"), "new", "the App is put back");
+  assert.equal(fs.existsSync(marker), false, "no switch after a failed swap");
+  assert.deepEqual(fs.readdirSync(root).sort(), ["OpenProgram.app"]);
+
+  // An AppImage is one file, renamed over the running one and started itself.
+  const image = path.join(root, "OpenProgram.AppImage");
+  const newImage = path.join(stagingRoot(image), "staged", "OpenProgram.AppImage");
+  const ran = path.join(root, "ran");
+  fs.writeFileSync(image, "#!/bin/sh\necho old > \"$(dirname \"$0\")/ran\"\n", { mode: 0o755 });
+  fs.mkdirSync(path.dirname(newImage), { recursive: true });
+  fs.writeFileSync(newImage, "#!/bin/sh\necho new > \"$(dirname \"$0\")/ran\"\n", { mode: 0o755 });
+  const result2 = spawnSync("/bin/sh", ["-c", POSIX_SWAP_SCRIPT, "swap", "999999", image, newImage, "", marker, "1.1.0#43"],
+    { encoding: "utf8" });
+  assert.equal(result2.status, 0, result2.stderr);
+  for (let i = 0; i < 50 && !fs.existsSync(ran); i += 1) spawnSync("sleep", ["0.1"]);
+  assert.equal(fs.readFileSync(ran, "utf8").trim(), "new", "the new AppImage is started");
+  assert.equal(fs.statSync(image).mode & 0o111, 0o111);
+  assert.equal(fs.readFileSync(marker, "utf8"), "1.1.0#43");
+  assert.equal(fs.existsSync(stagingRoot(image)), false);
+}
+
+/**
+ * The staged App the updater recorded: taken only when it replaces this App,
+ * sits in the runtime's staging folder and is newer; install hands the swap
+ * script the release key and quits.
+ */
+function checkShellSwap(directory) {
+  const runtime = path.join(directory, "shell-runtime");
+  const bundle = path.join(directory, "Applications", "OpenProgram.app");
+  const execPath = path.join(bundle, "Contents", "MacOS", "OpenProgram");
+  const staged = path.join(stagingRoot(bundle), "staged", "OpenProgram.app");
+  fs.mkdirSync(path.join(runtime, "shell"), { recursive: true });
+  fs.mkdirSync(path.dirname(execPath), { recursive: true });
+  fs.mkdirSync(path.join(staged, "Contents", "MacOS"), { recursive: true });
+  fs.writeFileSync(path.join(staged, "Contents", "MacOS", "OpenProgram"), "new");
+  const write = (record) => fs.writeFileSync(path.join(runtime, "shell", "staged.json"), JSON.stringify({
+    path: staged, version: "1.1.0", app: bundle, executable: "Contents/MacOS/OpenProgram", ...record,
+  }));
+  const started = [];
+  let quits = 0;
+  const swap = shellSwap({
+    runtimeRoot: runtime, execPath, platform: "darwin", isNewer: (version) => compareVersions(version, "1.0.0") > 0,
+    quit: () => { quits += 1; }, pid: 4242,
+    start: (command, args) => { started.push([command, ...args]); return { unref() {} }; },
+  });
+  assert.equal(swap.staged(), null, "nothing staged");
+  write({});
+  assert.deepEqual(swap.staged(), { path: staged, version: "1.1.0", executable: "Contents/MacOS/OpenProgram" });
+  write({ version: "1.0.0" });
+  assert.equal(swap.staged(), null, "not newer than the running App");
+  write({ app: path.join(directory, "Elsewhere.app") });
+  assert.equal(swap.staged(), null, "staged for another App");
+  write({ path: path.join(directory, "OpenProgram.app") });
+  assert.equal(swap.staged(), null, "outside the App's staging folder");
+  write({});
+  assert.equal(swap.install(swap.staged(), "1.1.0#42"), "");
+  assert.equal(quits, 1);
+  const [[command, , , , pid, app, from, opener, marker, key]] = started;
+  assert.equal(command, "/bin/sh");
+  assert.deepEqual([pid, app, from, opener, key], ["4242", bundle, staged, "open", "1.1.0#42"]);
+  assert.equal(marker, path.join(runtime, "shell", "activate"));
+  fs.writeFileSync(marker, "1.1.0#42");
+  assert.equal(swap.takeActivation(), "1.1.0#42");
+  assert.equal(swap.takeActivation(), null, "taken once");
+  assert.equal(shellSwap({ runtimeRoot: runtime, execPath, platform: "linux", isNewer: () => true, quit() {} }), null,
+    "a deb replaces nothing itself");
+
+  // An AppImage: the staged file sits beside it and the script starts it itself.
+  const image = path.join(directory, "Apps", "OpenProgram-1.0.0.AppImage");
+  const stagedImage = path.join(stagingRoot(image), "staged", path.basename(image));
+  fs.mkdirSync(path.dirname(stagedImage), { recursive: true });
+  fs.writeFileSync(image, "old");
+  fs.writeFileSync(stagedImage, "new");
+  fs.writeFileSync(path.join(runtime, "shell", "staged.json"), JSON.stringify({
+    path: stagedImage, version: "1.1.0", app: image, executable: "",
+  }));
+  started.length = 0;
+  const linux = shellSwap({
+    runtimeRoot: runtime, execPath: "/tmp/.mount_x/openprogram", platform: "linux", appImage: image,
+    isNewer: (version) => compareVersions(version, "1.0.0") > 0, quit() {},
+    start: (command, args) => { started.push([command, ...args]); return { unref() {} }; },
+  });
+  assert.deepEqual(linux.staged(), { path: stagedImage, version: "1.1.0", executable: "" });
+  linux.install(linux.staged(), "1.1.0#42");
+  assert.deepEqual(started[0].slice(5, 8), [image, stagedImage, ""], "no opener: the AppImage runs itself");
+}
+
+/**
+ * The Windows swap undoes only its two renames: a failed registry or marker
+ * write after the new App is in place never moves the old one back.
+ */
+function checkWindowsSwapScript() {
+  const script = WINDOWS_SWAP_SCRIPT;
+  const swapped = script.indexOf("$Swapped = $true");
+  const rollback = script.indexOf("Move-Item -LiteralPath $Old -Destination $App");
+  const after = script.indexOf("if ($Swapped) {");
+  assert.ok(swapped > 0 && swapped < rollback && rollback < after, "the rollback guards the renames alone");
+  assert.ok(script.indexOf("DisplayVersion") > after, "the uninstall entry is written after the swap");
+  assert.match(script.slice(after), /try \{ if \(\$Marker\) \{ \[System\.IO\.File\]::WriteAllText\(\$Marker, \$Key\) \} \} catch \{ \}/);
+  assert.equal(script.slice(after).includes("-Destination $App"), false, "nothing after the swap moves the App");
+}
+
+/**
+ * Whether this App swaps its shell is the updater's answer: once it said no,
+ * a new shell is the installer for this App, at every check, until the App changes.
+ */
+function checkShellSwapVerdict(directory) {
+  const statePath = path.join(directory, "verdict.json");
+  const swap = { id: "/Applications/OpenProgram.app@1.0.0", isNewer: () => true };
+  const service = serviceIn(directory, { statePath, versionStore: true, shellSwap: swap });
+  assert.equal(service.swapsShell(), swap, "until the updater answers, the App may swap");
+  service.noteShellSwap({ ok: false, reason: "waiting_for_shell", shell_swap: false });
+  assert.equal(service.swapsShell(), null);
+  const again = serviceIn(directory, { statePath, versionStore: true, shellSwap: swap });
+  assert.equal(again.swapsShell(), null, "kept across starts: no flip-flop at the next check");
+  const updated = serviceIn(directory, { statePath, versionStore: true, shellSwap: { ...swap, id: "/Applications/OpenProgram.app@1.1.0" } });
+  assert.equal(updated.swapsShell()?.id, "/Applications/OpenProgram.app@1.1.0", "another App asks again");
+  service.noteShellSwap({ ok: true, shell_swap: true });
+  assert.equal(service.swapsShell(), swap);
+  assert.equal(normalizePersistedState({ schema: 1, shellSwap: { app: 3 } }).shellSwap, null);
 }
 
 function releaseWith(version, names) {
@@ -796,7 +873,6 @@ async function checkPlatformsAndFallbacks() {
     const missingState = await missing.check({ force: true });
     assert.equal(missingState.status, "not-published");
     assert.equal(missingState.error, null);
-    assert.equal(missing.automaticCheckDueAt(), 1_000 + 6 * 3600_000, "checked again sooner than a full day");
     const unknownComputer = await serviceIn(directory, {
       platform: "linux", arch: "ppc64", fetchImpl: githubStandIn(macOnly).fetchImpl,
     }).check({ force: true });
@@ -878,9 +954,13 @@ async function checkPlatformsAndFallbacks() {
 
     await checkUpdateSource(directory, linuxFiles);
     await checkVersionStore(directory);
+    await checkVersionPrepare(directory);
+    await checkChannel(directory);
     await checkResume(directory);
-    await checkInPlace(directory);
-    checkMacSwap(directory);
+    checkPosixSwap(directory);
+    checkShellSwap(directory);
+    checkWindowsSwapScript();
+    checkShellSwapVerdict(directory);
     checkChromiumPath();
     await checkChromiumRequest();
   } finally {
@@ -1021,6 +1101,317 @@ async function checkVersionStore(directory) {
   assert.match(failed.error, /signature does not match/);
 }
 
+/** With automatic checks on, a version-store update is prepared in the background and switched to on restart. */
+async function checkVersionPrepare(directory) {
+  const release = releaseWith("1.1.0", ["OpenProgram-1.1.0-mac-arm64.dmg"]);
+  let current = "1.0.0";
+  const calls = [];
+  let relaunched = 0;
+  const options = (extra) => ({
+    platform: "linux",
+    versionStore: true,
+    fetchImpl: githubStandIn(release).fetchImpl,
+    readCurrentVersion: () => current,
+    prepareVersionUpdate: async () => {
+      calls.push("prepare");
+      return { ok: true, outcome: "prepared", prepared: true, applied: false };
+    },
+    applyVersionUpdate: async () => {
+      calls.push("apply");
+      current = "1.1.0";
+      return { ok: true, outcome: "activated", applied: true };
+    },
+    relaunchApp: () => { relaunched += 1; },
+    ...extra,
+  });
+  const service = serviceIn(directory, options());
+  service.setAutomaticChecks(true);
+  await service.check({ force: true });
+  await service.downloadPromise;
+  const ready = service.getState();
+  assert.equal(ready.status, "ready", "prepared without asking");
+  assert.equal(ready.readyVersion, "1.1.0");
+  assert.deepEqual(calls, ["prepare"], "nothing is switched before the restart");
+  service.prepareInBackground();
+  assert.deepEqual(calls, ["prepare"], "a prepared update is not prepared again");
+  const installed = await service.install();
+  assert.deepEqual(calls, ["prepare", "apply"]);
+  assert.equal(relaunched, 1, "the App starts again on the new version");
+  assert.equal(installed.currentVersion, "1.1.0");
+  assert.equal(installed.readyVersion, null);
+
+  // Automatic checks off: found, shown, nothing fetched until asked.
+  current = "1.0.0";
+  calls.length = 0;
+  const manual = serviceIn(directory, options());
+  manual.setAutomaticChecks(false);
+  assert.equal((await manual.check({ force: true })).status, "available");
+  assert.ok(!manual.downloadPromise, "nothing starts on its own");
+  assert.deepEqual(calls, []);
+  assert.equal((await manual.download()).status, "ready", "a manual download also stops before the switch");
+  assert.deepEqual(calls, ["prepare"]);
+
+  // A failed switch reports it and does not restart.
+  relaunched = 0;
+  const broken = serviceIn(directory, options({
+    applyVersionUpdate: async () => ({ ok: false, outcome: "rolled_back", detail: "the new version did not start" }),
+  }));
+  broken.setAutomaticChecks(true);
+  await broken.check({ force: true });
+  await broken.downloadPromise;
+  const failed = await broken.install();
+  assert.equal(failed.status, "error");
+  assert.match(failed.error, /did not start/);
+  assert.equal(relaunched, 0);
+}
+
+async function checkChannel(directory) {
+  const crypto = require("node:crypto");
+  const { publicKey, privateKey } = crypto.generateKeyPairSync("ed25519");
+  const rawKey = publicKey.export({ format: "der", type: "spki" }).subarray(-32).toString("hex");
+  const channel = {
+    schema: 2, pointer: "channel", sequence: 42, published_at: "2026-11-26T08:00:00Z", version: "1.0.1", announce: true,
+    build: "d".repeat(12), notes: "release notes", commit: "d".repeat(40), shell_compat: 1, layers: {}, packs: {},
+  };
+  const asked = [];
+  // A pointer file as channel.py's `seal` writes it: the signed text with its signature.
+  const seal = (value, signedBy = privateKey) => {
+    const text = `${JSON.stringify(value, null, 1)}\n`;
+    return { signed: text, signature: crypto.sign(null, Buffer.from(text, "utf8"), signedBy).toString("hex") };
+  };
+  const standIn = (value, { signedBy = privateKey, stable = releaseWith("1.0.0", []), envelope = null, missing = false } = {}) => {
+    const data = Buffer.from(JSON.stringify(envelope || seal(value, signedBy), null, 1));
+    const github = githubStandIn(stable);
+    return async (requestUrl, options) => {
+      asked.push(requestUrl);
+      if (requestUrl === "https://github.com/Fzkuji/OpenProgram/releases/download/updates/channel.json") {
+        return missing ? new Response("Not Found", { status: 404 }) : new Response(data);
+      }
+      return github.fetchImpl(requestUrl, options);
+    };
+  };
+  let running = { sequence: 40, shell_compat: 1, shellCompat: { min: 1, max: 1 } };
+  let outcome = { ok: true, outcome: "activated", detail: "done", applied: true };
+  let applied = 0;
+  const statePath = path.join(directory, "channel-state.json");
+  const make = (fetchImpl, options = {}) => new DesktopUpdateService({
+    currentVersion: "1.0.0", arch: "x64", platform: "linux", statePath, now: () => 1_000,
+    chooseSavePath: async () => null, openPath: async () => "", updateSourceKeys: [rawKey],
+    versionStore: true, readCurrentVersion: () => "1.0.0", readRunningBuild: () => running,
+    applyVersionUpdate: async () => {
+      applied += 1;
+      if (outcome.applied) running = { ...running, sequence: 42 };
+      return outcome;
+    },
+    fetchImpl, ...options,
+  });
+
+  const found = await make(standIn(channel)).check({ force: true });
+  assert.equal(found.status, "available", "a higher sequence than the running build is an update");
+  assert.equal(found.release.latestVersion, "1.0.1");
+  assert.equal(found.release.releaseNotes, "release notes");
+  assert.equal(found.release.releaseUrl, "https://github.com/Fzkuji/OpenProgram/releases/tag/v1.0.1");
+  assert.equal(asked.some((requestUrl) => requestUrl.includes("api.github.com") || requestUrl.endsWith("/releases/latest")), false,
+    "only channel.json is read");
+  assert.equal(asked.some((requestUrl) => requestUrl.endsWith(".sig")), false, "the signature travels inside channel.json");
+  assert.equal(readStateFile(statePath).channelSequence, 42);
+  const reopened = make(standIn(channel));
+  assert.equal(reopened.getState().status, "available", "the cached channel update survives a restart");
+  const done = await reopened.download();
+  assert.equal(applied, 1);
+  assert.equal(done.status, "up-to-date");
+  assert.equal(make(standIn(channel)).getState().status, "up-to-date");
+  assert.equal((await make(standIn(channel)).check({ force: true })).status, "up-to-date", "the running sequence is current");
+
+  // A replayed, older channel is no update and no error.
+  running = { ...running, sequence: 30 };
+  const replay = await make(standIn({ ...channel, sequence: 41 })).check({ force: true });
+  assert.equal(replay.status, "up-to-date");
+  assert.equal(replay.error, null);
+  assert.equal(readStateFile(statePath).channelSequence, 42, "the highest sequence is kept");
+
+  // A missing channel.json (between replacing uploads) is nothing new, silently.
+  const absent = await make(standIn(channel, { missing: true })).check({ force: true });
+  assert.equal(absent.status, "up-to-date");
+  assert.equal(absent.error, null);
+  assert.equal(absent.errorKind, null);
+
+  // A four-part version; an unknown running sequence is older.
+  fs.rmSync(statePath, { force: true });
+  running = { sequence: null, shell_compat: 1, shellCompat: null };
+  const patch = await make(standIn({ ...channel, sequence: 50, version: "1.0.1.1" })).check({ force: true });
+  assert.equal(patch.status, "available");
+  assert.equal(patch.release.latestVersion, "1.0.1.1");
+  assert.equal(patch.release.releaseUrl, "https://github.com/Fzkuji/OpenProgram/releases/tag/v1.0.1.1");
+  assert.equal(make(standIn(channel)).getState().release.latestVersion, "1.0.1.1", "a four-part version is cached");
+
+  // Waiting for this computer's runtime: no error, and the next check looks again.
+  fs.rmSync(statePath, { force: true });
+  running = { sequence: 40, shell_compat: 1, shellCompat: { min: 1, max: 2 } };
+  outcome = { ok: true, outcome: "waiting_for_runtime", detail: "not yet", applied: false };
+  const waiting = make(standIn(channel));
+  assert.equal((await waiting.check({ force: true })).status, "available");
+  const after = await waiting.download();
+  assert.equal(after.status, "up-to-date");
+  assert.equal(after.error, null);
+  assert.equal(readStateFile(statePath).release.applied, undefined, "not kept as applied");
+  assert.equal((await waiting.check({ force: true })).status, "available", "the next check looks again");
+
+  // Prepared in the background, switched on restart.
+  fs.rmSync(statePath, { force: true });
+  outcome = { ok: true, outcome: "activated", applied: true };
+  let relaunched = 0;
+  const prepare = make(standIn(channel), {
+    prepareVersionUpdate: async () => ({ ok: true, outcome: "prepared", prepared: true, applied: false }),
+    relaunchApp: () => { relaunched += 1; },
+  });
+  await prepare.check({ force: true });
+  await prepare.downloadPromise;
+  assert.equal(prepare.getState().status, "ready");
+  assert.equal(prepare.getState().readyVersion, "1.0.1");
+  const installed = await prepare.install();
+  assert.equal(relaunched, 1);
+  assert.equal(installed.status, "up-to-date");
+
+  // Signature and fields are checked.
+  running = { sequence: 40, shell_compat: 1, shellCompat: { min: 1, max: 1 } };
+  const failed = async (value, options) => {
+    fs.rmSync(statePath, { force: true });
+    return make(standIn(value, options)).check({ force: true });
+  };
+  assert.equal((await failed(channel, { signedBy: crypto.generateKeyPairSync("ed25519").privateKey })).status, "error");
+  for (const broken of [
+    { ...channel, schema: 1 }, { ...channel, pointer: undefined },
+    { ...channel, sequence: 60, announce: false }, { ...channel, announce: undefined },
+    { ...channel, sequence: 1.5 }, { ...channel, published_at: "soon" },
+    { ...channel, version: "v1.0.1" }, { ...channel, build: "xyz" }, { ...channel, notes: "x".repeat(20_001) },
+    { ...channel, commit: "abc" }, { ...channel, shell_compat: "1" },
+  ]) assert.equal((await failed(broken)).status, "error", JSON.stringify(broken).slice(0, 80));
+  // latest.json's signed text served as channel.json is refused.
+  assert.equal((await failed({ ...channel, pointer: "latest", sequence: 99 })).status, "error");
+  // Signed text changed after signing is refused.
+  const sealed = seal(channel);
+  const tampered = { ...sealed, signed: sealed.signed.replace('"version": "1.0.1"', '"version": "9.0.0"') };
+  assert.notEqual(tampered.signed, sealed.signed);
+  assert.equal((await failed(channel, { envelope: tampered })).status, "error");
+  // A bare pointer without the envelope is not read.
+  assert.equal((await failed(channel, { envelope: channel })).status, "error");
+
+  // Another shell range: the stable release's App file, when it carries this code or newer.
+  const bytes = Buffer.from("7 bytes");
+  const withShell = releaseWith("1.0.1", ["OpenProgram-1.0.1-linux-amd64.deb"]);
+  withShell.manifest.files[0].sha256 = crypto.createHash("sha256").update(bytes).digest("hex");
+  const newShell = await failed({ ...channel, shell_compat: 2 }, { stable: withShell });
+  assert.equal(newShell.status, "available");
+  assert.match(newShell.needsNewShell, /newer OpenProgram App/);
+  assert.equal(newShell.release.latestVersion, "1.0.1");
+  assert.equal(newShell.release.artifactKind, "deb");
+  const noShell = await failed({ ...channel, shell_compat: 2 }, { stable: releaseWith("1.0.0", ["OpenProgram-1.0.0-linux-amd64.deb"]) });
+  assert.equal(noShell.status, "not-published", "an older release's App does not carry the update");
+  assert.ok(noShell.needsNewShell);
+
+  // With this computer's shell layer and an App that swaps its shell, the updater
+  // takes the update, shell and all: no installer.
+  const shellLayer = {
+    "shell-linux-x86_64": { manifest: "e".repeat(64), pack: "pack-000000000000.pack", offset: 0, length: 1, version: "1.0.0" },
+  };
+  assert.equal(hasShellLayer({ layers: shellLayer }, "linux", "x64"), true);
+  assert.equal(hasShellLayer({ layers: shellLayer }, "darwin", "x64"), false);
+  assert.equal(shellLayerVersion({ layers: shellLayer }, "linux", "x64"), "1.0.0");
+  const swapping = { isNewer: () => false, staged: () => null, takeActivation: () => null, install: () => "" };
+  fs.rmSync(statePath, { force: true });
+  const covered = await make(standIn({ ...channel, shell_compat: 2, layers: shellLayer }, { stable: withShell }),
+    { shellSwap: swapping }).check({ force: true });
+  assert.equal(covered.status, "available");
+  assert.equal(covered.needsNewShell, null);
+  assert.equal(covered.release.artifactKind, null, "the channel's update, not the installer");
+  fs.rmSync(statePath, { force: true });
+  const uncovered = await make(standIn({ ...channel, shell_compat: 2 }, { stable: withShell }),
+    { shellSwap: swapping }).check({ force: true });
+  assert.match(uncovered.needsNewShell, /newer OpenProgram App/, "no shell layer for this computer: the installer");
+
+  // Restart to update with a staged shell: the App is swapped first and the
+  // version is switched only by the new App, as it starts.
+  fs.rmSync(statePath, { force: true });
+  running = { sequence: 40, shell_compat: 1, shellCompat: { min: 1, max: 1 } };
+  outcome = { ok: true, outcome: "activated", applied: true };
+  applied = 0;
+  const swaps = [];
+  let marker = null;
+  let stagedApp = { path: "/runtime/shell/staged/OpenProgram.app", version: "1.1.0", executable: "x" };
+  const swapper = {
+    isNewer: () => false,
+    staged: () => stagedApp,
+    install: (staged, key) => { swaps.push([staged.path, key]); marker = key; stagedApp = null; return ""; },
+    takeActivation: () => { const key = marker; marker = null; return key; },
+  };
+  let restarted = 0;
+  const before = make(standIn({ ...channel, shell_compat: 2, layers: shellLayer }), {
+    shellSwap: swapper,
+    prepareVersionUpdate: async () => ({ ok: true, outcome: "prepared", prepared: true, applied: false }),
+    relaunchApp: () => { restarted += 1; },
+  });
+  await before.check({ force: true });
+  await before.downloadPromise;
+  assert.equal(before.getState().status, "ready");
+  await before.install();
+  assert.deepEqual(swaps, [["/runtime/shell/staged/OpenProgram.app", "1.0.1#42"]]);
+  assert.equal(applied, 0, "nothing is switched before the new App runs");
+  assert.equal(restarted, 0, "the swap script opens the new App");
+  const swappedIn = make(standIn({ ...channel, shell_compat: 2, layers: shellLayer }), {
+    shellSwap: swapper, relaunchApp: () => { restarted += 1; },
+  });
+  const resumed = await swappedIn.resumeAfterShellSwap();
+  assert.equal(applied, 1, "the new App switches to the prepared version");
+  assert.equal(restarted, 1);
+  assert.equal(resumed.status, "up-to-date");
+  assert.equal((await swappedIn.resumeAfterShellSwap()).status, "up-to-date");
+  assert.equal(applied, 1, "once");
+
+  // A newer shell layer is an update by itself, even when this App runs the
+  // channel's code: it is prepared, swapped in, and nothing restarts after.
+  fs.rmSync(statePath, { force: true });
+  running = { sequence: 42, shell_compat: 1, shellCompat: { min: 1, max: 1 } };
+  const newerShell = { "shell-linux-x86_64": { ...shellLayer["shell-linux-x86_64"], version: "1.1.0" } };
+  stagedApp = { path: "/Apps/.OpenProgram.AppImage.update/staged/OpenProgram.AppImage", version: "1.1.0", executable: "" };
+  swaps.length = 0;
+  restarted = 0;
+  applied = 0;
+  outcome = { ok: true, outcome: "up_to_date", reason: "up_to_date", applied: true };
+  const shellOnly = { ...swapper, isNewer: (version) => compareVersions(version, "1.0.0") > 0 };
+  const current = await make(standIn(channel), { shellSwap: shellOnly }).check({ force: true });
+  assert.equal(current.status, "up-to-date", `the same code and no newer shell: nothing to do (${current.error})`);
+  const onlyShell = make(standIn({ ...channel, layers: newerShell }), {
+    shellSwap: shellOnly,
+    prepareVersionUpdate: async () => ({ ok: true, outcome: "prepared", prepared: true, applied: false }),
+    relaunchApp: () => { restarted += 1; },
+  });
+  const offered = await onlyShell.check({ force: true });
+  assert.equal(offered.release.status, "available");
+  await onlyShell.downloadPromise;
+  assert.equal(onlyShell.getState().status, "ready");
+  await onlyShell.install();
+  assert.equal(swaps.length, 1, "the App is swapped");
+  const afterSwap = make(standIn({ ...channel, layers: newerShell }), {
+    shellSwap: { ...shellOnly, isNewer: () => false }, relaunchApp: () => { restarted += 1; },
+  });
+  const swappedShell = await afterSwap.resumeAfterShellSwap();
+  assert.equal(applied, 0, "the code was running already: nothing to switch");
+  assert.equal(restarted, 0, "the new App already runs: no second restart");
+  assert.equal(swappedShell.status, "up-to-date");
+
+  // An old daily answer is dropped; an App that is not a version store keeps the stable release.
+  saveStateFileAtomic(statePath, {
+    schema: 1, automaticChecks: true, lastAttemptAt: 1, lastSuccessAt: 1,
+    release: { channel: "daily", commit: "d".repeat(40), latestVersion: "1.0.1 · 2026-11-26", currentVersion: "1.0.0",
+      releaseUrl: "https://github.com/Fzkuji/OpenProgram/releases/tag/daily", asset: null, artifactKind: null },
+  });
+  assert.equal(make(standIn(channel)).getState().release, null);
+  asked.length = 0;
+  await make(standIn(channel), { versionStore: false }).check({ force: true });
+  assert.equal(asked.some((requestUrl) => requestUrl.includes("/download/updates/")), false, "only a version store reads the channel");
+}
+
 async function checkResume(directory) {
   const crypto = require("node:crypto");
   const bytes = Buffer.from("0123456789abcdefghij");
@@ -1092,14 +1483,6 @@ async function checkResume(directory) {
   }, asset, stubbornTarget, () => {}, { retryDelayMs: 0, attempts: 3 }), /fetch failed/);
   assert.equal(tries, 3);
 
-  // An AppImage replaces the running file and stays runnable.
-  const running = path.join(directory, "OpenProgram.AppImage");
-  fs.writeFileSync(running, "old");
-  const downloaded = path.join(directory, ".new.download");
-  fs.writeFileSync(downloaded, "new", { mode: 0o600 });
-  replaceAppImage(downloaded, running);
-  assert.equal(fs.readFileSync(running, "utf8"), "new");
-  assert.equal(fs.statSync(running).mode & 0o111, 0o111);
 }
 
 function checkChromiumPath() {

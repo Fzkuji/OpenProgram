@@ -10,6 +10,7 @@ import pytest
 from openprogram.operations.self_update import SelfUpdateStore, UpdatePhase, UpdateRequest
 from openprogram.operations.self_update.control import held_turns
 from openprogram.operations.self_update.control.maintenance import enter_maintenance, leave_maintenance
+from openprogram.runtime import maintenance as runtime_maintenance
 from openprogram.runtime.agent.turn_request import TurnRequest
 from openprogram.runtime.conversation import turn_runtime as D
 from openprogram.runtime.permissions.modes import PermissionRules
@@ -47,8 +48,8 @@ def test_a_message_sent_during_the_switch_runs_after_it(store: SelfUpdateStore, 
 
     result = D._process_turn_once(_request("run me afterwards"), on_event=events.append)
 
-    assert result.final_text == held_turns.HELD_MESSAGE and result.failed is False
-    assert events[-1]["data"]["type"] == "result" and events[-1]["data"]["content"] == held_turns.HELD_MESSAGE
+    assert result.final_text == runtime_maintenance.HELD_MESSAGE and result.failed is False
+    assert events[-1]["data"]["type"] == "result" and events[-1]["data"]["content"] == runtime_maintenance.HELD_MESSAGE
     assert held_turns.count(store) == 1
 
     ran: list[str] = []

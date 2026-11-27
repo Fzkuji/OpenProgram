@@ -17,7 +17,7 @@ SCANNED = (
     "openprogram/programs",
     "openprogram/runtime/permissions",
     "openprogram/runtime/agent/loop",
-    "openprogram/extensions/mcp/server",
+    "openprogram/interfaces/mcp_server",
 )
 SOURCE = "openprogram/runtime/permissions/refusal.py"
 _BROKER = "openprogram/programs/tools/computer_use/computer_use/code_mode/sandbox/broker.py"

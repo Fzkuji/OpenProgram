@@ -19,6 +19,7 @@ def _settle():
     time.sleep(1.2)
 
 
+@pytest.mark.slow
 def test_a_named_file_another_process_writes_wakes_its_topic(tmp_path, watching):
     with changes.listen("stop-file") as listener:
         changes.watch(tmp_path, "stop-file", names={"stop-request"})

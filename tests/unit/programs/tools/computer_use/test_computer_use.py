@@ -813,7 +813,7 @@ def test_wait_needs_no_state_and_is_bounded(monkeypatch):
 
 def test_a_recording_reaches_models_that_hear_audio_and_only_them():
     import base64
-    from openprogram.programs._host.execution import ToolReturn, _normalize_result
+    from openprogram.runtime.agent.tool_execution import ToolReturn, _normalize_result
     from openprogram.models.providers.shared.google import convert_messages
     from openprogram.models.providers.types import (AssistantMessage, Context, Model, ToolCall, ToolResultMessage,
                                              UserMessage)
@@ -842,7 +842,7 @@ def test_a_recording_reaches_models_that_hear_audio_and_only_them():
 
 def test_chat_completions_models_see_tool_result_screenshots_and_hear_recordings():
     import base64
-    from openprogram.programs._host.execution import ToolReturn, _normalize_result
+    from openprogram.runtime.agent.tool_execution import ToolReturn, _normalize_result
     from openprogram.models.providers.adapters.openai_completions.openai_completions import _build_messages
     from openprogram.models.providers.types import (AssistantMessage, Context, ImageContent, Model, TextContent, ToolCall,
                                              ToolResultMessage, UserMessage)

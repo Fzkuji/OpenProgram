@@ -23,7 +23,7 @@ export function fetchFallback(provider: string, model: string, contextTokens = 0
   return jsonFetch<FallbackPayload>(fallbackUrl(provider, model, contextTokens));
 }
 
-/** The bare model id the fallback route expects ("openai-codex:gpt" → "gpt"). */
+/** The bare model id the fallback route expects ("deepseek:deepseek-chat" → "deepseek-chat"). */
 export function bareModel(provider: string | undefined, model: string | undefined): string {
   if (!model) return "";
   return provider && model.startsWith(`${provider}:`) ? model.slice(provider.length + 1) : model;

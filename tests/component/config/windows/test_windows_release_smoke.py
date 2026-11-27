@@ -160,6 +160,7 @@ def test_a_lost_text_or_exit_code_fails_the_smoke(result, missing):
     assert smoke.check([{"kind": "call", "offered": []}], [], "") != []
 
 
+@pytest.mark.slow
 @pytest.mark.skipif(sys.platform == "win32", reason="runs this checkout's command on POSIX")
 def test_the_smoke_passes_against_this_checkout(tmp_path):
     command = Path(sys.executable).with_name("openprogram")

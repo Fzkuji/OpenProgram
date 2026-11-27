@@ -10,7 +10,7 @@ def test_native_executor_prefers_named_runtime(monkeypatch, tmp_path):
     monkeypatch.setattr(system_access.platform, 'system', lambda: 'Darwin')
     helper = tmp_path / 'OpenProgram'
     helper.write_text('runtime')
-    monkeypatch.setattr('openprogram.operations.worker.lifecycle.worker_executable', lambda: str(helper))
+    monkeypatch.setattr('openprogram.host.worker.process.worker_executable', lambda: str(helper))
     assert system_access._native_executor() == str(helper.resolve())
 
 

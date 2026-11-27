@@ -203,7 +203,7 @@ def test_nested_agentic_siblings_consume_outer_tool_identity(tmp_path):
     """Repeated direct subcalls get separate DAG nodes under one tool call."""
     from openprogram import Agent
     from openprogram.runtime.context.scope import _call_id
-    from openprogram.programs._host.runtime import (
+    from openprogram.runtime.agent.call_state import (
         _current_tool_call_id,
         _current_tool_call_occurrence_id,
         _tool_call_identity_consumed,

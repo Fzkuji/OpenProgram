@@ -155,7 +155,7 @@ def test_commands_cover_each_selected_kind(tmp_path: Path) -> None:
 
     assert planned[0][1][1:] == [
         "-m", "pytest", "-q", "-p", "no:cacheprovider", "-n", "auto", "--timeout=300",
-        "tests/unit/a/test_a.py",
+        "-m", "not live and not browser and not slow", "tests/unit/a/test_a.py",
     ]
     assert planned[1][0] == "apps/web" and planned[1][1][-1] == "tests/a.test.mjs"
     assert planned[2] == ("apps/web", ["npx", "tsc", "--noEmit", "-p", "."])
@@ -207,3 +207,18 @@ def test_node_tests_are_left_out_and_counted_when_node_is_unavailable(tmp_path, 
     assert affected_tests.run_planned(planned, tmp_path) == affected_tests.EXIT_UNAVAILABLE
     assert ran == [["python", "-m", "pytest", "tests/test_c.py"]]
     assert "COULD NOT RUN 1 Python test files" in capsys.readouterr().err
+
+
+def test_a_changed_test_file_runs_whole_and_the_rest_skip_slow_tests(tmp_path: Path) -> None:
+    selection = Selection(python_tests={
+        "tests/unit/a/test_a.py": "changed test file",
+        "tests/unit/b/test_b.py": "imports openprogram.b",
+    })
+
+    reached, changed = (command for _directory, command in commands(selection, tmp_path))
+
+    assert reached[-3:] == ["-m", "not live and not browser and not slow", "tests/unit/b/test_b.py"]
+    assert changed[-1] == "tests/unit/a/test_a.py" and "not slow" not in " ".join(changed)
+    (everything,) = (command for _directory, command in commands(selection, tmp_path, slow=True))
+    assert everything[-2:] == ["tests/unit/a/test_a.py", "tests/unit/b/test_b.py"]
+    assert "not slow" not in " ".join(everything)

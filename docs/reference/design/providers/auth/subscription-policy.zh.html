@@ -1,0 +1,46 @@
+<title>订阅政策</title>
+<meta name="description" content="厂商只通过官方 API 加 key，或通过它自己的程序作为外部 Agent 接入；OpenProgram 自己从不登录套餐。">
+<meta name="covers" content="openprogram/models/auth/provider_policy.py">
+<h1>订阅政策</h1>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">方式</th><th scope="col">规则</th></tr></thead>
+<tbody>
+<tr><th scope="row">API</th><td>厂商的官方 API，用本人从厂商拿到的 key，按 API 账户计费</td></tr>
+<tr><th scope="row">套餐</th><td>厂商自己的程序，作为外部 Agent 运行：Codex app-server、Claude Code、经 ACP 的 Gemini CLI（<a href="../../../../models/third-party-harnesses.zh.html">第三方 Harness</a>）。由程序登录并和厂商通信，OpenProgram 只和程序通信</td></tr>
+<tr><th scope="row">绝不</th><td>OpenProgram 自己使用套餐登录、冒用官方客户端身份（user agent、originator、client id），或调用内部端点</td></tr>
+</tbody>
+</table>
+
+<h2 id="why">原因</h2>
+<p>套餐的登录属于厂商自己的客户端。别的客户端冒充官方客户端发送它，违反厂商条款，厂商会封停背后的账号（T3 Code，见<a href="#peers">同类项目</a>）。</p>
+<p>Anthropic 只通过官方 API 加 key 接入；Claude 订阅凭据一律拒绝（<a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/models/auth/provider_policy.py"><code translate="no">provider_policy.py</code></a>）。</p>
+
+<h2 id="withdrawn">已撤下</h2>
+<table class="stack">
+<thead><tr><th scope="col">Provider id</th><th scope="col">原来</th><th scope="col">改用</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openai-codex</code></th><td>用 ChatGPT 登录调用 Codex 后端</td><td>Codex Harness；或 <code translate="no">openai</code> 加 API key</td></tr>
+<tr><th scope="row"><code translate="no">github-copilot</code></th><td>用 GitHub 登录调用 Copilot 的聊天 API</td><td>模型厂商的 API key</td></tr>
+<tr><th scope="row"><code translate="no">gemini-subscription</code>、<code translate="no">google-gemini-cli</code>、<code translate="no">gemini-cli</code></th><td>用 Google 登录调用 Cloud Code Assist（<code translate="no">cloudcode-pa</code>）</td><td>经 ACP 的 Gemini CLI；或 <code translate="no">gemini</code> 加 API key</td></tr>
+<tr><th scope="row"><code translate="no">xai-subscription</code></th><td>用 Grok 登录调用 Grok CLI 的聊天代理</td><td><code translate="no">xai</code> 加 API key</td></tr>
+</tbody>
+</table>
+<p class="note">一起去掉的：Codex 和 Copilot 的额度读取器（<code translate="no">wham/usage</code>、<code translate="no">copilot_internal</code>）、订阅模型目录及其刷新、Codex CLI 登录导入、<code translate="no">providers configure</code> 向导，以及按 provider 的 runtime 子类。</p>
+
+<h2 id="saved-settings">已保存的设置</h2>
+<p><code translate="no">WITHDRAWN_PROVIDERS</code> 里的 id 不会被列出、提供或登录。配置项、Agent 或对话里写着它时，按不存在的 provider 跳过；models.dev 里它的行也被丢弃，所以模型选择器里不会出现。</p>
+
+<h2 id="codex-quota">Codex 套餐额度</h2>
+<p>只来自 Codex 自己：app-server 在进程启动时的 <code translate="no">account/rateLimits/read</code>，之后按同一个 <code translate="no">CODEX_HOME</code> 合并每条 <code translate="no">account/rateLimits/updated</code>（<a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/runtime/harnesses/codex/rate_limits.py"><code translate="no">rate_limits.py</code></a>），以及它自己的 rollout 文件里 <code translate="no">token_count</code> 事件带的 <code translate="no">rate_limits</code>。</p>
+<p>只算套餐的 <code translate="no">codex</code> 额度族，较新的读数为准。读数存在 <code translate="no">harnesses.db</code>，显示在<a href="../../integrations/third-party-harnesses.zh.html">第三方 Harness</a>的用量页。不向 ChatGPT 发任何请求。</p>
+
+<h2 id="peers">同类项目</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">项目</th><th scope="col">套餐用法</th></tr></thead>
+<tbody>
+<tr><th scope="row">Paseo</th><td>推理走官方 CLI，但用量插件调用内部端点：带浏览器 user agent 的 <code translate="no">wham/usage</code>、带 <code translate="no">GitHubCopilotChat</code> user agent 的 <code translate="no">copilot_internal</code>、Anthropic 的 <code translate="no">oauth/usage</code>，以及 <code translate="no">agy -p /usage</code></td></tr>
+<tr><th scope="row">T3 Code</th><td>因发送 Antigravity 的 user agent 去内部 API 读额度，被 Google 警告</td></tr>
+<tr><th scope="row">OpenProgram</th><td>推理和额度都只经厂商程序自己的协议</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="unified-auth-storage.zh.html">认证存储</a></p>

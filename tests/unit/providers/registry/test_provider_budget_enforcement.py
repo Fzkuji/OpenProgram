@@ -121,7 +121,7 @@ def wired(tmp_path, monkeypatch):
     monkeypatch.setattr(_recorder, "default_ledger", ledger)
     key_calls: list[str] = []
     monkeypatch.setattr(
-        "openprogram.models.auth.selection.with_credential",
+        "openprogram.models.providers.streaming.credential_failover.with_credential",
         lambda model, opts, attempt: key_calls.append(model.provider)
         or attempt(opts.model_copy(update={"api_key": "fake-key"})),
     )
@@ -631,7 +631,7 @@ def test_credential_failure_releases_reserved_exposure(
     """A pre-I/O failure must not consume a governed job's budget."""
     env = wired(limits=ResourceLimits(max_total_tokens=100_000))
     monkeypatch.setattr(
-        "openprogram.models.auth.selection.with_credential",
+        "openprogram.models.providers.streaming.credential_failover.with_credential",
         lambda model, opts, attempt: (_ for _ in ()).throw(RuntimeError("credential read failed")),
     )
 

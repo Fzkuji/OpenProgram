@@ -52,14 +52,6 @@ def _load_builtin_providers() -> dict[str, _StreamFnProvider]:
         stream_azure_openai_responses,
         stream_simple_azure_openai_responses,
     )
-    from openprogram.models.providers.adapters.google_gemini_cli import (
-        stream_google_gemini_cli,
-        stream_simple_google_gemini_cli,
-    )
-    from openprogram.models.providers.adapters.openai_codex.openai_codex import (
-        stream_openai_codex_responses,
-        stream_simple_openai_codex_responses,
-    )
     from openprogram.models.providers.adapters.openai_responses import (
         stream_openai_responses,
         stream_simple_openai_responses,
@@ -90,24 +82,6 @@ def _load_builtin_providers() -> dict[str, _StreamFnProvider]:
             supports_idempotency_key=True,
             supports_web_search=True,
         ),
-        "openai-codex": _StreamFnProvider(
-            stream_openai_codex_responses, stream_simple_openai_codex_responses,
-            supports_web_search=True,
-            bounds_own_stream_idle=True,
-        ),
-        "gemini-subscription": _StreamFnProvider(
-            stream_google_gemini_cli, stream_simple_google_gemini_cli,
-            # supports_web_search not advertised: generateContent rejects
-            # google_search next to function declarations on Gemini 2.x, and
-            # Google documents the combination for Gemini 3 only on the
-            # Interactions API. An agent request always carries function
-            # tools, so the runtime keeps the local web_search tool. The
-            # builder still honours web_search=True on a request without
-            # function tools (shared/google.py google_search_applies).
-            # Its own retry loop waits silently between attempts, so it
-            # bounds each attempt's read itself.
-            bounds_own_stream_idle=True,
-        ),
         "bedrock-converse-stream": _StreamFnProvider(
             stream_bedrock, stream_simple_bedrock,
         ),
@@ -124,18 +98,8 @@ def register_auth_adapters() -> None:
         if _auth_registered:
             return
         from openprogram.models.providers.adapters.anthropic.auth_adapter import register_anthropic_auth
-        from openprogram.models.providers.adapters.google_gemini_cli.auth_adapter import (
-            register_gemini_cli_auth,
-        )
-        from openprogram.models.providers.adapters.openai_codex.auth_adapter import register_codex_auth
-        from openprogram.models.providers.adapters.xai_subscription.auth_adapter import (
-            register_xai_subscription_auth,
-        )
 
         register_anthropic_auth()
-        register_codex_auth()
-        register_gemini_cli_auth()
-        register_xai_subscription_auth()
         _auth_registered = True
 
 
@@ -184,11 +148,6 @@ _AZURE_RESPONSES_CAPABILITIES = StructuredOutputCapabilities(
     schema_profile="openai_strict",
     native_model_opt_in=True,
 )
-_STRICT_TOOL_ONLY_CAPABILITIES = StructuredOutputCapabilities(
-    strict_tool=True,
-    schema_profile="openai_strict",
-)
-_UNKNOWN_CAPABILITIES = StructuredOutputCapabilities()
 
 
 def register_builtins() -> None:
@@ -206,8 +165,6 @@ def register_builtins() -> None:
             "openai-completions": _OPENAI_CHAT_CAPABILITIES,
             "google-generative-ai": _GOOGLE_CAPABILITIES,
             "openai-responses": _OPENAI_RESPONSES_CAPABILITIES,
-            "openai-codex": _STRICT_TOOL_ONLY_CAPABILITIES,
-            "gemini-subscription": _UNKNOWN_CAPABILITIES,
             "bedrock-converse-stream": _BEDROCK_CAPABILITIES,
             "azure-openai-responses": _AZURE_RESPONSES_CAPABILITIES,
         }

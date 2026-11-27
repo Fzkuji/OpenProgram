@@ -336,7 +336,7 @@ def test_persist_channel_writes_known(monkeypatch):
 def test_backend_poll_uses_challenge_revision_proof(monkeypatch):
     calls = []
     monkeypatch.setattr(
-        "openprogram.operations.worker.ports.backend_is_ours",
+        "openprogram.host.worker.ports.backend_is_ours",
         lambda port, *, expected_revision=None: calls.append(
             (port, expected_revision)
         ) or True,

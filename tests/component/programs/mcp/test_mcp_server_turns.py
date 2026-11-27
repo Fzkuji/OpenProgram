@@ -14,7 +14,7 @@ from openprogram.runtime.conversation.turn_runtime import TurnResult
 from openprogram.runtime.events import create_event_bus, make_event
 from openprogram.runtime.execution.control import ObservedCancelSubmission
 from openprogram.runtime.execution.model import CommandStatus
-from openprogram.extensions.mcp.server.service import MCPClientContext, MCPService
+from openprogram.interfaces.mcp_server.service import MCPClientContext, MCPService
 
 
 class FakeSessionDB:

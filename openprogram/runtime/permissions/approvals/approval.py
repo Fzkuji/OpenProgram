@@ -16,7 +16,8 @@ TurnRequest = Any
 
 from openprogram.runtime.permissions.approvals.file_state import capture as capture_file_state
 
-from openprogram.runtime.permissions import refusal
+from openprogram.runtime import program_host
+from openprogram.runtime.permissions import refusal, tool_profiles
 from openprogram.runtime.permissions.identity import RISKY_TOOLS, page_script
 from openprogram.runtime.permissions.policy import can_approve, one_shot_approval, permission_decision
 
@@ -163,8 +164,7 @@ def wrap_with_approval(
 
     async def _permission_preflight(call_id, args, *, operation_id=None):
         nonlocal prepared
-        from openprogram.programs._authoring.prechecks import call_problem
-        if call_problem(name, args):
+        if program_host.host().call_problem(name, args):
             prepared = None
             return
         from openprogram.runtime.permissions.auto_mode.auto_review import prepare_review
@@ -177,8 +177,7 @@ def wrap_with_approval(
 
     def _interaction_manifest(call_id: str, args: dict) -> dict | None:
         """Describe an approval before the Agent loop dispatches its effect."""
-        from openprogram.programs._authoring.prechecks import call_problem
-        if call_problem(name, args):
+        if program_host.host().call_problem(name, args):
             return None
         verdict = permission_decision(agent_tool, req, args)
         decision, reason = verdict.outcome, verdict.code
@@ -193,9 +192,12 @@ def wrap_with_approval(
             access = access_manifest_for_tool(name, args, _access_found)
             if access is not None:
                 return access
-        if decision == "allow" and name == "ask_user_question":
-            from openprogram.programs.tools.interaction.clarify import interaction_manifest
-            return interaction_manifest(args)
+        if decision == "allow":
+            # A tool that shows the user a card of its own (``ask_user_question``)
+            # describes it in its profile.
+            asking = tool_profiles.profile(name)
+            if asking is not None and asking.interaction_manifest is not None:
+                return asking.interaction_manifest(args)
         if decision == "auto" and _fallback(call_id, args):
             decision, reason = "ask", "AUTO_REFUSAL_FALLBACK"
         if decision != "ask":
@@ -372,9 +374,9 @@ def wrap_with_approval(
             return _denied(refusal.local_owner_required(name, args))
         approval_args = args
         if _self_update_retry(name, args):
-            from openprogram.operations.self_update.repair.next_candidate import approval_preview
+            from openprogram.runtime import maintenance
             try:
-                preview = approval_preview(args.get("update_id"), args.get("candidate_sha"), req)
+                preview = maintenance.approval_preview(args.get("update_id"), args.get("candidate_sha"), req)
             except Exception as exc:
                 return _denied(refusal.stale("SELF_UPDATE_RETRY_INVALID", str(exc)))
             approval_args = {**args, "candidate": preview}
@@ -405,11 +407,10 @@ def wrap_with_approval(
             return _denied(verdict.refusal, rule=verdict.rule, authority=verdict.authority)
         if not can_approve(req):
             from openprogram.host.system_access import missing_access_error
-            from openprogram.programs._authoring.prechecks import CallProblem
             missing = missing_access_error(name, args, _access_found)
             if missing:
                 # Waiting would park this run forever: the wait has no timeout.
-                return _malformed(CallProblem("PERMISSION_MISSING", missing))
+                return _malformed(program_host.host().CallProblem("PERMISSION_MISSING", missing))
         if _escalation_needed(name, args):
             # The escalation card is the one approval: it also covers what
             # an ordinary "ask" would have asked.
@@ -441,8 +442,7 @@ def wrap_with_approval(
         return await _run_original(call_id, args, cancel, on_update)
 
     async def _gated_execute(call_id, args, cancel, on_update):
-        from openprogram.programs._authoring.prechecks import call_problem
-        problem = call_problem(name, args)
+        problem = program_host.host().call_problem(name, args)
         if problem:
             return _malformed(problem)
         try:
@@ -510,9 +510,9 @@ def _shown_args(tool_name: str, args: dict, req) -> dict:
     """A retry approves a candidate, so its card shows that candidate's paths, tests and budget."""
     if not _self_update_retry(tool_name, args):
         return args
-    from openprogram.operations.self_update.repair.next_candidate import approval_preview
+    from openprogram.runtime import maintenance
     try:
-        return {**args, "candidate": approval_preview(args.get("update_id"), args.get("candidate_sha"), req)}
+        return {**args, "candidate": maintenance.approval_preview(args.get("update_id"), args.get("candidate_sha"), req)}
     except Exception:
         # Execution rechecks the candidate and refuses it with the reason.
         return args

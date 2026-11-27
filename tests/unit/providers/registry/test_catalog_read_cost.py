@@ -7,7 +7,8 @@ from openprogram.models.listing import listing
 def test_catalog_enumerates_credentials_once_and_refreshes_next_request(monkeypatch):
     import openprogram.models.providers as registry
     from openprogram.models.auth import credential_provider
-    from openprogram.models.providers.settings import storage, config_read, env_api_keys
+    from openprogram.models.auth import env_api_keys
+    from openprogram.models.providers.settings import storage, config_read
     ids = ["openai", "anthropic", "deepseek", "groq"]
     pools = [SimpleNamespace(provider_id=pid, credentials=[object()]) for pid in ids]
     calls = []

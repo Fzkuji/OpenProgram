@@ -7,7 +7,7 @@
 <table class="stack">
 <thead><tr><th scope="col"></th><th scope="col">后端</th><th scope="col">Web</th><th scope="col">TUI 和 CLI</th></tr></thead>
 <tbody>
-<tr><th scope="row">事实来源</th><td>一个 worker（<code translate="no">operations/worker/lock.py</code>）和一个会话存储（<code translate="no">runtime/context/session_db.py</code>）</td><td>同左</td><td>同左</td></tr>
+<tr><th scope="row">事实来源</th><td>一个 worker（<code translate="no">host/worker/lock.py</code>）和一个会话存储（<code translate="no">runtime/context/session_db.py</code>）</td><td>同左</td><td>同左</td></tr>
 <tr><th scope="row">事件</th><td><code translate="no">EventBus</code> 和 <code translate="no">_broadcast</code>：一次发送到达所有 WebSocket 客户端</td><td>接收</td><td>接收</td></tr>
 <tr><th scope="row">运行状态</th><td><code translate="no">_running_tasks</code>；广播 <code translate="no">running_task</code> 和 <code translate="no">running_task_clear</code></td><td>侧栏指示、输入框状态</td><td>状态显示</td></tr>
 <tr><th scope="row">重连</th><td>加载会话时重发历史并调用 <code translate="no">_send_running_task_state</code>；<code translate="no">subscribe_execution_stream</code> 提供 <code translate="no">execution_stream.v1</code> 快照</td><td>恢复</td><td>恢复</td></tr>

@@ -41,9 +41,10 @@
 | `main` | GitHub 上唯一的分支，历史和 `dev` 分开，每次同步一个压缩提交 | 只有 `scripts/publishing/publish-github.sh` |
 
 - 日常提交只进 `dev`。禁止在 `main` 上提交（`pre-commit` 会拒绝），禁止把 `main` 合进 `dev`，两边历史本来就不同。
-- **每天同步一次代码**：当天 `dev` 有新提交时运行 `scripts/publishing/publish-github.sh -m "今天的改动摘要"`（不带 `--tag`），把 `dev` 的文件树压成一个提交接到 `main` 上，在 `refs/publish/last` 记下来源，再推送 `main`。推送 `main` 不触发任何 GitHub Action（除 Release 外的工作流都只能手动运行），不用问。先加 `--dry-run` 看提交说明；`--no-push` 只更新本地 `main`。
-- **发版低频**：只有用户说要发版时才加 `--tag vX.Y.Z`：推送 `main` 后给这个提交打标签并推送标签，由此启动 Release 工作流（构建、签名、公证、发布 Release）；版本号、发布说明或 Office 包对不上会先拒绝，`--dry-run` 能看到这些检查和标签。Release 发布后，稳定版在 App 里收到更新。
-- **发版前先演练，通过后隔 12 小时再发**：版本号和发布说明提交后，先不带 `--tag` 同步 `main`，再运行 `gh workflow run release.yml -R Fzkuji/OpenProgram --ref main -f tag=vX.Y.Z -f rehearse=true`（构建和检查全部跑一遍，不发布），通过后再运行 `gh workflow run windows-install-smoke.yml -R Fzkuji/OpenProgram -f tag=vX.Y.Z -f run_id=<演练的运行号>`。有任务失败就修根因、重新同步、重新演练，直到全部通过。全部通过后至少等 12 小时，再运行 `publish-github.sh --source refs/publish/last --tag vX.Y.Z`，给演练过的那个提交打标签；不带 `--source` 会把这期间 `dev` 上没演练过的提交一起发出去。
+- **每天同步一次代码**：当天 `dev` 有新提交时运行 `scripts/publishing/publish-github.sh -m "今天的改动摘要"`（不带 `--tag`），把 `dev` 的文件树压成一个提交接到 `main` 上，在 `refs/publish/last` 记下来源，推送 `main`，再把这次的代码层传到 `updates` 发行版、更新 `latest.json`（只给开发版看）。不触发任何 GitHub Action，用户也收不到提醒，不用问。先加 `--dry-run` 看提交说明和要上传的东西；`--no-push` 只更新本地 `main`。依赖或外壳变了而 `updates` 上还没有对应的运行时层时，脚本会拒绝上传并给出补层的命令。
+- **用户只在发 Release 时收到更新**：只有用户说要发版时才加 `--tag`。版本号和发布说明先提交，`--dry-run` 能看到检查结果。
+  - **小版本** `vX.Y.Z`（Z>0）或 `vX.Y.Z.W`：只发代码，不跑 Actions。脚本推送 `main` 和标签，上传代码层，签好 `channel.json`，再建好 Release 页面，用户的 App 一小时内提示更新。依赖或 App 外壳变了会被拒绝，这种改动要发功能版本。
+  - **功能版本** `vX.Y.0`：要跑 Release 工作流，构建新安装包和五个平台的运行时层。先演练：不带 `--tag` 同步 `main`，运行 `gh workflow run release.yml -R Fzkuji/OpenProgram --ref main -f tag=vX.Y.0 -f rehearse=true`，通过后运行 `gh workflow run windows-install-smoke.yml -R Fzkuji/OpenProgram -f tag=vX.Y.0 -f run_id=<演练的运行号>`；有失败就修根因、重新同步、重新演练。全部通过后至少等 12 小时，运行 `publish-github.sh --source refs/publish/last --tag vX.Y.0` 推送并启动工作流；工作流完成后运行 `.venv/bin/python scripts/release/publish-updates.py announce vX.Y.0` 通知用户。
 - 禁止手动 `git push`；`.git/hooks/pre-push` 只放行脚本推送的 `main` 和指向它的标签，其他分支一律拒绝。不要从本地分支向 GitHub 开 PR。
 - worktree 分支合入 `dev` 或放弃后删除，想留着的放到 `refs/archive/`。
 

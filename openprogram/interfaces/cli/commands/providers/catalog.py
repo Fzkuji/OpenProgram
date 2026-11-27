@@ -86,7 +86,7 @@ def _cmd_available(
 
 def _cmd_list(as_json: bool) -> int:
     """Every provider's keys and sign-ins, in each provider's order."""
-    from openprogram.models.auth.manage import provider_credentials
+    from openprogram.models.listing.manage import provider_credentials
     providers = [p.provider_id for p in get_store().list_pools()]
     if as_json:
         print(json.dumps([provider_credentials(p) for p in providers], indent=2, ensure_ascii=False))

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from openprogram.operations.worker import lifecycle
-from openprogram.operations.worker import lock as worker_lock
+from openprogram.host.worker import lock as worker_lock
 
 
 class _HeldLock:

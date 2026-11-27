@@ -1,16 +1,37 @@
 name: Release
 
+# Started only by hand: publish-github.sh --tag vX.Y.0 dispatches it once the
+# tag is pushed, and a rehearsal is dispatched the same way. Pushing a tag
+# starts nothing; a code-only release (vX.Y.Z, vX.Y.Z.W) never runs it.
+#
+# Every published update carries a runtime layer per platform for its base;
+# the runtime-layer job uploads them to the `updates` release (not on a
+# rehearsal). When a daily publish is refused because the base changed,
+# runtime_layers_only builds and uploads just those layers from the dispatched
+# ref, with no tag, installer or release page:
+#   gh workflow run release.yml -R Fzkuji/OpenProgram --ref main -f runtime_layers_only=true
+#
+# Each signed macOS App, the Windows App and the Linux AppImage also become a
+# shell layer, uploaded by the desktop leg once its App passed its checks, so
+# installed Apps take a new shell from the update store instead of an installer. A rehearsal builds them
+# without uploading. `publish-updates.py announce vX.Y.0` refuses until there
+# is one for every App the release published that replaces itself (read from
+# its release-manifest.json); a platform without one keeps the installer.
 on:
-  push:
-    tags: ["v*"]
   workflow_dispatch:
     inputs:
       tag:
-        description: Release tag (vX.Y.Z); an existing one, or with rehearse the one about to be made
-        required: true
+        description: Feature release tag (vX.Y.0); an existing one, or with rehearse the one about to be made. Not used with runtime_layers_only
+        required: false
         type: string
+        default: ""
       rehearse:
         description: Build and check everything from this branch without publishing; the tag need not exist
+        required: false
+        type: boolean
+        default: false
+      runtime_layers_only:
+        description: Only build and upload each platform's runtime layer from this branch; no tag, installers or release page
         required: false
         type: boolean
         default: false
@@ -19,9 +40,10 @@ permissions:
   contents: write
 
 env:
-  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
-  # A rehearsal builds the commit it was started on, before its tag exists.
-  RELEASE_REF: ${{ inputs.rehearse && github.sha || inputs.tag || github.ref_name }}
+  RELEASE_TAG: ${{ inputs.tag }}
+  # A rehearsal builds the commit it was started on, before its tag exists;
+  # so do runtime layers on their own, which need no tag.
+  RELEASE_REF: ${{ (inputs.rehearse || inputs.runtime_layers_only) && github.sha || inputs.tag }}
 
 jobs:
   # The App downloads the pinned Office archive from its own version's release,
@@ -31,8 +53,15 @@ jobs:
   # tag's draft (scripts/release/office-archive.py seed). Without one, nothing
   # else runs.
   office:
+    if: ${{ !inputs.runtime_layers_only }}
     runs-on: ubuntu-24.04
     steps:
+      - name: Check the tag
+        run: |
+          if ! printf '%s\n' "$RELEASE_TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.0$'; then
+            echo "a release needs its feature release tag (vX.Y.0), not '$RELEASE_TAG'; runtime_layers_only needs none" >&2
+            exit 1
+          fi
       - uses: actions/checkout@v7
         with:
           ref: ${{ env.RELEASE_REF }}
@@ -58,6 +87,8 @@ jobs:
 
   platforms:
     needs: office
+    # Runtime layers on their own skip the Office archive; a release needs it.
+    if: ${{ !cancelled() && (needs.office.result == 'success' || (inputs.runtime_layers_only && needs.office.result == 'skipped')) }}
     runs-on: ubuntu-24.04
     outputs:
       runtime: ${{ steps.select.outputs.runtime }}
@@ -65,8 +96,8 @@ jobs:
       seed_count: ${{ steps.select.outputs.seed_count }}
       desktop: ${{ steps.select.outputs.desktop }}
       desktop_count: ${{ steps.select.outputs.desktop_count }}
+      runtime_layers: ${{ steps.select.outputs.runtime_layers }}
       plan: ${{ steps.select.outputs.plan }}
-      update_key: ${{ steps.update-key.outputs.trusted }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -86,13 +117,13 @@ jobs:
             key_file="$RUNNER_TEMP/update-signing-key.pem"
             (umask 077 && printf '%s\n' "$UPDATE_SIGNING_KEY" > "$key_file")
             if public_key="$(uv run --no-project --with zstandard --with cryptography \
-                python scripts/release/create-update-assets.py public-key --signing-key "$key_file")" \
+                python scripts/release/publish-updates.py public-key --signing-key "$key_file")" \
               && [ -n "$public_key" ] \
-              && grep -qF "$public_key" openprogram/operations/self_update/official/assets.py \
+              && grep -qF "$public_key" openprogram/operations/self_update/official/signing.py \
               && grep -qF "$public_key" apps/desktop/main/self-update/update-service.js; then
               trusted=true
             else
-              echo "::warning::The update signing key is not listed in RELEASE_PUBLIC_KEYS in both official/assets.py and update-service.js, so Apps that need it are left out."
+              echo "::warning::The update signing key is not listed in RELEASE_PUBLIC_KEYS in both official/signing.py and update-service.js, so Apps that need it are left out."
             fi
             rm -f "$key_file"
           fi
@@ -112,9 +143,11 @@ jobs:
           OPENPROGRAM_MAC_SIGNING_AVAILABLE: ${{ secrets.MAC_CSC_LINK != '' && secrets.MAC_CSC_KEY_PASSWORD != '' && secrets.APPLE_ID != '' && secrets.APPLE_APP_SPECIFIC_PASSWORD != '' && secrets.APPLE_TEAM_ID != '' && vars.MAC_SIGNING_IDENTITY != '' }}
           OPENPROGRAM_WINDOWS_SIGNING_AVAILABLE: ${{ secrets.WINDOWS_CSC_LINK != '' && secrets.WINDOWS_CSC_KEY_PASSWORD != '' }}
           OPENPROGRAM_UPDATE_KEY_TRUSTED: ${{ steps.update-key.outputs.trusted }}
+          OPENPROGRAM_RELEASE_RUNTIME_LAYERS_ONLY: ${{ inputs.runtime_layers_only }}
         run: python3 scripts/release/release-matrix.py select >> "$GITHUB_OUTPUT"
 
   python:
+    if: ${{ !inputs.runtime_layers_only }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -156,6 +189,7 @@ jobs:
 
   product-runtime:
     needs: platforms
+    if: ${{ !inputs.runtime_layers_only }}
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.platforms.outputs.runtime) }}
@@ -256,24 +290,94 @@ jobs:
         with:
           name: product-runtime-${{ matrix.platform }}-${{ matrix.arch }}
           path: ${{ runner.temp }}/runtime-artifacts/*
-      # Python 3.12 or newer: the build reads tomllib and, on Windows,
-      # os.path.isjunction; without --python uv takes whatever the image
-      # puts first on PATH.
-      - name: Build official update assets
-        if: needs.platforms.outputs.update_key == 'true'
+
+  # Every published update carries a runtime layer for each platform in
+  # publish.RUNTIME_PLATFORMS, for its base, whatever the installers here are.
+  # Each leg builds the base exactly as a seed does (build-release-seed.sh;
+  # on macOS its binaries are signed when the Apple secrets exist, as a seed's
+  # are, and stay unsigned otherwise, as an unsigned seed's do), then uploads
+  # the layer to the `updates` release beside the packs. No pointer moves:
+  # publish-updates.py run or announce publishes it.
+  runtime-layer:
+    needs: platforms
+    if: ${{ !cancelled() && needs.platforms.result == 'success' && !inputs.rehearse }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.platforms.outputs.runtime_layers) }}
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
         shell: bash
-        run: |
-          uv run --no-project --python 3.12 --with zstandard --with cryptography \
-            python scripts/release/create-update-assets.py platform \
-            --repository . --commit "$(git rev-parse HEAD)" \
-            --root "$RUNNER_TEMP/update-store" \
-            --platform "${{ matrix.platform }}-${{ matrix.arch }}" \
-            --output "$RUNNER_TEMP/update-assets"
-      - uses: actions/upload-artifact@v7
-        if: needs.platforms.outputs.update_key == 'true'
+    steps:
+      - uses: actions/checkout@v7
         with:
-          name: update-assets-${{ matrix.platform }}-${{ matrix.arch }}
-          path: ${{ runner.temp }}/update-assets/*
+          ref: ${{ env.RELEASE_REF }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - uses: astral-sh/setup-uv@v10.0.1
+        with:
+          version: "0.11.16"
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: apps/tailnet/go.mod
+          cache-dependency-path: apps/tailnet/go.sum
+      - name: Confirm zstd
+        run: |
+          if ! command -v zstd >/dev/null 2>&1; then
+            case "${{ matrix.platform }}" in
+              linux) sudo apt-get update && sudo apt-get install --no-install-recommends --yes zstd ;;
+              macos) brew install zstd ;;
+              windows) choco install zstandard --yes --no-progress ;;
+            esac
+          fi
+          zstd --version
+      - name: Prepare static OpenSSL for the Intel Mac base
+        if: matrix.platform == 'macos' && matrix.arch == 'x86_64'
+        run: scripts/release/prepare-macos-native-deps.sh
+      - name: Prepare macOS signing keychain
+        if: matrix.signing == 'signed'
+        env:
+          MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: python scripts/release/ci-sign-macos.py setup
+      - name: Build the base
+        env:
+          OPENPROGRAM_RELEASE_SIGN_IDENTITY: ${{ matrix.signing == 'signed' && vars.MAC_SIGNING_IDENTITY || '' }}
+        run: bash scripts/release/build-release-seed.sh "$RUNNER_TEMP/layer-build"
+      - name: Remove macOS signing keychain
+        if: always() && matrix.signing == 'signed'
+        run: python scripts/release/ci-sign-macos.py cleanup
+      - name: Upload the runtime layer
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          runtime="$RUNNER_TEMP/layer-build/store/runtime"
+          bases=($(ls "$runtime/bases"))
+          test "${#bases[@]}" = 1 || { echo "expected one base in the build's store, found: ${bases[*]}" >&2; exit 1; }
+          base="$runtime/bases/${bases[0]}"
+          # The base has no Tailscale sidecar of its own; the sealed version's goes in.
+          tailnet=()
+          for version in $(ls "$runtime/versions"); do
+            for name in openprogram-tailnet openprogram-tailnet.exe; do
+              if [ -f "$runtime/versions/$version/bin/$name" ] && [ ! -e "$base/bin/$name" ]; then
+                tailnet=(--tailnet "$runtime/versions/$version/bin/$name")
+              fi
+            done
+          done
+          uv run --no-project --python 3.12 --with zstandard --with cryptography \
+            python scripts/release/publish-updates.py upload-runtime-layer \
+            --base "$base" --platform "${{ matrix.platform }}-${{ matrix.arch }}" ${tailnet[@]+"${tailnet[@]}"}
 
   seed:
     needs: platforms
@@ -402,29 +506,7 @@ jobs:
       - name: Verify version
         shell: bash
         run: python scripts/release/verify-release-version.py --tag "${RELEASE_TAG}"
-      # A thin App updates only from its platform's update files, and publish
-      # leaves it out without them. Say so here, before the build, rather than
-      # at the end of the run.
-      - uses: actions/download-artifact@v8
-        id: update-files
-        if: matrix.layout == 'thin'
-        continue-on-error: true
-        with:
-          name: update-assets-${{ matrix.runtime_platform }}-${{ matrix.arch }}
-          path: update-files-check
-      # Said here, before the build, rather than at the end of the run. The
-      # build and its checks still run, so one run shows every problem;
-      # publish leaves the App out and names why.
-      - name: Require this platform's update files
-        id: update-files-required
-        if: matrix.layout == 'thin' && steps.update-files.outcome != 'success'
-        continue-on-error: true
-        shell: bash
-        run: |
-          echo "::error::No update files for ${{ matrix.runtime_platform }}-${{ matrix.arch }}: the product-runtime leg's 'Build official update assets' step failed or did not run, so this App could never update and would be left out of the release. Fix that leg first."
-          exit 1
       - uses: astral-sh/setup-uv@v10.0.1
-        if: matrix.platform == 'win'
         with:
           version: "0.11.16"
       - name: Show the Windows toolchain
@@ -619,6 +701,42 @@ jobs:
       - name: Verify the Linux App in clean Ubuntu containers
         if: matrix.platform == 'linux'
         run: bash scripts/release/smoke-linux-desktop.sh apps/desktop/dist "${{ matrix.arch }}"
+      # The App exactly as users install it: the notarized bundle out of its
+      # .zip, the signed install folder the NSIS installer copies, or the
+      # AppImage. Only a signed, thin macOS App replaces itself; a deb keeps
+      # its installer, since only root writes /opt.
+      - name: Upload the App's shell layer
+        if: (matrix.platform == 'mac' && matrix.layout == 'thin' && matrix.signing == 'signed') || (matrix.platform == 'win' && matrix.arch == 'x86_64') || matrix.platform == 'linux'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          seed=()
+          if [ "${{ matrix.platform }}" = mac ]; then
+            archive="$(find apps/desktop/dist -maxdepth 1 -name 'OpenProgram-*-mac-*.zip' ! -name '*-unsigned.zip' -print -quit)"
+            test -n "$archive"
+            unpacked="$RUNNER_TEMP/shell-app"
+            rm -rf "$unpacked" && mkdir -p "$unpacked"
+            ditto -x -k "$archive" "$unpacked"
+            app="$unpacked/OpenProgram.app"
+            codesign --verify --deep --strict "$app"
+          elif [ "${{ matrix.platform }}" = win ]; then
+            app="apps/desktop/dist/win-unpacked"
+            test -f "$app/OpenProgram.exe"
+          else
+            app="$(find apps/desktop/dist -maxdepth 1 -name 'OpenProgram-*.AppImage' -print -quit)"
+            if [ -z "$app" ]; then
+              # The AppImage is optional: without it this platform has no shell
+              # layer, announce does not ask for one, and its users keep the installer.
+              echo "::notice::No AppImage was built, so no shell layer for linux-${{ matrix.arch }}"
+              exit 0
+            fi
+            seed=(--seed apps/desktop/build/seed)
+          fi
+          uv run --no-project --python 3.12 --with zstandard --with cryptography \
+            python scripts/release/publish-updates.py upload-shell-layer \
+            --app "$app" --platform "${{ matrix.runtime_platform }}-${{ matrix.arch }}" "${seed[@]}" \
+            ${{ inputs.rehearse && '--no-upload' || '' }}
       - uses: actions/upload-artifact@v7
         with:
           name: desktop-${{ matrix.layout }}-${{ matrix.platform }}-${{ matrix.arch }}
@@ -639,7 +757,7 @@ jobs:
 
   cli-installer:
     needs: [platforms, product-runtime]
-    if: ${{ !cancelled() && needs.platforms.result == 'success' }}
+    if: ${{ !cancelled() && needs.platforms.result == 'success' && !inputs.runtime_layers_only }}
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.platforms.outputs.runtime) }}
@@ -719,7 +837,7 @@ jobs:
     needs: [office, platforms, python, product-runtime, seed, desktop, cli-installer]
     # A failed platform leaves its files out; only this job's own checks refuse.
     # The platforms job runs only after the Office archive was found.
-    if: ${{ !cancelled() && needs.platforms.result == 'success' }}
+    if: ${{ !cancelled() && needs.platforms.result == 'success' && !inputs.runtime_layers_only }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -729,9 +847,6 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           path: release-artifacts
-      - uses: astral-sh/setup-uv@v10.0.1
-        with:
-          version: "0.11.16"
       - name: Check release notes
         run: |
           notes_file=".github/release-notes/$RELEASE_TAG.md"
@@ -754,42 +869,6 @@ jobs:
           if re.search(r"[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]", notes):
               raise SystemExit(f"release notes must be English: {notes_path}")
           PY
-      - name: Sign official update assets
-        env:
-          UPDATE_SIGNING_KEY: ${{ secrets.OPENPROGRAM_UPDATE_SIGNING_KEY }}
-        run: |
-          mkdir -p "$RUNNER_TEMP/official-update"
-          for directory in release-artifacts/update-assets-*; do
-            [ -d "$directory" ] || continue
-            mv "$directory"/* "$RUNNER_TEMP/official-update/"
-            rmdir "$directory"
-          done
-          if [ -z "$UPDATE_SIGNING_KEY" ]; then
-            # The platforms job leaves these out without a key, so getting here
-            # with them means something is wrong: they could never update.
-            if [ -n "$(find release-artifacts -maxdepth 1 -type d \( -name 'desktop-thin-*' -o -name 'cli-seed-*' \) -print -quit)" ]; then
-              echo "this release has thin App or seed assets but no update signing key; add OPENPROGRAM_UPDATE_SIGNING_KEY and run it again" >&2
-              exit 1
-            fi
-            echo "no signing key: this release carries no official update assets" >&2
-            exit 0
-          fi
-          key_file="$RUNNER_TEMP/update-signing-key.pem"
-          (umask 077 && printf '%s\n' "$UPDATE_SIGNING_KEY" > "$key_file")
-          # A failure here costs the Apps that depend on these files, which the
-          # next step leaves out and names; it does not cost the release.
-          if uv run --no-project --with zstandard --with cryptography \
-            python scripts/release/create-update-assets.py finalize \
-            --directory "$RUNNER_TEMP/official-update" \
-            --release "$RELEASE_TAG" \
-            --commit "$(git rev-parse HEAD)" \
-            --repository . \
-            --signing-key "$key_file"; then
-            mv "$RUNNER_TEMP/official-update" release-artifacts/official-update
-          else
-            echo "::warning::The official update files could not be built for this release."
-          fi
-          rm -f "$key_file"
       - name: Assemble what this release carries
         env:
           RELEASE_PLAN: ${{ needs.platforms.outputs.plan }}

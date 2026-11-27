@@ -94,7 +94,7 @@ def read_settings() -> VoiceSettings:
 
 def _provider_key(provider_id: str) -> str | None:
     try:
-        from openprogram.models.providers.settings.env_api_keys import resolve_provider_key
+        from openprogram.models.auth.env_api_keys import resolve_provider_key
         return resolve_provider_key(provider_id)
     except Exception:
         return None

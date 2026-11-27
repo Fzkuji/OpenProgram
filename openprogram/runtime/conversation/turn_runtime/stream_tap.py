@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from openprogram.runtime.conversation.event_parsing import STORED_DETAILS_KEY, STORED_MEDIA_KEY, STORED_RESULT_KEY
 from openprogram.state.reply_text import opening_separator, reply_text
 from openprogram.state import task_blocks
-from openprogram.state.attachments import markers_as_names
+from openprogram.state.attachment_markers import markers_as_names
 
 if TYPE_CHECKING:
     from openprogram.runtime.conversation.turn_runtime.types import EventCallback
@@ -95,15 +95,17 @@ def final_blocks(tap: StreamTap, ordered: list[dict], cancel_event) -> list[dict
 
 
 def _starting_owner(req: "TurnRequest") -> dict | None:
-    """The task a reply continues from its first block: the open task of
-    the Goal this turn works for (``todo.shared.turn_owner``)."""
+    """The task a reply continues from its first block (the ``reply_task_owner``
+    turn moment: the open task of the Goal this turn works for)."""
     if getattr(req, "goal_verification", None):
         return None
     try:
-        from openprogram.programs.tools.planning.goal import chat as goal_chat
-        from openprogram.programs.tools.planning.todo import shared as tasks
-        goal = goal_chat.current_identity() or getattr(req, "goal_context", None)
-        return tasks.turn_owner(req.session_id, tasks.scope_of(req), goal, getattr(req, "branch_id", None))
+        from openprogram.runtime.conversation import turn_hooks
+        for task_owner in turn_hooks.handlers("reply_task_owner"):
+            owner = task_owner(req)
+            if owner is not None:
+                return owner
+        return None
     except Exception:
         _log.debug("task of the turn not read for session %s", req.session_id, exc_info=True)
         return None
@@ -247,9 +249,9 @@ def make_stream_tap(
             return
         task_id = segment_due.pop()
         try:
-            from openprogram.programs.tools.planning.todo import shared as tasks
-            tasks.open_turn_segment(req.session_id, assistant_msg_id, task_id, scope=tasks.scope_of(req, assistant_msg_id),
-                                    branch_id=getattr(req, "branch_id", None))
+            from openprogram.runtime.conversation import turn_hooks
+            for open_segment in turn_hooks.handlers("reply_segment"):
+                open_segment(req, assistant_msg_id, task_id)
         except Exception:
             _log.debug("task segment not started for session %s", req.session_id, exc_info=True)
 

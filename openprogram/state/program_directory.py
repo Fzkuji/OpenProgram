@@ -314,7 +314,7 @@ def migrate_source_tree_clones(
     profile move, so another profile never takes them. Running it again
     finds nothing to do. Returns ``(source, destination)`` for every move.
     """
-    from openprogram.models.auth.credentials import _private_file_lock
+    from openprogram.state.private_files import _private_file_lock
 
     log = log or logger.info
     state = Path(state_dir) if state_dir is not None else _state_dir()

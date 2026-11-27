@@ -5,7 +5,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">现象</th><th scope="col">处理</th></tr></thead>
 <tbody>
-<tr><th scope="row">"No provider available"</th><td><code translate="no">openprogram providers</code> 列出已存凭据。<code translate="no">openprogram providers discover</code> 查找 Claude Code、Codex、Gemini CLI 登录和可接管的 <code translate="no">env:</code> 密钥。<br>未登录：<code translate="no">openprogram providers login &lt;provider&gt;</code>，或登录对应的外部 CLI。<br>密钥设在另一个 shell：接管它，见<a href="../start/faq.zh.html#no-provider">常见问题</a>。<br>令牌过期：重新登录；<code translate="no">openprogram providers doctor</code> 检查过期、刷新和冲突。</td></tr>
+<tr><th scope="row">"No provider available"</th><td><code translate="no">openprogram providers</code> 列出已存凭据。<code translate="no">openprogram providers discover</code> 查找 GitHub CLI、Qwen CLI 登录和可接管的 <code translate="no">env:</code> 密钥。<br>未登录：<code translate="no">openprogram providers login &lt;provider&gt;</code>，或登录对应的外部 CLI。<br>密钥设在另一个 shell：接管它，见<a href="../start/faq.zh.html#no-provider">常见问题</a>。<br>令牌过期：重新登录；<code translate="no">openprogram providers doctor</code> 检查过期、刷新和冲突。</td></tr>
 <tr><th scope="row">"command not found: openprogram"</th><td>重新运行安装脚本，再把 <code translate="no">~/.local/bin</code> 加入 <code translate="no">PATH</code>（见下）</td></tr>
 <tr><th scope="row">Web UI 端口被占用</th><td>启动前 <code translate="no">export OPENPROGRAM_WEB_PORT=8101</code>，或用 <code translate="no">openprogram ports --port 8101</code> 持久化</td></tr>
 <tr><th scope="row">Worker 无法启动，或端口不对</th><td><code translate="no">openprogram doctor</code>，再 <code translate="no">openprogram rescue</code>，后者会打印修复命令。App 或终端安装检查它自带的 Node.js、终端界面和 Web 界面，缺了就提示重新安装；npm 构建命令只在源码 checkout 里出现。提 issue 前先读输出</td></tr>

@@ -53,7 +53,7 @@ def build_background_llm(call_kind: str = "memory", max_tokens: int = 2000) -> C
         from openprogram.models.providers.types import (
             Context, SimpleStreamOptions, UserMessage,
         )
-        from openprogram.models.usage import usage_scope
+        from openprogram.models.providers.usage_port import usage_scope
         import time
         ctx_system = system_prompt
         ctx_user = user_text

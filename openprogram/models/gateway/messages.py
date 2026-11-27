@@ -5,7 +5,8 @@
 events (``message_start``, ``content_block_start/delta/stop`` for text,
 thinking and ``tool_use`` with ``input_json_delta``, ``message_delta`` with
 the stop reason and usage, ``message_stop``) and :func:`message_body` writes
-a whole reply. ``count_tokens`` is estimated locally.
+a whole reply. ``count_tokens`` is estimated locally. Anthropic's web search
+tool is told as :mod:`.web_search` says.
 """
 from __future__ import annotations
 
@@ -17,6 +18,7 @@ from openprogram.models.providers.types import (
     Context,
     ImageContent,
     Model,
+    ServerToolUse,
     SimpleStreamOptions,
     TextContent,
     ThinkingContent,
@@ -27,6 +29,7 @@ from openprogram.models.providers.types import (
 )
 
 from . import conversion as cv
+from . import web_search
 from .conversion import GatewayError
 
 _STOP = {"stop": "end_turn", "length": "max_tokens", "toolUse": "tool_use"}
@@ -167,6 +170,15 @@ def _tools(raw: Any) -> list[Tool] | None:
     return tools or None
 
 
+def server_search(raw: Any) -> str:
+    """The name of Anthropic's web search server tool (``web_search_…``) among
+    a request's tools, ``""`` for none."""
+    for tool in raw if isinstance(raw, list) else []:
+        if isinstance(tool, dict) and str(tool.get("type") or "").startswith("web_search_"):
+            return str(tool.get("name") or "web_search")
+    return ""
+
+
 def _tool_choice(value: Any) -> tuple[Any, bool | None]:
     if not isinstance(value, dict):
         return None, None
@@ -181,7 +193,9 @@ def _tool_choice(value: Any) -> tuple[Any, bool | None]:
     return ("auto" if kind == "auto" else None), parallel
 
 
-def _reasoning(model: Model, body: dict[str, Any]) -> str | None:
+def _reasoning(model: Model, body: dict[str, Any], asked: str = "") -> str | None:
+    if asked:
+        return cv.reasoning_level(model, asked)
     effort = (body.get("output_config") or {}).get("effort") if isinstance(body.get("output_config"), dict) else None
     thinking = body.get("thinking") if isinstance(body.get("thinking"), dict) else {}
     kind = thinking.get("type")
@@ -202,16 +216,23 @@ def parse_request(body: Any) -> tuple[Model, Context, SimpleStreamOptions, bool]
         raise GatewayError(400, "invalid_request", "the request body must be a JSON object")
     if not isinstance(body.get("messages"), list):
         raise GatewayError(400, "invalid_request", "messages must be a list")
-    model = cv.resolve_model(body.get("model"))
+    model, asked = cv.resolve_model_at(body.get("model"))
     context = Context(system_prompt=_system(body.get("system")),
                       messages=_messages(model, body["messages"]), tools=_tools(body.get("tools")))
     choice, parallel = _tool_choice(body.get("tool_choice"))
+    search = server_search(body.get("tools"))
+    if search and isinstance(choice, dict) and choice.get("name") == search and not any(
+            tool.name == search for tool in context.tools or []):
+        choice = None  # the server tool asked for is the provider's search, no function
     metadata = body.get("metadata") if isinstance(body.get("metadata"), dict) else {}
     options = SimpleStreamOptions(
         max_tokens=body.get("max_tokens") if isinstance(body.get("max_tokens"), int) else None,
         temperature=body.get("temperature") if isinstance(body.get("temperature"), (int, float)) else None,
         tool_choice=choice, parallel_tool_calls=parallel,
-        reasoning=_reasoning(model, body), session_id=cv.session_key(metadata.get("user_id")),
+        reasoning=_reasoning(model, body, asked), session_id=cv.session_key(metadata.get("user_id")),
+        # Anthropic's web_search server tool (ZCode's native web search,
+        # Claude Code's WebSearch): the provider searches, where it can
+        web_search=True if search and cv.searches(model) else None,
     )
     return model, context, options, bool(body.get("stream"))
 
@@ -276,6 +297,10 @@ def message_body(model: Model, message: AssistantMessage, message_id: str | None
             content.append(_thinking_block(model, block))
         elif isinstance(block, ToolCall):
             content.append({"type": "tool_use", "id": block.id, "name": block.name, "input": block.arguments or {}})
+        elif web_search.renders(block):
+            content.append({"type": "server_tool_use", "id": web_search.server_id(block), "name": "web_search",
+                            "input": web_search.query_of(block)})
+            content.append(web_search.result_block(block))
     return {"id": message_id or cv.new_id("msg_"), "type": "message", "role": "assistant",
             "model": cv.model_ref(model), "content": content,
             "stop_reason": _STOP.get(message.stop_reason, "end_turn"), "stop_sequence": None,
@@ -347,6 +372,14 @@ async def stream_events(call) -> AsyncIterator[bytes]:
                                                            "name": call_block.name, "input": {}})
                 out.append(delta({"type": "input_json_delta", "partial_json": cv.arguments_json(call_block)}))
                 out += close()
+            elif kind == "servertool_end" and web_search.renders(event.server_tool):
+                found: ServerToolUse = event.server_tool
+                # as Anthropic's own web search tells it: the search, then its pages
+                out += open_("server", event.content_index, {"type": "server_tool_use", "id": web_search.server_id(found),
+                                                             "name": "web_search", "input": {}})
+                out.append(delta({"type": "input_json_delta",
+                                  "partial_json": json.dumps(web_search.query_of(found), ensure_ascii=False)}))
+                out += open_("server_result", event.content_index, web_search.result_block(found)) + close()
             elif kind == "done":
                 message = event.message
                 out += start_message() + close()

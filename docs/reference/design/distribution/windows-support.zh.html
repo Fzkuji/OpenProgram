@@ -102,7 +102,7 @@
 <tr><th scope="row">安装钩子</th><td>全新安装在安装前不运行 PowerShell。覆盖一个有 <code translate="no">OpenProgram.exe</code> 和 <code translate="no">resources\app.asar</code> 的安装时，先停掉其下的进程，只有它们一直不退才中止安装。每个钩子把脚本文本交给 <code translate="no">powershell.exe -Command</code>，路径放在环境变量里：执行策略只管脚本文件，而组策略设的执行策略 <code translate="no">-ExecutionPolicy Bypass</code> 也绕不过。发布门禁在只允许签名脚本的组策略下安装</td></tr>
 <tr><th scope="row">卸载</th><td>卸载 App 时先请 Worker 停止，再移除它的登录任务；升级和重装两样都不做。状态文件夹原样保留：对话、设置和版本库。Worker 停不下来也不阻止卸载，原地运行的卸载程序自身不在被结束的进程之内</td></tr>
 <tr><th scope="row">应用标识</th><td>外壳在打开任何窗口前设置应用 ID <code translate="no">ai.openprogram.desktop</code>，即安装器写在开始菜单快捷方式上的那个。通知、任务栏按钮及其固定项都归属这个 ID</td></tr>
-<tr><th scope="row">更新器</th><td>通过 <code translate="no">openprogram upgrade --json</code> 接收封存版本。只有发行版需要更新的外壳时，才提供文件 <code translate="no">OpenProgram-&lt;version&gt;-win-&lt;arch&gt;.exe</code> 或 <code translate="no">-unsigned.exe</code>。运行中 App 自身的签名决定更新线：只有未签名构建的 App 才接受 NotSigned，并且要先通过大小和 SHA-256；已签名的 App 要求 Valid 且发布者相同。失败时删除候选。可见的用户交接：<a href="automatic-updates.zh.html">自动更新</a></td></tr>
+<tr><th scope="row">更新器</th><td>通过 <code translate="no">openprogram upgrade --json</code> 接收封存版本。只有 App 不能从 <code translate="no">shell-windows-x86_64</code> 层取更新的外壳时，才提供文件 <code translate="no">OpenProgram-&lt;version&gt;-win-&lt;arch&gt;.exe</code> 或 <code translate="no">-unsigned.exe</code>。运行中 App 自身的签名决定更新线：只有未签名构建的 App 才接受 NotSigned，并且要先通过大小和 SHA-256；已签名的 App 要求 Valid 且发布者相同。失败时删除候选。可见的用户交接：<a href="automatic-updates.zh.html">自动更新</a></td></tr>
 <tr><th scope="row">CI</th><td>x64 和 arm64 安装依赖和原生 PTY，运行 Desktop 契约和 Web 测试</td></tr>
 </tbody>
 </table>

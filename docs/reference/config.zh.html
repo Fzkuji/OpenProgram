@@ -94,7 +94,7 @@ openprogram config set ui.web_port 8101</code></pre>
 <tr><th scope="row"><code translate="no">OPENPROGRAM_NO_AUTO_WORKER</code></th><td><code translate="no">1</code>：TUI 只连接现有 worker</td><td><code translate="no">openprogram/interfaces/cli/ink.py</code></td></tr>
 <tr><th scope="row"><code translate="no">OPENPROGRAM_NO_SLEEP</code></th><td><code translate="no">1</code>：关闭记忆睡眠整理调度</td><td><code translate="no">openprogram/state/memory/scheduler.py</code></td></tr>
 <tr><th scope="row"><code translate="no">OPENPROGRAM_NO_PROGRAMS_WATCH</code></th><td><code translate="no">1</code>：关闭 programs 目录文件监视</td><td><code translate="no">openprogram/programs/_host/watcher.py</code></td></tr>
-<tr><th scope="row"><code translate="no">OPENPROGRAM_PROJECT_AUTOCOMMIT</code></th><td><code translate="no">0</code>：关闭项目自动提交</td><td><code translate="no">openprogram/state/store/project/project_commit.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_PROJECT_AUTOCOMMIT</code></th><td><code translate="no">0</code>：关闭项目自动提交</td><td><code translate="no">openprogram/state/project_commit.py</code></td></tr>
 <tr><th scope="row"><code translate="no">OPENPROGRAM_WEBSEARCH_DISABLE</code></th><td>按名称禁用搜索 provider，如 <code translate="no">ollama</code></td><td><code translate="no">openprogram/programs/tools/web/web_search/providers/ollama.py</code></td></tr>
 </tbody>
 </table>
@@ -110,8 +110,6 @@ openprogram config set ui.web_port 8101</code></pre>
 <tr><th scope="row"><code translate="no">OPENPROGRAM_PROVIDER_STREAM_RETRIES</code></th><td>每个流式请求的尝试次数，含第一次（默认 5）。连接重试有独立额度，为此值减一。</td><td><code translate="no">openprogram/models/providers/utils/streams/stream_retry.py</code></td></tr>
 <tr><th scope="row"><code translate="no">OPENPROGRAM_NETWORK_WAIT_MAX_S</code></th><td>重试用尽后等待不可达端点，每 5 至 30 秒检查（默认 1800；<code translate="no">0</code> 立即失败）。取消回合会结束等待。</td><td><code translate="no">openprogram/models/providers/utils/streams/stream_retry.py</code></td></tr>
 <tr><th scope="row"><code translate="no">OPENPROGRAM_RETRY_AFTER_CAP_S</code></th><td>重试愿意等待的最长 <code translate="no">Retry-After</code>（默认 300）。更长则立即失败，让回退模型、其他账号或用户接手。<code translate="no">0</code> 取消上限。</td><td><code translate="no">openprogram/models/providers/utils/streams/stream_retry.py</code></td></tr>
-<tr><th scope="row"><code translate="no">OPENPROGRAM_CODEX_WEBSOCKET</code></th><td><code translate="no">0</code>：ChatGPT 登录的 Codex 回合用 HTTP 而不是 WebSocket。WebSocket 默认开启，接续的回合只发送新输入</td><td><code translate="no">openprogram/models/providers/adapters/openai_codex/websocket_transport.py</code></td></tr>
-<tr><th scope="row"><code translate="no">OPENPROGRAM_CODEX_ZSTD</code></th><td><code translate="no">0</code>：Codex HTTP 回合不压缩（默认 zstd）</td><td><code translate="no">openprogram/models/providers/adapters/openai_codex/request_compression.py</code></td></tr>
 <tr><th scope="row"><code translate="no">OPENPROGRAM_STRICT_TOOLS</code></th><td><code translate="no">0</code>：关闭严格工具 schema（默认开启）</td><td><code translate="no">openprogram/models/providers/schema/__init__.py</code></td></tr>
 <tr><th scope="row"><code translate="no">OPENPROGRAM_FORCE_IPV4</code></th><td><code translate="no">1</code>：强制 IPv4 源地址</td><td><code translate="no">openprogram/models/providers/utils/http_transport/http_client.py</code></td></tr>
 </tbody>
@@ -124,7 +122,7 @@ openprogram config set ui.web_port 8101</code></pre>
 <tr><th scope="row"><code translate="no">OPENPROGRAM_DEBUG_RUNTIME</code></th><td><code translate="no">1</code>：把 runtime 日志镜像到 stderr</td><td><code translate="no">openprogram/interfaces/server/runtime_management.py</code></td></tr>
 <tr><th scope="row"><code translate="no">OPENPROGRAM_DEBUG_REGISTRY</code></th><td><code translate="no">1</code>：函数注册表导入失败时附 traceback</td><td><code translate="no">openprogram/programs/_host/registry.py</code></td></tr>
 <tr><th scope="row"><code translate="no">OPENPROGRAM_DEBUG_DISPATCHER</code></th><td><code translate="no">1</code>：分发器日志（<code translate="no">INFO</code>，写入 worker 日志）</td><td><code translate="no">openprogram/runtime/conversation/turn_runtime/runtime_attach.py</code></td></tr>
-<tr><th scope="row"><code translate="no">OPENPROGRAM_DEBUG_PROVIDER</code></th><td><code translate="no">1</code>：provider 层日志（<code translate="no">INFO</code>，写入 worker 日志）</td><td><code translate="no">openprogram/models/providers/adapters/openai_codex/openai_codex.py</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_DEBUG_PROVIDER</code></th><td><code translate="no">1</code>：provider 层日志（<code translate="no">INFO</code>，写入 worker 日志）</td><td><code translate="no">openprogram/runtime/agent/loop/streaming.py</code></td></tr>
 </tbody>
 </table>
 <details>

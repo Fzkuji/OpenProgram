@@ -71,11 +71,10 @@ def get(name: str) -> Any:
 
 def load_programs() -> None:
     """Load the built-in Programs once, so their applications provide their services."""
-    import logging
-    try:
-        import openprogram.programs  # noqa: F401
-    except Exception as exc:  # noqa: BLE001 — a caller without the service degrades
-        logging.getLogger(__name__).warning("Programs did not load: %s", exc)
+    from openprogram.host import runtime_facts
+    # The composition root loads them (``openprogram._load_programs``); a
+    # caller without the service degrades.
+    runtime_facts.load_programs()
 
 
 def lookup(name: str) -> Any:

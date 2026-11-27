@@ -116,7 +116,7 @@ def _render_detail(server: dict) -> str:
 # ---------------------------------------------------------------------------
 
 def _cmd_mcp_token_create() -> int:
-    from openprogram.extensions.mcp.server.auth import MCPTokenError, create_token
+    from openprogram.interfaces.mcp_server.auth import MCPTokenError, create_token
 
     try:
         token = create_token()
@@ -128,7 +128,7 @@ def _cmd_mcp_token_create() -> int:
 
 
 def _cmd_mcp_serve() -> int:
-    from openprogram.extensions.mcp.server.server import serve
+    from openprogram.interfaces.mcp_server.server import serve
 
     return serve()
 

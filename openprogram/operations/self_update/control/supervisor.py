@@ -294,10 +294,10 @@ def _complete_browser_probe(
 
 
 def _build_candidate(_record: UpdateRecord, _update_dir: Path) -> Artifact:
-    from openprogram.programs.tools.system.self_update import (
-        _recorded_path,
-        _validate_candidate_snapshot,
-        _validate_registered_worktree,
+    from ..candidate_source import (
+        recorded_path,
+        validate_candidate_snapshot,
+        validate_registered_worktree,
     )
     from openprogram.state.store.session.files.atomic_file import atomic_write_text
     from openprogram.state.worktree.manager import get_manager
@@ -307,12 +307,12 @@ def _build_candidate(_record: UpdateRecord, _update_dir: Path) -> Artifact:
     worktree = get_manager().get_worktree(record.request.worktree_id)
     if worktree is None:
         raise RuntimeError("candidate worktree is no longer registered")
-    source = _recorded_path(worktree.source_repo, "source repo")
-    candidate = _recorded_path(worktree.worktree_path, "candidate worktree")
-    _validate_registered_worktree(
+    source = recorded_path(worktree.source_repo, "source repo")
+    candidate = recorded_path(worktree.worktree_path, "candidate worktree")
+    validate_registered_worktree(
         source, candidate, record.request.candidate_sha, worktree.branch_name
     )
-    _validate_candidate_snapshot(candidate, record.request.candidate_sha)
+    validate_candidate_snapshot(candidate, record.request.candidate_sha)
 
     # Only the frozen trusted controller sees the owner's signing identity.
     # Candidate code builds an ad hoc artifact inside the existing sandbox.
@@ -421,10 +421,10 @@ def _build_candidate(_record: UpdateRecord, _update_dir: Path) -> Artifact:
         raise RuntimeError(f"candidate packaging failed with exit {result.returncode}")
     if not artifact.is_dir() or artifact.is_symlink():
         raise RuntimeError("candidate packaging did not produce one App artifact")
-    _validate_registered_worktree(
+    validate_registered_worktree(
         source, candidate, record.request.candidate_sha, worktree.branch_name
     )
-    _validate_candidate_snapshot(candidate, record.request.candidate_sha)
+    validate_candidate_snapshot(candidate, record.request.candidate_sha)
     # Deferred browser verification rewrites resources. Sign after those writes,
     # and bind the final signature into the artifact digest used by installation.
     sign_app(artifact)

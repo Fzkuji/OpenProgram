@@ -23,7 +23,7 @@ def test_credential_file_helpers_live_inside_auth() -> None:
     assert {
         "openprogram/models/auth/credentials/__init__.py",
         "openprogram/models/auth/credentials/inventory.py",
-        "openprogram/models/auth/credentials/io.py",
+        "openprogram/state/private_files.py",
     } <= tracked
     assert not any(path.startswith("openprogram/credential_files/") for path in tracked)
 

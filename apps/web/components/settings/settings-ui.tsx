@@ -34,7 +34,7 @@ export function SettingsPage({
 }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex shrink-0 flex-col gap-1 border-b px-7 pt-5 pb-4">
+      <header data-settings-head="" className="flex shrink-0 flex-col gap-1 border-b px-7 pt-5 pb-4">
         {actions ? (
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-fs-title font-semibold text-text-primary">{title}</h2>
@@ -48,6 +48,7 @@ export function SettingsPage({
         ) : null}
       </header>
       <div
+        data-settings-body=""
         className={cn(
           "flex min-h-0 flex-1 flex-col gap-10 overflow-y-auto px-7 pt-6 pb-8",
           bodyClassName

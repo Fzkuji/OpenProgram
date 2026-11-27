@@ -33,9 +33,10 @@ from dataclasses import dataclass, replace
 import time
 from typing import Any
 
-from openprogram.programs._host.execution import ToolReturn
+from openprogram.runtime.agent.tool_execution import ToolReturn
 from openprogram.programs._host.runtime import function
 from openprogram.programs._authoring import guides, prechecks
+from openprogram.runtime.permissions import tool_profiles
 
 from .code_mode import calls as code_mode
 from . import errors
@@ -467,6 +468,18 @@ function(
     path_params={},
     url_params=[],
 )(computer_use)
+
+# What the permission decision asks about a call, answered by its target's
+# provider. Each answer looks the function up when it is called, so a
+# replacement of one is what the permission decision sees.
+tool_profiles.register(NAME, tool_profiles.ToolProfile(
+    capability=lambda call: authority(dict(call or {})),
+    page_script=lambda call: evaluates(call),
+    approval=lambda call: approval(call),
+    rule_key=lambda call: rule_key(call),
+    page_surface=lambda call: page_surface(call),
+    resolves=lambda call: facts(call) is not None,
+))
 
 
 __all__ = ["DESCRIPTION", "Facts", "MAX_STEPS", "approval", "authority", "computer_use", "evaluates", "facts", "page_surface", "page_surface_call", "requires_approval", "rule_key", "run", "run_ended", "system_access"]

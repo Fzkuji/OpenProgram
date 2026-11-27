@@ -156,11 +156,18 @@ def _is_user_turn_record(record: dict[str, Any]) -> bool:
 
 def _user_text(content: Any) -> str:
     """The typed text of a user record; tool results are not text."""
+    return _user_message(content)[0]
+
+
+def _user_message(content: Any) -> tuple[str, list[tuple[str, str, Optional[str]]]]:
+    """(The typed text of a user record, with ``[image]`` where a picture sat;
+    the pictures: base64 bytes, mime type and that placeholder)."""
     if isinstance(content, str):
-        return clean_user_text(content)
+        return clean_user_text(content), []
     if not isinstance(content, list):
-        return ""
+        return "", []
     parts: list[str] = []
+    images: list[tuple[str, str, Optional[str]]] = []
     for block in content:
         if not isinstance(block, dict):
             continue
@@ -170,8 +177,13 @@ def _user_text(content: Any) -> str:
                 parts.append(cleaned)
         elif block.get("type") == "image":
             parts.append("[image]")
+            source = block.get("source") if isinstance(block.get("source"), dict) else {}
+            if source.get("type") == "base64" and isinstance(source.get("data"), str):
+                images.append((source["data"], str(source.get("media_type") or "image/png"), "[image]"))
+            else:
+                images.append(("", "", "[image]"))  # a picture whose bytes the transcript does not hold
     # An image alone (with no text) is still something the user sent.
-    return "\n\n".join(parts).strip()
+    return "\n\n".join(parts).strip(), images
 
 
 def _result_text(content: Any) -> str:
@@ -255,7 +267,7 @@ def parse(path: Path) -> ExternalSession:
                         if tool is not None:
                             tool.result = _result_text(block.get("content"))
                             tool.is_error = bool(block.get("is_error"))
-            text = _user_text(content)
+            text, images = _user_message(content)
             if text.startswith(INTERRUPTED):
                 # Claude Code's note that a Stop ended the turn: not a message of the person's.
                 if turn is not None and ts:
@@ -264,7 +276,7 @@ def parse(path: Path) -> ExternalSession:
             if text:
                 raw = content if isinstance(content, str) else ""
                 turn = Turn(user_text=text, timestamp=ts, ended_at=ts,
-                            command=is_command(raw))
+                            command=is_command(raw), images=images)
                 # Known by its message until an answer comes (an engine sends that uuid itself).
                 turn.turn_id = str(record.get("uuid") or "") or None
                 pending.clear()

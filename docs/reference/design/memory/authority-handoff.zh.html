@@ -22,7 +22,7 @@
 <tr><th scope="row"><code translate="no">capability_for_tool()</code><span class="arg">runtime/permissions/tool_authority.py</span></th><td>每个工具名对应一项能力，默认 <code translate="no">process.exec</code>。安装的函数或 MCP 工具可以叫任何名字；未分类就只有 owner 能用。</td></tr>
 <tr><th scope="row"><code translate="no">_gated_execute</code><span class="arg">runtime/permissions/approvals/approval.py</span></th><td>在规则层、模式判定和 <code translate="no">bypass</code> 短路之前运行。任何模式和保存的 allow 规则都跳不过。</td></tr>
 <tr><th scope="row"><code translate="no">AuthorityDecision</code></th><td>是否放行、决定性检查、稳定原因码、档位、能力。写进日志，拒绝可审计。</td></tr>
-<tr><th scope="row"><code translate="no">runtime_authority()</code><span class="arg">runtime/permissions/authority.py</span></th><td>子 Agent 或运行时任务复制父权限，改写发言人字段，变成非交互，档位不变。继承不扩权；父权限无效时得到 <code translate="no">{}</code>，门口拒绝。非交互也意味着没有通往交互审批的路径。</td></tr>
+<tr><th scope="row"><code translate="no">runtime_authority()</code><span class="arg">state/authority.py</span></th><td>子 Agent 或运行时任务复制父权限，改写发言人字段，变成非交互，档位不变。继承不扩权；父权限无效时得到 <code translate="no">{}</code>，门口拒绝。非交互也意味着没有通往交互审批的路径。</td></tr>
 </tbody>
 </table>
 

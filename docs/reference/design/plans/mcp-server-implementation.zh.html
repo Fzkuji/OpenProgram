@@ -7,7 +7,7 @@
 <table class="stack">
 <thead><tr><th scope="col">模块</th><th scope="col">负责</th><th scope="col">测试</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">extensions/mcp/server/contracts.py</code></th><td>包装工具 schema、<code translate="no">validate_tool_call</code>、<code translate="no">get_mcp_tools</code></td><td><code translate="no">tests/unit/programs/mcp/test_mcp_server_contracts.py</code></td></tr>
+<tr><th scope="row"><code translate="no">interfaces/mcp_server/contracts.py</code></th><td>包装工具 schema、<code translate="no">validate_tool_call</code>、<code translate="no">get_mcp_tools</code></td><td><code translate="no">tests/unit/programs/mcp/test_mcp_server_contracts.py</code></td></tr>
 <tr><th scope="row"><code translate="no">auth.py</code></th><td>令牌文件、<code translate="no">authenticate_from_environment</code></td><td><code translate="no">tests/component/programs/mcp/test_mcp_server_auth.py</code>、<code translate="no">test_mcp_server_cli.py</code></td></tr>
 <tr><th scope="row"><code translate="no">service.py</code>、<code translate="no">tools.py</code></th><td>会话、Runtime 工具暴露、<code translate="no">tool_call</code>、提示生命周期、内容转换</td><td><code translate="no">tests/unit/programs/mcp/test_mcp_server_tools.py</code>、<code translate="no">tests/component/programs/mcp/test_mcp_server_turns.py</code></td></tr>
 <tr><th scope="row"><code translate="no">server.py</code></th><td><code translate="no">build_server</code>、<code translate="no">serve_stdio</code>、<code translate="no">serve</code></td><td><code translate="no">tests/integration/programs/test_mcp_server.py</code></td></tr>

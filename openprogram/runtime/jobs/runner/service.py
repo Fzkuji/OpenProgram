@@ -140,10 +140,13 @@ class JobRunner(AdmissionOperations, ProjectionOperations, BorrowedOperations, C
         # Maintenance is read from the same profile as the stores above, for
         # the runner's whole life: the dispatch loop must not follow a state
         # directory that changes after it started.
-        from openprogram.operations.self_update.store import SelfUpdateStore
-        self._self_update_store = SelfUpdateStore()
+        from openprogram.runtime import maintenance
+        self._maintenance_state = maintenance.open_state()
         self._claim_only_job_id: str | None = None
         self._claim_scope_lock = shared.threading.Lock()
+        # Held by a queued Job's first step from its claim intent to its
+        # claim, and by the dispatcher around each claim it makes.
+        self._initial_step_claim_lock = shared.threading.Lock()
         self._dispatch_wake = shared.threading.Event()
         self._reconcile_wake = shared.threading.Event()
         self._budget_wake = shared.threading.Event()
@@ -237,7 +240,7 @@ class JobRunner(AdmissionOperations, ProjectionOperations, BorrowedOperations, C
         watched.
         """
         from openprogram.host._platform import changes
-        from openprogram.operations.self_update.control.watchdog import SELF_UPDATE_TOPIC, watch_store
+        from openprogram.runtime import maintenance
 
         from openprogram.models.usage.ledger import ROSTER_TOPIC
 
@@ -262,16 +265,18 @@ class JobRunner(AdmissionOperations, ProjectionOperations, BorrowedOperations, C
                 self._delegation_spend_changed = True
                 self._budget_wake.set()
 
-        def on_self_update(_keys: tuple[str, ...]) -> None:
+        def on_maintenance(_keys: tuple[str, ...]) -> None:
             self._dispatch_wake.set()
             self._reconcile_wake.set()
 
         self._change_subscriptions = [
             changes.subscribe("run_tables", on_tables),
-            changes.subscribe(SELF_UPDATE_TOPIC, on_self_update),
             changes.subscribe(ROSTER_TOPIC, on_usage),
         ]
-        watch_store(self._self_update_store)
+        maintenance_subscription = maintenance.subscribe_changes(
+            self._maintenance_state, on_maintenance)
+        if maintenance_subscription is not None:
+            self._change_subscriptions.append(maintenance_subscription)
 
 
     def _governance_context(self, job: shared.Job) -> shared.JobGovernanceContext:
@@ -483,15 +488,8 @@ class JobRunner(AdmissionOperations, ProjectionOperations, BorrowedOperations, C
         if execution is None or job is None or not job.admission_id:
             raise RuntimeError("canonical Job admission is unavailable")
         kind = CommandKind.STEP if step else CommandKind.CONTINUE
-        if step and execution.status.value == "queued":
-            command = self._execution_store.accept_initial_job_step(
-                command_id=command_id,
-                execution_id=execution_id,
-                expected_version=expected_version,
-                payload={},
-                actor=actor,
-            )
-        else:
+        initial_step = step and execution.status.value == "queued"
+        if not initial_step:
             command = self._execution_store.accept_command(
                 command_id=command_id,
                 execution_id=execution_id,
@@ -500,45 +498,65 @@ class JobRunner(AdmissionOperations, ProjectionOperations, BorrowedOperations, C
                 payload={},
                 actor=actor,
             )
-        self._resource_saga.request_claim(
-            execution_id,
-            admission_id=job.admission_id,
-            command_id=command_id,
-            paused=True,
-        )
-        if step and execution.status.value == "queued":
+            self._resource_saga.request_claim(
+                execution_id,
+                admission_id=job.admission_id,
+                command_id=command_id,
+                paused=True,
+            )
+            self._dispatch_wake.set()
+        else:
             # The sole queued-step exception consumes a single provider
             # decision under the normal Agent safe-point hook.  It is not a
             # synthetic checkpoint: the command remains accepted until the
             # resource intent is claimed and the canonical owner is bound.
-            self._resource_saga.reconcile()
-            self._activate_initial_step(
-                execution_id=execution_id,
-                command_id=command_id,
-            )
-        else:
-            self._dispatch_wake.set()
+            # The step is this caller's to activate: the dispatcher, woken by
+            # the same commits, must not claim the admission once the intent
+            # makes it dispatch-ready.  A caller that dies before claiming
+            # leaves it to the dispatcher.
+            with self._initial_step_claim_lock:
+                command = self._execution_store.accept_initial_job_step(
+                    command_id=command_id,
+                    execution_id=execution_id,
+                    expected_version=expected_version,
+                    payload={},
+                    actor=actor,
+                )
+                self._resource_saga.request_claim(
+                    execution_id,
+                    admission_id=job.admission_id,
+                    command_id=command_id,
+                    paused=True,
+                )
+                self._resource_saga.reconcile()
+                claim = self._claim_initial_step(
+                    execution_id=execution_id, command_id=command_id,
+                )
+            if claim is not None:
+                self._activate_initial_step(claim, command_id=command_id)
         latest = self._execution_store.get_execution(execution_id)
         assert latest is not None
         return self._execution_store.get_command(command_id) or command, latest
 
 
-    def _activate_initial_step(self, *, execution_id: str, command_id: str) -> None:
-        """Activate one resource-claimed queued Job step through Agent driver."""
+    def _claim_initial_step(self, *, execution_id: str, command_id: str):
+        """Claim the resource admission of a queued Job's first step."""
         execution = self._execution_store.get_execution(execution_id)
         if execution is None or execution.status.value != "queued":
-            return
+            return None
         job = self._canonical_job(execution_id)
         if job is None or not job.admission_id:
-            return
-        claim = self._governor.claim_execution(
+            return None
+        return self._governor.claim_execution(
             execution_id,
             owner_instance_id=self._instance_id,
             admission_id=job.admission_id,
             command_id=command_id,
         )
-        if claim is None:
-            return
+
+
+    def _activate_initial_step(self, claim, *, command_id: str) -> None:
+        """Activate one resource-claimed queued Job step through Agent driver."""
         try:
             activated = self._activate_claimed_job_command(
                 claim, command_id, shared.threading.Event(),
@@ -548,7 +566,7 @@ class JobRunner(AdmissionOperations, ProjectionOperations, BorrowedOperations, C
             attempt, _running, binding = activated
             binding.handle.done.result(timeout=5.0)
         except Exception:
-            shared._log.exception("queued initial Job step activation failed for %s", execution_id)
+            shared._log.exception("queued initial Job step activation failed for %s", claim.job_id)
 
 
     def _broadcast_job_status(self, job: shared.Job) -> None:

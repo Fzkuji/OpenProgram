@@ -16,7 +16,7 @@ Routes (``{p}`` a provider id, ``{cid}`` a credential id):
   GET    /api/sessions/{sid}/credentials               -> {binding, pin}
   POST   /api/sessions/{sid}/credentials               {provider, credential_id | null}
 
-The list's shape and each change are :mod:`openprogram.models.auth.manage`,
+The list's shape and each change are :mod:`openprogram.models.listing.manage`,
 which ``openprogram providers keys`` uses too. Sign-ins (OAuth, device code,
 an imported login, a pasted token) are added through
 ``/api/providers/{p}/login/*`` (``provider_login.py``); signing in again with
@@ -34,7 +34,7 @@ from typing import Any, Callable
 from fastapi import Body
 from fastapi.responses import JSONResponse
 
-from openprogram.models.auth import manage
+from openprogram.models.listing import manage
 from openprogram.models.auth.credentials import is_redacted_value
 
 from .credential_secrets import check_request_body, is_nonempty_printable_ascii

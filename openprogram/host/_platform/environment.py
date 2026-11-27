@@ -4,7 +4,7 @@ import functools as _functools
 import os as _os
 import subprocess as _subprocess
 import sys as _sys
-from openprogram.host._platform import terminal
+from openprogram.host._platform import processes
 
 
 def can_open_browser() -> bool:
@@ -279,9 +279,9 @@ def platform_environment_advisories(state_dir) -> list[tuple[bool, str, str]]:
     """
 
     if _sys.platform.startswith("linux"):
-        from openprogram.host.sandbox import unavailable_reason
+        from openprogram.host._platform import host_facts
 
-        sandbox_reason = unavailable_reason()
+        sandbox_reason = host_facts.sandbox_unavailable_reason()
         sandbox_detail = (
             "available (bubblewrap namespaces verified)"
             if sandbox_reason is None
@@ -302,7 +302,7 @@ def platform_environment_advisories(state_dir) -> list[tuple[bool, str, str]]:
     if _sys.platform != "win32":
         return []
 
-    long_paths = terminal._windows_powershell(
+    long_paths = processes._windows_powershell(
         "$v=(Get-ItemProperty "
         "'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\FileSystem' "
         "-Name LongPathsEnabled -ErrorAction SilentlyContinue).LongPathsEnabled;"
@@ -319,7 +319,7 @@ def platform_environment_advisories(state_dir) -> list[tuple[bool, str, str]]:
 
     import json
 
-    defender_output = terminal._windows_powershell(
+    defender_output = processes._windows_powershell(
         "$s=Get-MpComputerStatus -ErrorAction Stop;"
         "$p=Get-MpPreference -ErrorAction Stop;"
         "[pscustomobject]@{realTime=[bool]$s.RealTimeProtectionEnabled;"

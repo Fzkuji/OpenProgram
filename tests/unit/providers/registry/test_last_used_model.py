@@ -140,21 +140,21 @@ def test_newest_conversation_model_reads_each_pin(monkeypatch):
         "openprogram.runtime.context.session_db.default_db",
         lambda: SimpleNamespace(list_sessions=lambda **_kw: rows),
     )
-    pins = {"b": ("openai-codex", "openai-codex:gpt-x"), "c": ("deepseek", "flash")}
+    pins = {"b": ("openai", "openai:gpt-x"), "c": ("deepseek", "flash")}
     monkeypatch.setattr(
         "openprogram.runtime.conversation.session_settings.session_model.read_session_chat_model",
         lambda sid: pins.get(sid, (None, None)),
     )
-    assert last_used._newest_session_model() == ("openai-codex", "gpt-x")
+    assert last_used._newest_session_model() == ("openai", "gpt-x")
 
 
 def test_existing_install_adopts_newest_conversation_model(cfg_path, monkeypatch):
     released = []
     _write_cfg(cfg_path, default_provider="deepseek", default_model="deepseek-flash")
-    monkeypatch.setattr(last_used, "_newest_session_model", lambda: ("openai-codex", "gpt-6.1-sol"))
+    monkeypatch.setattr(last_used, "_newest_session_model", lambda: ("openai", "gpt-6.1-sol"))
     monkeypatch.setattr(last_used, "_release_default_agent_model", lambda: released.append(True))
-    assert last_used.read_last_used_model() == ("openai-codex", "gpt-6.1-sol")
-    assert last_used.read_last_used_model() == ("openai-codex", "gpt-6.1-sol")
+    assert last_used.read_last_used_model() == ("openai", "gpt-6.1-sol")
+    assert last_used.read_last_used_model() == ("openai", "gpt-6.1-sol")
     cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
     assert "default_provider" not in cfg and "default_model" not in cfg
     assert released == [True]

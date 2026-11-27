@@ -21,7 +21,7 @@
 
 <h2 id="anthropic">Anthropic 上的加载</h2>
 <p>provider 在 <code translate="no">provider.json</code> 的 <code translate="no">tool_search</code> 下声明原生形式。Anthropic 为 <code translate="no">anthropic-messages</code> 声明 <code translate="no">anthropic-reference</code>，并带 <code translate="no">models_off: ["haiku"]</code>。</p>
-<p>Grok 订阅入口没有声明：它对 <code translate="no">tool_search_call</code> 项返回 422 “unknown item type”，所以在那里加载的工具追加到所有其他工具之后。</p>
+<p>没有声明的 provider 把加载的工具追加到所有其他工具之后。</p>
 <table class="stack fixed">
 <thead><tr><th scope="col">部分</th><th scope="col">有这个形式</th><th scope="col">没有</th></tr></thead>
 <tbody>
@@ -90,7 +90,6 @@
 <table class="stack fixed">
 <thead><tr><th scope="col">线路</th><th scope="col">说明放在哪里</th></tr></thead>
 <tbody>
-<tr><th scope="row">Codex（<code translate="no">tool_search_output</code>）</th><td>输出项带已加载的定义，没有时是 <code translate="no">tools: []</code>；说明作为紧随其后的一条 user 项发出，包在 <code translate="no">&lt;tool-search-result&gt;</code> 里</td></tr>
 <tr><th scope="row">Anthropic 引用形式</th><td>有加载时：<code translate="no">tool_reference</code> 块旁边的文字块。没有加载时：结果文字，也就是说明本身</td></tr>
 <tr><th scope="row">其他线路</th><td>结果文字，开头就是说明</td></tr>
 </tbody>
@@ -218,9 +217,8 @@
 <tbody>
 <tr><th scope="row">journal、safe point、checkpoint 里的 <code translate="no">loaded_deferred_tools</code></th><td>只读保留一个版本，之后删除</td></tr>
 <tr><th scope="row">开启缓存诊断的 Anthropic 三请求自测</th><td>一次付费的真实运行</td></tr>
-<tr><th scope="row">大批加载后和摘要后的 Codex 缓存</th><td>一次真实的 Codex 运行</td></tr>
-<tr><th scope="row">OpenAI 和 Azure Responses 的搜索形式</th><td>真实验证；在此之前不声明</td></tr>
-<tr><th scope="row">Copilot、Vercel、opencode 是否接受引用</th><td>真实验证；在此之前继续走数组追加</td></tr>
+<tr><th scope="row">OpenAI 和 Azure Responses 的搜索形式</th><td>未实现：先由 Responses 适配器渲染这种形式，再做真实验证</td></tr>
+<tr><th scope="row">Vercel、opencode 是否接受引用</th><td>真实验证；在此之前继续走数组追加</td></tr>
 <tr><th scope="row">Anthropic 上跳过空 thinking 块</th><td>一次付费运行的请求对比</td></tr>
 <tr><th scope="row">上下文分解和预算</th><td>仍按内联文字估算目录</td></tr>
 <tr><th scope="row">纪元记录</th><td>按对话保存；第一条消息相同的分支共用一条</td></tr>

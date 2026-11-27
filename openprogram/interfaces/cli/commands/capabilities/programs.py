@@ -21,89 +21,6 @@ def _get_runtime(provider=None, model=None):
     return create_runtime(provider=provider, model=model)
 
 
-def _cmd_configure(provider: str | None):
-    """Interactive provider-setup. Drives openprogram.models.providers.settings.configuration."""
-    from openprogram.models.providers.settings import configuration
-
-    catalog = configuration.list_providers()
-    if not catalog:
-        print("No provider configuration is currently registered.")
-        return
-
-    if provider is None:
-        print("Available providers to configure:\n")
-        for i, p in enumerate(catalog, 1):
-            print(f"  {i}. {p['id']:15s}  {p['label']}")
-            if p.get("description"):
-                print(f"     {p['description']}")
-        print()
-        choice = input(f"Pick one [1-{len(catalog)}] (default 1): ").strip() or "1"
-        try:
-            provider = catalog[int(choice) - 1]["id"]
-        except (ValueError, IndexError):
-            print(f"Invalid choice: {choice}")
-            return
-
-    entry = configuration.get_provider(provider)
-    if entry is None:
-        print(f"Unknown provider: {provider}")
-        print(f"Available: {', '.join(p['id'] for p in catalog)}")
-        return
-
-    print(f"\nConfiguring: {entry['label']}")
-    if entry.get("description"):
-        print(f"  {entry['description']}")
-    print()
-
-    ctx: dict = {}
-    for step in entry["steps"]:
-        while True:
-            result = configuration.run_step(provider, step["id"], ctx)
-            status = result["status"]
-            if status == "ok":
-                print(f"  [ok] {step['label']}: {result['message']}")
-                break
-            elif status == "needs_input":
-                print(f"  [?]  {result['message']}")
-                options = result.get("options") or []
-                default = result.get("default")
-                if options:
-                    for i, opt in enumerate(options, 1):
-                        marker = " (default)" if opt["value"] == default else ""
-                        print(f"       {i}. {opt['value']:18s} {opt.get('desc', '')}{marker}")
-                    pick = input(f"       Pick [1-{len(options)}]: ").strip()
-                    if not pick and default is not None:
-                        value = default
-                    else:
-                        try:
-                            value = options[int(pick) - 1]["value"]
-                        except (ValueError, IndexError):
-                            print(f"       Invalid choice: {pick}")
-                            continue
-                else:
-                    value = input("       > ").strip()
-                    if not value and default is not None:
-                        value = default
-                ctx[result["input_key"]] = value
-                continue
-            else:  # error
-                print(f"  [x]  {step['label']}: {result['message']}")
-                fix = result.get("fix")
-                if fix:
-                    print(f"       Fix with: {fix}")
-                    retry = input("       Retry this step after running the fix? [Y/n]: ").strip().lower()
-                    if retry in ("", "y", "yes"):
-                        continue
-                print("Aborted.")
-                return
-
-    print("\nAll steps complete. You can now run agentic commands without specifying --provider.")
-
-
-# ---------------------------------------------------------------------------
-# list
-# ---------------------------------------------------------------------------
-
 def _source_dir(tool) -> str:
     import inspect as _inspect
     fn = getattr(tool, "_python_callable", None) or getattr(tool, "_fn", None) or tool
@@ -554,8 +471,8 @@ def _cmd_enable(app_id: str, enabled: bool) -> None:
 
 def _cmd_export(name: str, output: str, *, format: str | None = None, python: str = "auto",
                 as_json: bool = False) -> int:
-    """Write ``name`` as a standalone application (interfaces/standalone/export.py)."""
-    from openprogram.interfaces.standalone.export import export
+    """Write ``name`` as a standalone application (programs/_host/ui/export.py)."""
+    from openprogram.programs._host.ui.export import export
     try:
         result = export(name, Path(output), format=format or ("app" if sys.platform == "darwin" else "dir"),
                         python=python)

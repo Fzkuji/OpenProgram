@@ -144,7 +144,7 @@ def _in_a_process(body: Callable[[], Any]) -> SimpleNamespace:
     receive, send = context.Pipe(duplex=False)
 
     def run() -> None:
-        from openprogram.operations.worker.lock import WorkerLock
+        from openprogram.host.worker.lock import WorkerLock
         from openprogram.runtime.conversation.always_on import runtime
 
         runtime._BOOT = uuid.uuid4().hex[:12]  # forked, so not a new one by itself
@@ -499,6 +499,7 @@ def test_a_killed_chat_turn_the_owner_stopped_sends_no_empty_reply_to_the_model(
     assert [role for role, _text in found["sent"][0]] == ["user", "user"]
 
 
+@pytest.mark.slow
 def test_a_scheduled_tasks_sub_agent_finishes_and_a_written_over_turn_recovers(tmp_path):
     """The stuck run's shape: a scheduled turn that starts a sub-agent, then a
     Worker restart writing over the row of a turn that had already ended."""

@@ -19,7 +19,7 @@ from openprogram.runtime.jobs.types import Job
 @pytest.fixture(autouse=True)
 def _worker_lock_is_held(monkeypatch):
     monkeypatch.setattr(
-        "openprogram.operations.worker.lock.is_held_by", lambda _pid: True, raising=False,
+        "openprogram.host.worker.lock.is_held_by", lambda _pid: True, raising=False,
     )
 
 
@@ -122,7 +122,7 @@ def test_stopping_between_the_event_and_the_settlement_is_finished_once(tmp_path
     governor.settle_provider_request(plan.reservation_id, _event())
     monkeypatch.undo()
     monkeypatch.setattr(
-        "openprogram.operations.worker.lock.is_held_by", lambda _pid: True, raising=False,
+        "openprogram.host.worker.lock.is_held_by", lambda _pid: True, raising=False,
     )
 
     tables = _restart(governor).handle
@@ -233,7 +233,7 @@ def test_stopping_before_the_old_tables_are_dropped_moves_nothing_twice(tmp_path
     assert ledger.stored_run_table_rows() is not None
     monkeypatch.undo()
     monkeypatch.setattr(
-        "openprogram.operations.worker.lock.is_held_by", lambda _pid: True, raising=False,
+        "openprogram.host.worker.lock.is_held_by", lambda _pid: True, raising=False,
     )
 
     second = _governor(path, ledger=ledger)

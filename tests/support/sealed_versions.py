@@ -5,9 +5,9 @@ from pathlib import Path
 import shutil
 import sys
 
-from openprogram.operations.self_update.versions import layout as paths
+from openprogram.host._platform import runtime_layout as paths
 from openprogram.operations.self_update.versions import pointer, store
-from openprogram.operations.self_update.versions.layout import Layout
+from openprogram.host._platform.runtime_layout import Layout
 
 REPOSITORY = Path(__file__).resolve().parents[2]
 BASE = "py3.12-0123456789abcdef"

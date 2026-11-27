@@ -39,6 +39,11 @@ const SelectValue = React.forwardRef<
 >((props, ref) => <SelectPrimitive.Value ref={ref} data-slot="select-value" {...props} />)
 SelectValue.displayName = SelectPrimitive.Value.displayName
 
+/** The trigger's look, for a picker that opens a menu rather than a Select
+ *  (a menu of checks for several picks) so it reads as the same control. */
+const SELECT_TRIGGER =
+  "flex w-fit items-center justify-between gap-1.5 rounded-lg border-0 bg-bg-input py-2 pr-2 pl-2.5 text-fs-base whitespace-nowrap shadow-raised transition-[color,box-shadow] outline-none select-none hover:shadow-raised-hover aria-expanded:shadow-raised-hover focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:ring-3 aria-invalid:ring-destructive/20 data-placeholder:text-muted-foreground data-[size=default]:h-(--ui-button-h) data-[size=sm]:h-(--ui-button-h-sm) data-[size=sm]:rounded-md *:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-1.5 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
+
 const SelectTrigger = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Trigger>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger> & {
@@ -49,10 +54,7 @@ const SelectTrigger = React.forwardRef<
     ref={ref}
     data-slot="select-trigger"
     data-size={size}
-    className={cn(
-      "flex w-fit items-center justify-between gap-1.5 rounded-lg border-0 bg-bg-input py-2 pr-2 pl-2.5 text-fs-base whitespace-nowrap shadow-raised transition-[color,box-shadow] outline-none select-none hover:shadow-raised-hover aria-expanded:shadow-raised-hover focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:ring-3 aria-invalid:ring-destructive/20 data-placeholder:text-muted-foreground data-[size=default]:h-(--ui-button-h) data-[size=sm]:h-(--ui-button-h-sm) data-[size=sm]:rounded-md *:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-1.5 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
-      className
-    )}
+    className={cn(SELECT_TRIGGER, className)}
     {...props}
   >
     {children}
@@ -292,6 +294,7 @@ export {
   SelectScrollDownButton,
   SelectScrollUpButton,
   SelectSeparator,
+  SELECT_TRIGGER,
   SelectTrigger,
   SelectValue,
   SimpleSelect,

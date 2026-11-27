@@ -107,7 +107,7 @@ def _rewrite_secret_files(state: Path, kept_slots: dict[str, str], dropped: list
     folder = state / "auth" / "machines"
     if not folder.is_dir():
         return
-    from openprogram.models.auth.credentials.io import _private_atomic_write
+    from openprogram.state.private_files import _private_atomic_write
 
     for path in sorted(folder.glob("*.json")):
         machine_id = path.stem

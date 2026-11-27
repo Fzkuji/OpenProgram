@@ -30,7 +30,7 @@ def _route_to(monkeypatch, store, tmp_path):
 
 
 def test_the_spawners_message_lands_at_the_helpers_next_tool_boundary(tmp_path, monkeypatch):
-    from openprogram.programs.tools.agents.send_message.send_message import steer
+    from openprogram.runtime.conversation.peer_agents import steer
 
     store, execution, _active, queue, provider_step = _running_turn(tmp_path, "exec-helper")
     _route_to(monkeypatch, store, tmp_path)
@@ -55,7 +55,7 @@ def test_the_spawners_message_lands_at_the_helpers_next_tool_boundary(tmp_path, 
 
 
 def test_an_ended_helper_takes_no_steer_and_the_message_queues(tmp_path, monkeypatch):
-    from openprogram.programs.tools.agents.send_message.send_message import steer
+    from openprogram.runtime.conversation.peer_agents import steer
 
     store, execution, _active, _queue, _step = _running_turn(tmp_path, "exec-helper-ended")
     _route_to(monkeypatch, store, tmp_path)

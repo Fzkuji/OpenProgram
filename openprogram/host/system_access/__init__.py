@@ -415,7 +415,7 @@ def _native_executor() -> str:
     if platform.system() != 'Darwin':
         return os.path.abspath(sys.executable)
     try:
-        from openprogram.operations.worker.lifecycle import worker_executable
+        from openprogram.host.worker.process import worker_executable
         candidate = Path(worker_executable()).resolve()
         if candidate.is_file() and candidate.name == 'OpenProgram':
             return str(candidate)

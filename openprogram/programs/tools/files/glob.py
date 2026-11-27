@@ -6,6 +6,7 @@ import glob as _glob
 import os
 
 from openprogram.programs._host.runtime import function
+from openprogram.runtime.permissions import tool_profiles
 
 
 _DESCRIPTION = (
@@ -78,7 +79,7 @@ def glob_tool(pattern: str, path: str | None = None) -> str:
         )
 
     from openprogram.host.sandbox import validate_read_path
-    from .file_safety import read_denier
+    from ._read_denier import read_denier
     violation = validate_read_path(root)
     if violation:
         from openprogram.runtime.permissions import refusal
@@ -115,3 +116,10 @@ def glob_tool(pattern: str, path: str | None = None) -> str:
     if len(matches) > 500:
         return f"{lead}# {len(matches)} matches (showing 500 newest)\n" + "\n".join(matches[:500])
     return f"{lead}# {len(matches)} matches\n" + "\n".join(matches)
+
+
+# Only this implementation reads without effect: a replacement under the same
+# name is not let through as an inspection (``permissions.recovery``).
+tool_profiles.register(glob_tool.name, tool_profiles.ToolProfile(
+    inspects=lambda tool: getattr(tool, "execute", None) is glob_tool.execute,
+))

@@ -9,9 +9,11 @@ Public functions:
     stop_worker()         — ask the live worker to stop (escalates to a kill)
     restart_worker()      — stop + spawn_detached
     print_status()        — human-readable status report
-    current_worker_pid()  — PID of the live worker, or None
-    read_worker_port()    — port from worker.port if worker is alive
     claim_worker_port()   — the port a starting worker listens on
+
+Which process is the live worker, its port and its interpreter are read in
+``openprogram.host.worker.process``, where the layers below operations
+read them too.
 """
 from __future__ import annotations
 
@@ -27,9 +29,17 @@ from typing import Optional
 
 from openprogram.host._platform.process_ownership import no_window_creation_flags
 
-from . import paths
-from .lock import is_held_by, read_holder_pid
 from openprogram.host._platform.filesystem import replace_file
+from openprogram.host.worker import paths
+from openprogram.host.worker.process import (
+    _process_alive,
+    current_worker_pid,
+    explicit_web_port,
+    read_worker_port,
+    recorded_web_port,
+    resolve_worker_port,
+    worker_executable,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -46,49 +56,6 @@ def clear_port_file() -> None:
         paths.port_path().unlink(missing_ok=True)
     except OSError:
         pass
-
-
-def read_worker_port() -> Optional[int]:
-    """Return the port this profile's live worker listens on, or None.
-
-    Only the worker's own ``worker.port`` counts, and only while the worker
-    holds its lock: a listener is not this profile's worker just because it
-    answers on the expected port (another account's worker, or another
-    program, may hold it).
-    """
-    if current_worker_pid() is None:
-        return None
-    try:
-        return int(paths.port_path().read_text(encoding="utf-8").strip())
-    except (OSError, ValueError):
-        return None
-
-
-def explicit_web_port() -> tuple[int, str] | None:
-    """A port the user set, with where it was set; None when none was."""
-    raw = os.environ.get("OPENPROGRAM_WEB_PORT", "").strip()
-    if raw:
-        try:
-            return int(raw), "OPENPROGRAM_WEB_PORT"
-        except ValueError:
-            pass
-    try:
-        from openprogram.state.config import read_config
-        ui = read_config().get("ui") or {}
-        if ui.get("web_port"):
-            return int(ui["web_port"]), "ui.web_port"
-    except Exception:
-        _log.debug("web_port from config unreadable", exc_info=True)
-    return None
-
-
-def recorded_web_port() -> Optional[int]:
-    """The port this profile chose at its first start, or None before that."""
-    try:
-        port = int(paths.web_port_record_path().read_text(encoding="utf-8").strip())
-    except (OSError, ValueError):
-        return None
-    return port if 1024 <= port <= 65535 else None
 
 
 def _record_web_port(port: int, *, replace: bool) -> int:
@@ -110,21 +77,6 @@ def _record_web_port(port: int, *, replace: bool) -> int:
         return recorded_web_port() or port
 
 
-def resolve_worker_port() -> int:
-    """This profile's port (docs/reference/design/cli/single-port.html).
-
-    Priority: ``OPENPROGRAM_WEB_PORT`` → setting ``ui.web_port`` → the port
-    the profile recorded at its first start (``web-port``) → 18100. Reads
-    only; a starting worker settles the port with :func:`claim_worker_port`.
-    """
-    explicit = explicit_web_port()
-    if explicit is not None:
-        return explicit[0]
-    from .ports import FIRST_WEB_PORT
-
-    return recorded_web_port() or FIRST_WEB_PORT
-
-
 def claim_worker_port(*, held: int | None = None) -> tuple[int, str | None]:
     """The port a starting worker listens on, and the setting that named it.
 
@@ -139,7 +91,7 @@ def claim_worker_port(*, held: int | None = None) -> tuple[int, str | None]:
     explicit = explicit_web_port()
     if explicit is not None:
         return explicit
-    from .ports import first_free_web_port
+    from openprogram.host.worker.ports import first_free_web_port
 
     recorded = recorded_web_port()
     if held is None and recorded is not None:
@@ -176,31 +128,6 @@ def clear_pid_file() -> None:
         paths.pid_path().unlink(missing_ok=True)
     except OSError:
         pass
-
-
-def _process_alive(pid: int) -> bool:
-    from openprogram.host._platform.processes import process_alive
-    return process_alive(pid)
-
-
-def current_worker_pid() -> Optional[int]:
-    """Return the PID of the live worker, or None.
-
-    The bytes in ``worker.lock`` are only a hint: a crashed process leaves
-    them behind even though the kernel has released the advisory lock, and
-    that PID may later be reused by an unrelated process.  Verify actual lock
-    ownership before trusting the holder.  The holder's PID reads on every
-    platform while the lock is held (host/_platform/locking.py), so the lock
-    is the only proof; ``worker.pid`` is never trusted on its own.
-    """
-    holder = read_holder_pid()
-    if (
-        holder is not None
-        and _process_alive(holder)
-        and is_held_by(holder)
-    ):
-        return holder
-    return None
 
 
 # stop request
@@ -245,36 +172,6 @@ def clear_stop_request() -> None:
 # start / stop
 
 
-def worker_executable() -> str:
-    """Use the named macOS runtime declared by this managed installation."""
-    from openprogram.operations.self_update.versions.layout import managed
-
-    if sys.platform != "darwin" or managed():
-        return sys.executable
-    import json
-    executable = Path(sys.executable).resolve()
-    for root in executable.parents:
-        manifest_path = root / "runtime-manifest.json"
-        if not manifest_path.is_file():
-            continue
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        relative = manifest.get("worker_python")
-        if not relative:
-            return sys.executable  # Legacy/source installs keep their interpreter.
-        helper = (root / relative).resolve()
-        managed = (root / manifest["python"]).resolve()
-        if executable not in {managed, helper}:
-            return sys.executable
-        try:
-            helper.relative_to(root)
-        except ValueError:
-            raise RuntimeError("Named runtime escapes the managed installation") from None
-        if not helper.is_file() or not os.access(helper, os.X_OK):
-            raise RuntimeError("Named runtime is missing; repair the installation")
-        return str(helper)
-    return sys.executable
-
-
 def use_named_runtime_for_cli() -> None:
     """Keep direct managed CLI execution under the same application identity."""
     executable = worker_executable()
@@ -312,7 +209,7 @@ def use_named_runtime_for_cli() -> None:
 
 def _detached_worker_command(flags=None, *, windows: bool | None = None) -> list[str]:
     """Preserve isolation, bytecode policy and Windows' UTF-8 mode across the worker re-exec."""
-    from openprogram.operations.self_update.versions.layout import current_runtime
+    from openprogram.host._platform.runtime_layout import current_runtime
 
     runtime = current_runtime()
     if runtime is not None:
@@ -472,7 +369,7 @@ def _starting_worker_pid(timeout: float = 30.0) -> Optional[int]:
     start). A stop in that window must wait for the PID rather than report
     "not running" and leave the worker up.
     """
-    from .lock import WorkerLock
+    from openprogram.host.worker.lock import WorkerLock
 
     probe = WorkerLock()
     if probe.try_acquire():
@@ -609,7 +506,7 @@ def print_status(*, channel_status: Callable[[], list[dict]]) -> int:
 
     if source == "none":
         print("openprogram: not running")
-        from .ports import port_in_use, port_owner_hint
+        from openprogram.host.worker.ports import port_in_use, port_owner_hint
 
         own_port = resolve_worker_port()
         if port_in_use(own_port):

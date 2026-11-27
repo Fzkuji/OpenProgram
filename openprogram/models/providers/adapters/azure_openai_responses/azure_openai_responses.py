@@ -99,8 +99,8 @@ def stream_azure_openai_responses(
             output.stop_reason = "error"
             output.error_message = str(exc)
             # ev_stream.fail() so agent_loop raises instead of seeing
-            # a clean stream end (same bug pattern fixed in openai-codex
-            # and openai_responses).
+            # a clean stream end (same bug pattern fixed in
+            # openai_responses).
             ev_stream.fail(exc)
 
     # Owned by the stream: closing it (a steer, a stop, the idle bound)
@@ -184,7 +184,7 @@ def _create_client(model: "Model", api_key: str, opts: dict[str, Any]) -> Any:
     configured_origin = normalize_origin(base_url)
     headers = {**(getattr(model, "headers", None) or {}), **(opts.get("headers") or {})}
     # The SDK's own retries are off: the credential layer
-    # (``models/auth/selection.py``) and the stream's re-send see every
+    # (``models/providers/streaming/credential_failover.py``) and the stream's re-send see every
     # failure once.
     sdk_max_retries = 0
     return AsyncAzureOpenAI(

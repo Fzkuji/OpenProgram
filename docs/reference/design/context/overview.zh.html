@@ -131,15 +131,15 @@
 </details>
 
 <h3 id="pictures-and-pastes">图片和长消息</h3>
-<p>图片进入会话的每条路都写同一种记录，所以下一个请求带着本轮带过的图片，每个适配器都一样。代码：<code translate="no">state/store/session/files/media.py</code>、<code translate="no">runtime/conversation/turn_admission/branch_fork.py</code>、<code translate="no">models/providers/shared/google.py</code>。</p>
+<p>图片进入会话的每条路都写同一种记录，所以下一个请求带着本轮带过的图片，每个适配器都一样。代码：<code translate="no">state/store/session/files/media.py</code>、<code translate="no">runtime/context/session_dag/media_content.py</code>、<code translate="no">runtime/conversation/turn_admission/branch_fork.py</code>、<code translate="no">models/providers/shared/google.py</code>。</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">路径</th><th scope="col">保留什么</th></tr></thead>
 <tbody>
 <tr><th scope="row">发出的消息</th><td>网页、桌面 App 和 TUI 用 <code translate="no">chat</code> 发图片；频道、ACP 和 <code translate="no">--print</code> 走本轮的准备步骤。两处都按本轮给每张图的位置记录：在文字之后，消息只有图片时从 0 开始。只有图片的消息渲染时没有文字块</td></tr>
 <tr><th scope="row">重试和编辑</th><td>重试把消息的 <code translate="no">media</code> 复制到新分支，并从保存的文件里读出同样的图片再发一次。编辑只发送、只保留这次编辑带的附件</td></tr>
 <tr><th scope="row">插话</th><td>运行中发出的消息先送文字，再送图片；节点按这些位置记录</td></tr>
-<tr><th scope="row">适配器</th><td>每种内置线路格式都带上保留的图片，不论是人发的还是工具返回的：Anthropic、OpenAI chat 和 Responses、Codex、Azure、Bedrock、Gemini 和 Gemini 订阅。Gemini API 适配器通过共享的 Gemini 转换生成内容，所以也有图片体积上限、工具结果之后的说明和工具结果里的图片</td></tr>
-<tr><th scope="row">更早的图片</th><td>只有最新一条带图的消息附带图片。更早的消息发送文字和一条说明，写明每个文件的路径，可以用 <code translate="no">image_analyze</code> 重新打开（<code translate="no">media.as_references</code>）。沿用 Hermes，它只保留最新的图片；否则每张图都会随每个请求重发</td></tr>
+<tr><th scope="row">适配器</th><td>每种内置线路格式都带上保留的图片，不论是人发的还是工具返回的：Anthropic、OpenAI chat 和 Responses、Azure、Bedrock 和 Gemini。Gemini API 适配器通过共享的 Gemini 转换生成内容，所以也有图片体积上限、工具结果之后的说明和工具结果里的图片</td></tr>
+<tr><th scope="row">更早的图片</th><td>只有最新一条带图的消息附带图片。更早的消息发送文字和一条说明，写明每个文件的路径，可以用 <code translate="no">image_analyze</code> 重新打开（<code translate="no">media_content.as_references</code>）。沿用 Hermes，它只保留最新的图片；否则每张图都会随每个请求重发</td></tr>
 <tr><th scope="row">旧会话</th><td>在保留图片之前存下的消息没有 <code translate="no">media</code>，照旧只发文字。它的文字写着上传文件保存的路径，模型可以再读</td></tr>
 <tr><th scope="row">长粘贴</th><td>完整保存，每个请求都完整发送；只有 1,048,576 字符的上限会拒绝发送</td></tr>
 </tbody>

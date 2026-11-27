@@ -19,7 +19,7 @@ from typing import Any, Optional
 # Names imported only to be read as ``server.<name>`` (``from ... import
 # server as state`` / ``_s``) by the sibling Server modules, or patched here by
 # tests, carry ``# noqa: F401 -- server namespace, read as server.<name>``.
-from openprogram.programs.tools.interaction.ask_user import set_ask_user  # noqa: F401 -- server namespace, read as server.<name>
+from openprogram.runtime.agent.questions import set_ask_user  # noqa: F401 -- server namespace, read as server.<name>
 
 # Stop / cancel primitives live in openprogram.runtime.conversation.run_control
 from openprogram.runtime.conversation.run_control import (  # noqa: F401 -- server namespace, read as server.<name>
@@ -242,31 +242,15 @@ def _get_api_key(env_var: str) -> str:
 
 def _llm_is_configured(provider_id: str) -> bool:
     """AuthStore-backed configured check for an LLM provider."""
-    from openprogram.models.providers.settings.env_api_keys import is_configured
+    from openprogram.models.auth.env_api_keys import is_configured
     return is_configured(provider_id)
 
 
 def _list_providers() -> list[dict]:
     """List available providers and their status."""
-    import shutil
     result = []
-    def _codex_available() -> bool:
-        # The Codex provider needs OAuth credentials, NOT the `codex` CLI
-        # binary itself. The binary is only used once for `codex login`,
-        # after which OpenProgram reads ~/.codex/auth.json (or the
-        # adopted copy in the active OpenProgram profile's auth store)
-        # and talks directly to chatgpt.com/backend-api — no proxy, no
-        # shell-out to `codex`.
-        from pathlib import Path
-        if (Path.home() / ".codex" / "auth.json").exists():
-            return True
-        from openprogram.models.auth.store import get_store
-        return get_store().has_credentials("openai-codex")
-
     checks = [
-        # (name, label, available_check, env_keys_for_config_or_None_if_CLI)
-        ("openai-codex", "OpenAI Codex", _codex_available, None),
-        ("gemini-cli", "Gemini CLI", lambda: shutil.which("gemini") is not None, None),
+        # (name, label, available_check, env_keys)
         ("anthropic", "Anthropic API", lambda: _llm_is_configured("anthropic"), ["ANTHROPIC_API_KEY"]),
         ("openai", "OpenAI API", lambda: _llm_is_configured("openai"), ["OPENAI_API_KEY"]),
         ("gemini", "Gemini API", lambda: _llm_is_configured("google"), ["GOOGLE_API_KEY"]),
@@ -348,7 +332,7 @@ from openprogram.runtime.context.git import (  # noqa: E402, F401 -- server name
 
 # Thinking-effort picker configs + runtime apply helpers live in
 # thinking_effort.py. Re-exported here for existing call sites.
-from openprogram.interfaces.server.thinking_effort import (  # noqa: E402, F401 -- server namespace, read as server.<name>
+from openprogram.runtime.harnesses.thinking_effort import (  # noqa: E402, F401 -- server namespace, read as server.<name>
     apply_thinking_effort as _apply_thinking_effort,
     get_thinking_config_for_model as _get_thinking_config_for_model,
 )
@@ -684,10 +668,40 @@ def create_app(*, owner_auth=None, port: int = 18100):
         except Exception:
             logger.warning("built-in Agents were not installed", exc_info=True)
 
+    async def _rewire_gateway_agents():
+        # Outside agents connected to the model gateway name its address in
+        # their own configs; one the profile's port has moved from is
+        # written again (models/gateway/agents/lifecycle.py). From here on a
+        # change to the enabled models keeps their model lists and picks in
+        # step; only the Worker does, never a CLI command or a migration.
+        from openprogram.operations.worker.runner import trial_mode
+        if trial_mode():
+            return
+        from openprogram.models import part_ports
+        from openprogram.models.gateway.agents.lifecycle import catalog_changed
+        part_ports.fill("openprogram.models.providers.catalog.enabled_models", catalog_changed=catalog_changed)
+
+        def run():
+            try:
+                from openprogram.models.gateway.agents.lifecycle import rewire
+                moved = rewire()
+                if moved:
+                    _log(f"[gateway] moved to this address: {', '.join(moved)}")
+            except Exception as e:  # noqa: BLE001
+                _log(f"[gateway] rewire failed: {type(e).__name__}: {e}")
+
+        threading.Thread(target=run, daemon=False, name="gateway-rewire").start()
+        # connected agents whose wiring lives outside a file: Claude
+        # Science's daemon, OpenMausBot's list it writes back over
+        from openprogram.models.gateway.agents.lifecycle import keep_running
+        threading.Thread(target=keep_running, args=(threading.Event(),), daemon=True,
+                         name="gateway-agents-keep").start()
+
     _STARTUP = (
         _capture_loop,
         _subscribe_event_bus,
         _install_builtin_agents,
+        _rewire_gateway_agents,
         _recover_execution_control,
         _finish_open_permissions_migration,
         _reconcile_interrupted_runs,
@@ -1212,7 +1226,7 @@ def start_server(port: int = 18100, open_browser: bool = False) -> threading.Thr
             import time
 
             from openprogram.host._platform.environment import open_browser_url
-            from openprogram.operations.worker.ports import backend_accepts_owner_challenge
+            from openprogram.host.security.backend_endpoint import backend_accepts_owner_challenge
             from openprogram.host.security.backend_endpoint import build_owner_auth_url
 
             deadline = time.monotonic() + 10.0

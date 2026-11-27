@@ -20,7 +20,7 @@ from urllib.parse import urlparse
 
 from openprogram.host.machines import Connection, Machine, here, kinds
 from openprogram.host.machines.kinds import Kind, KindError
-from openprogram.programs._host.execution import ToolReturn
+from openprogram.runtime.agent.tool_execution import ToolReturn
 
 from ... import errors
 from ...actions import keynames

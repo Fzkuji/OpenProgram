@@ -7,6 +7,7 @@ const path = require("path");
 const { recordOpenWindows, takeOpenWindows } = require("../../main/windows/session-windows");
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "op-session-windows-"));
+process.on("exit", () => fs.rmSync(dir, { recursive: true, force: true }));
 const file = path.join(dir, "session-windows.json");
 
 recordOpenWindows(file, [

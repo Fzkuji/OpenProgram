@@ -31,8 +31,10 @@ def user_commands_dir() -> Path:
     ``~/.openprogram/``, not under the profile-specific state dir —
     user-authored prompt templates are tied to the human, not to a
     profile."""
-    from openprogram.extensions.plugins.paths import root as _plugins_root
-    return _plugins_root() / "commands"
+    from openprogram.state.paths import get_state_dir
+    root = Path(get_state_dir())
+    root.mkdir(parents=True, exist_ok=True)
+    return root / "commands"
 
 
 def project_commands_dir(cwd: Path | None = None) -> Path:

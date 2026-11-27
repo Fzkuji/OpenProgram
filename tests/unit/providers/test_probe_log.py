@@ -1,5 +1,5 @@
 """Requests sent a provider on OpenProgram's own behalf are written down,
-apart from usage (models/listing/probe_log.py)."""
+apart from usage (models/usage/probe_log.py)."""
 from __future__ import annotations
 
 import httpcore
@@ -8,7 +8,7 @@ import pytest
 import openprogram.models.usage.ledger as ledger_module
 from openprogram.host.security import safe_http
 from openprogram.host.security.safe_http import ObservedRequest
-from openprogram.models.listing import probe_log
+from openprogram.models.usage import probe_log
 from openprogram.models.usage.ledger import PROBE_EVENTS_KEPT_S, UsageLedger
 
 

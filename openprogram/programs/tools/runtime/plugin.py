@@ -39,7 +39,7 @@ def plugin(action: str = "guide", name: str = "", path: str = "") -> dict:
         path: Absolute directory of the plugin, for install.
     """
     from openprogram.extensions.plugins import inspect as plugin_inspect, installer, loader, trust
-    from openprogram.programs import ToolReturn
+    from openprogram.programs._host.runtime import ToolReturn
 
     def fail(message: str) -> ToolReturn:
         return ToolReturn(json_data={"ok": False, "error": message}, is_error=True)

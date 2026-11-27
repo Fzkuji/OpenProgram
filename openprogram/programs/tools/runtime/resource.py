@@ -24,7 +24,7 @@ def resource(action: str = "describe", provider: str = "", arguments: dict | Non
         arguments: Provider arguments matching the schema returned by describe.
     """
     from openprogram.host.resources import registry
-    from openprogram.programs import ToolReturn
+    from openprogram.programs._host.runtime import ToolReturn
     try:
         result = registry.describe(provider) if action == "describe" else registry.invoke(provider, action, arguments or {})
     except (ValueError, PermissionError, RuntimeError, OSError) as exc:

@@ -24,7 +24,7 @@ def test_every_preset_names_a_registered_tool():
 
 
 def test_the_memory_preset_offers_every_memory_tool():
-    from openprogram.programs.tools.knowledge.memory import MEMORY_TOOL_NAMES
+    from openprogram.state.memory.tool_names import MEMORY_TOOL_NAMES
 
     # The preset names these; this is about the names surviving resolution,
     # which is the step that used to drop three of the six on the floor.

@@ -17,9 +17,9 @@ import time
 from typing import Mapping
 
 from ..verification.system_probe import ProbeTarget
-from ..versions import layout as paths
+from openprogram.host._platform import runtime_layout as paths
 from ..versions import pointer
-from ..versions.layout import Layout
+from openprogram.host._platform.runtime_layout import Layout
 from ..versions.removal import remove_tree
 from . import sandbox
 

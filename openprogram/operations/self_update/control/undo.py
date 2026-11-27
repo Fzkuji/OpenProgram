@@ -26,7 +26,7 @@ from typing import Callable
 
 from ..versions import pointer as pointers
 from ..versions import store as versions
-from ..versions.layout import Layout, valid_id
+from openprogram.host._platform.runtime_layout import Layout, valid_id
 
 UNDO_TO = "undo_to"
 UNDO_COMMIT = "undo_commit"

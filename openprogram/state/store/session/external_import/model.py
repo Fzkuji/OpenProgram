@@ -51,6 +51,10 @@ class Turn:
     # The agent's own id of the turn this message belongs to (Codex's
     # ``turn_id``), when the transcript records one.
     turn_id: Optional[str] = None
+    # The pictures the message carried, in order: (base64 bytes, mime type, the
+    # placeholder the text holds for it: ``[image]``, Codex's ``[Image #1]``; None
+    # for one that follows the picture before it). No bytes: the transcript lacks them.
+    images: list[tuple[str, str, Optional[str]]] = field(default_factory=list)
 
     def reply_text(self) -> str:
         parts = [b["text"].strip() for b in self.blocks

@@ -16,7 +16,7 @@ const NOW = new Date(2026, 10, 14, 10, 0).getTime() / 1000;
 const at = (h, m = 0, dayOffset = 0) => new Date(2026, 10, 14 + dayOffset, h, m).getTime() / 1000;
 
 const provider = (fields = {}) => ({
-  id: "openai-codex", configured: true, state: "ready", until: null, fix: null,
+  id: "opencode-go", configured: true, state: "ready", until: null, fix: null,
   quota: null, balance: null, stale: false, attention: false, ...fields,
 });
 const quota = (left, fields = {}) => ({
@@ -73,7 +73,7 @@ test("the trigger is marked, in red, only when the provider cannot answer or its
 
 test("a fix leads to the provider's page, to Add provider when nothing is saved, or to its billing page for no credit", () => {
   assert.deepEqual(S.fixLink(provider({ state: "signed_out", fix: { action: "sign_in", url: null } })),
-    { href: "/settings/providers/openai-codex", external: false });
+    { href: "/settings/providers/opencode-go", external: false });
   assert.deepEqual(S.fixLink({ id: "kimi", state: "no_credit", fix: { action: "top_up", url: "https://platform.moonshot.ai/billing" } }),
     { href: "https://platform.moonshot.ai/billing", external: true });
   assert.deepEqual(S.fixLink({ id: "kimi", state: "no_credit", fix: { action: "top_up", url: null } }),
@@ -163,13 +163,13 @@ test("the header keeps the four worst windows and every amount, spent and full a
 
 test("the spent-quota card names the provider, the limit and when it resets", () => {
   const cause = {
-    cause: "quota_exhausted", http_status: 429, provider: "openai-codex", limit: "5h", resets_at: at(14, 30),
+    cause: "quota_exhausted", http_status: 429, provider: "opencode-go", limit: "5h", resets_at: at(14, 30),
     other_limits: [{ label: "Week", left_fraction: 0.71, resets_at: null }],
   };
-  assert.deepEqual(S.quotaCardText(cause, "OpenAI Codex", en, { now: NOW }),
-    { title: "OpenAI Codex 5h limit reached", detail: "Resets 14:30 · Week 71% left" });
-  assert.deepEqual(S.quotaCardText(cause, "OpenAI Codex", zh, { now: NOW }),
-    { title: "OpenAI Codex 5h 额度已用完", detail: "14:30 重置 · Week 剩 71%" });
+  assert.deepEqual(S.quotaCardText(cause, "OpenCode Go", en, { now: NOW }),
+    { title: "OpenCode Go 5h limit reached", detail: "Resets 14:30 · Week 71% left" });
+  assert.deepEqual(S.quotaCardText(cause, "OpenCode Go", zh, { now: NOW }),
+    { title: "OpenCode Go 5h 额度已用完", detail: "14:30 重置 · Week 剩 71%" });
   const broke = { cause: "quota_exhausted", http_status: 402, provider: "kimi", limit: null, resets_at: null, other_limits: [] };
   assert.deepEqual(S.quotaCardText(broke, "Kimi", en, { picker: provider({ id: "kimi", balance: { amount: 0, unit: "cny", label: "Balance" } }) }),
     { title: "Kimi has no credit", detail: "Balance ¥0.00" });
@@ -181,16 +181,16 @@ test("the spent-quota card names the provider, the limit and when it resets", ()
 test("a provider_quota frame updates the picker and its quota rows without a request", () => {
   const cache = new Map();
   const client = { setQueryData: (key, fn) => cache.set(JSON.stringify(key), fn(cache.get(JSON.stringify(key)))) };
-  cache.set(JSON.stringify(S.PICKER_QUERY_KEY), { models: [], providers: { "openai-codex": provider() } });
+  cache.set(JSON.stringify(S.PICKER_QUERY_KEY), { models: [], providers: { "opencode-go": provider() } });
   cache.set(JSON.stringify(S.PICKER_LIMITS_QUERY_KEY), {
     generated_at: NOW, stale_after_s: 900,
-    providers: [{ id: "openai-codex", quota: { kind: "none", account: null, fetched_at: null, stale: false, limits: [], read_error: null, read_at: null } },
+    providers: [{ id: "opencode-go", quota: { kind: "none", account: null, fetched_at: null, stale: false, limits: [], read_error: null, read_at: null } },
       { id: "deepseek", quota: null }],
   });
   const picker = provider({ attention: true, quota: quota(0.08, { warn: true }) });
   const limits = [{ limit_key: "primary", label: "5h", left_fraction: 0.08 }];
-  S.applyProviderQuotaFrame(client, { provider: "openai-codex", account: "", kind: "windowed", fetched_at: NOW, stale: false, limits, picker });
-  assert.equal(cache.get(JSON.stringify(S.PICKER_QUERY_KEY)).providers["openai-codex"], picker);
+  S.applyProviderQuotaFrame(client, { provider: "opencode-go", account: "", kind: "windowed", fetched_at: NOW, stale: false, limits, picker });
+  assert.equal(cache.get(JSON.stringify(S.PICKER_QUERY_KEY)).providers["opencode-go"], picker);
   const status = cache.get(JSON.stringify(S.PICKER_LIMITS_QUERY_KEY));
   assert.deepEqual(status.providers[0].quota.limits, limits);
   assert.equal(status.providers[0].quota.kind, "windowed");
@@ -198,6 +198,6 @@ test("a provider_quota frame updates the picker and its quota rows without a req
   // Nothing cached yet: nothing is invented.
   const empty = new Map();
   S.applyProviderQuotaFrame({ setQueryData: (key, fn) => empty.set(JSON.stringify(key), fn(undefined)) },
-    { provider: "openai-codex", account: "", kind: "windowed", fetched_at: NOW, stale: false, limits, picker });
+    { provider: "opencode-go", account: "", kind: "windowed", fetched_at: NOW, stale: false, limits, picker });
   assert.equal(empty.get(JSON.stringify(S.PICKER_QUERY_KEY)), undefined);
 });

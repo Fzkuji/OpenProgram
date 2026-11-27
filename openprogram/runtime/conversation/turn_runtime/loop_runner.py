@@ -49,6 +49,7 @@ from openprogram.runtime.conversation.turn_runtime.runtime_attach import _wrap_a
 from openprogram.runtime.conversation.checkpoint import runtime_contract_snapshot
 from openprogram.models.providers.utils.http_transport.http_client import shutdown_loop_clients as _shutdown_loop_clients
 from openprogram.runtime.execution.admission_input.runtime_contract import validate_runtime_contract
+from openprogram.runtime import program_host
 
 if TYPE_CHECKING:
     from openprogram.runtime.conversation.turn_runtime.types import EventCallback
@@ -56,9 +57,7 @@ if TYPE_CHECKING:
 
 
 def _undeferred(tool):
-    from openprogram.programs._host.runtime import as_resident
-
-    return as_resident(tool)
+    return program_host.host().as_resident(tool)
 
 
 def _keep_signature(ordered: dict, signature: object) -> None:
@@ -302,13 +301,13 @@ def _configure_screen_tool(tools, surface_context, *, enabled: bool | None = Non
     built-in browser is a target, and it has Pages now (or the resumed turn
     had the tool, since the Page inventory is transient).
     """
+    from openprogram.runtime.conversation import screen_tool as screen
     from openprogram.runtime.conversation.surface_context import browser_pages_available, tool_enabled
-    from openprogram.programs.tools.computer_use.computer_use import devices, tool as screen
 
     current = list(tools or [])
     if isinstance(tools_override, list) and screen.NAME not in tools_override:
         return [tool for tool in current if tool.name != screen.NAME], False
-    if not devices.available_targets():
+    if not screen.available_targets():
         return current, False
     if enabled is None:
         enabled = tool_enabled(surface_context) or bool(current)
@@ -318,11 +317,9 @@ def _configure_screen_tool(tools, surface_context, *, enabled: bool | None = Non
     if not enabled:
         return current, False
 
-    from openprogram.programs import get_agent_tool
-
     screen_tool = next((tool for tool in current if tool.name == screen.NAME), None)
     if screen_tool is None:
-        screen_tool = get_agent_tool(screen.NAME)
+        screen_tool = program_host.host().get_agent_tool(screen.NAME)
     current = [tool for tool in current if tool.name != screen.NAME]
     if screen_tool is None:
         return current, False
@@ -352,6 +349,18 @@ def _retain_saved_contract_tools(tools, saved_runtime_contract: Mapping | None):
     ]
     live = {tool.name: tool for tool in tools or []}
     return [live[name] for name in names if name in live]
+
+
+def _verification(req):
+    """The verifier of a turn that checks a completion candidate
+    (``req.goal_verification``; the ``verification_turn`` moment), else None."""
+    if not req.goal_verification:
+        return None
+    from openprogram.runtime.conversation import turn_hooks
+    verification = turn_hooks.provider("verification_turn")
+    if verification is None:
+        raise RuntimeError("a verification turn needs the Program that verifies it, which did not load")
+    return verification
 
 
 def owns_conversation_contract(req) -> bool:
@@ -395,7 +404,7 @@ def _chat_delivery(req) -> str | None:
     source = req.source or ""
     if req.goal_verification or req.spawned_from_session or source == "agent_spawn" or source.startswith("self_update_"):
         return None
-    from openprogram.programs.tools.interaction.chat_send import CHANNEL_SOURCES
+    from openprogram.runtime.execution.projections.foreground import CHANNEL_SOURCES
     if source in CHANNEL_SOURCES:
         return source
     from openprogram.runtime.conversation import bound_reply
@@ -429,7 +438,7 @@ def turn_availability(req, tools) -> dict[str, str]:
     """
     names = {tool.name for tool in tools or []}
     out: dict[str, str] = {}
-    from openprogram.programs.tools.knowledge.memory import MEMORY_TOOL_NAMES
+    from openprogram.state.memory.tool_names import MEMORY_TOOL_NAMES
     from openprogram.state.memory.policy import allowed as _memory_allowed
     for name in names & set(MEMORY_TOOL_NAMES):
         if not _memory_allowed(write=name == "memory_update"):
@@ -446,7 +455,7 @@ def turn_availability(req, tools) -> dict[str, str]:
         out["always_on_preference"] = "only the owner's own message can set a report preference"
     # chat_send posts into the chat a channel turn came from; no other
     # source has one.
-    from openprogram.programs.tools.interaction.chat_send import CHANNEL_SOURCES
+    from openprogram.runtime.execution.projections.foreground import CHANNEL_SOURCES
     if "chat_send" in names and req.source not in CHANNEL_SOURCES:
         out["chat_send"] = "this message did not come from a chat channel"
     # A question waits for a person. With none behind the turn it would wait
@@ -475,7 +484,7 @@ def forked_prompt(req) -> Optional[str]:
     with the conversation (``depth.forked_turn``), or None to build one.
     A fork is only offered with the caller's own Agent (``agent.py``), so
     the recorded prompt is that Agent's."""
-    from openprogram.programs.tools.agents.send_message.send_message.depth import (
+    from openprogram.runtime.jobs.chain_budgets import (
         forked_turn,
         helper_turn,
     )
@@ -497,7 +506,7 @@ def delegate_blocked(tools, unavailable: dict[str, str]):
     """``(tools, unavailable)`` for a helper's turn: the blocked tools leave
     its list; a forked helper keeps them refused, so its list stays its
     caller's bytes and the prompt cache is shared."""
-    from openprogram.programs.tools.agents.send_message.send_message.depth import (
+    from openprogram.runtime.jobs.chain_budgets import (
         forked_turn,
         helper_turn,
     )
@@ -575,17 +584,15 @@ def resolve_agent_runtime(
         tools = [tool for tool in tools or [] if tool.name not in unavailable]
         unavailable = {}
     if req.source in {"self_update_verify", "self_update_diagnose", "self_update_repair"}:
-        from openprogram.programs import apply_tool_policy
-
-        tools = apply_tool_policy(tools or [], source=req.source)
+        tools = program_host.host().apply_tool_policy(tools or [], source=req.source)
         browser_enabled = False
     tools = _retain_saved_contract_tools(tools, saved_runtime_contract)
-    if req.goal_verification:
-        from openprogram.programs.tools.planning.goal import verification
+    verification = _verification(req)
+    if verification is not None:
         from openprogram.runtime.execution.run_control import get_current_execution_id
-        from openprogram.programs import _is_verifier_read_tool
         verification.require_candidate(req.session_id, vars(req), execution_id=get_current_execution_id())
-        tools = [tool for tool in tools or [] if _is_verifier_read_tool(tool) and tool.name != "self_update_observe"]
+        is_verifier_read_tool = program_host.host().is_verifier_read_tool
+        tools = [tool for tool in tools or [] if is_verifier_read_tool(tool) and tool.name != "self_update_observe"]
         browser_enabled = False
     if req.goal_verification or req.source in {"self_update_verify", "self_update_diagnose", "self_update_repair"}:
         # These stages cannot search for tools, so their pinned tools ship with full schemas.
@@ -651,14 +658,13 @@ def resolve_agent_runtime(
         # Without the loader a deferred tool could never be called: each
         # goes out with its schema (Claude Code with tool search off).
         tools = [_undeferred(tool) for tool in tools or []] if tools is not None else tools
-    from openprogram.programs import install_turn_tools
-    install_turn_tools(tools)
+    program_host.host().install_turn_tools(tools)
     _log_resolved_tools(req, tools)
     if tools:
         tools = [_wrap_with_approval(tool, req, event_sink) for tool in tools]
         tools = [refused_while_unavailable(tool, unavailable[tool.name]) if tool.name in unavailable else tool
                  for tool in tools]
-        if req.goal_verification:
+        if verification is not None:
             tools = [verification.wrap_read(tool, req) if tool.name == "read" else tool for tool in tools]
         if assistant_msg_id is not None:
             wrapped = []
@@ -695,13 +701,12 @@ def resolve_agent_runtime(
         catalog_beside=catalog_beside,
     )
     if catalog_beside:
-        from openprogram.programs import deferred_catalog
+        programs = program_host.host()
         try:
-            from openprogram.programs._host.ui.bindings import open_application_ids
-            open_apps = open_application_ids(req.session_id)
+            open_apps = programs.open_application_ids(req.session_id)
         except Exception:
             open_apps = set()
-        req._deferred_catalog = deferred_catalog(tools, open_apps)
+        req._deferred_catalog = programs.deferred_catalog(tools, open_apps)
         req._devices = _devices(tools, req.session_id)
     else:
         req._deferred_catalog = None
@@ -721,15 +726,18 @@ def resolve_agent_runtime(
     # check can say which one changed (components.remember_composed).
     parts = [("base", recordable_prompt)]
     if saved_system_prompt is None and req.source != "agent_spawn":
-        if req.goal_verification:
+        if verification is not None:
             parts.append(("goal_verification", verification.instructions(req.session_id, req)))
         elif not owner:
             # A background check-in has a prompt of its own; the
             # conversation's own turn has the Goal beside its message
-            # (``goal.chat.goal_note``), so starting or ending a Goal never
+            # (the ``turn_notes`` moment), so starting or ending a Goal never
             # rebuilds its prompt.
-            from openprogram.programs.tools.planning.goal.chat import instructions
-            parts.append(("goal", instructions(req.session_id, getattr(req, "branch_id", None))))
+            from openprogram.runtime.conversation import turn_hooks
+            for prompt_part in turn_hooks.handlers("turn_prompt"):
+                part = prompt_part(req)
+                if part is not None:
+                    parts.append(part)
     # This call's sections (L2): the open browser Pages, when the browser
     # application is loaded. The conversation's own turn sends them beside
     # its message, as a section that is never in its prompt; another turn
@@ -961,6 +969,8 @@ def _off_selection(db, req) -> bool:
     except Exception:
         return False
 
+# The notes decided from the view: plan mode's and those of the ``turn_notes``
+# moment, which a chat Goal registers.
 _VIEW_NOTES = ("plan_mode", "goal", "todo_reminder")
 
 
@@ -969,9 +979,9 @@ def _devices(tools: Any, session_id: str) -> Optional[dict]:
     """What computer_use can operate now, by device, when the turn has the tool; else None."""
     if not any(getattr(tool, "name", None) == "computer_use" for tool in tools or ()):
         return None
-    from openprogram.programs.tools.computer_use.computer_use.devices import devices
+    from openprogram.runtime.conversation import screen_tool
     try:
-        return devices(session_id)
+        return screen_tool.devices(session_id)
     except Exception:
         _log.warning("listing the devices computer_use can operate failed", exc_info=True)
         return None
@@ -983,8 +993,8 @@ def _view_notes(req, beside: list, view, *, owner: bool) -> list:
 
     The date goes only when it differs from the last date in view. On the
     conversation's own turn, the plan-mode note (``plan_mode.note_for``),
-    the Goal note (``goal.chat.goal_note``) and the todo reminder
-    (``goal.chat.todo_reminder``). A message sent again decides them again
+    and the notes Programs add (the ``turn_notes`` moment: a chat Goal's
+    note and its todo reminder). A message sent again decides them again
     from the same view, so it sends the same notes.
     """
     from openprogram.runtime.context.prompt_assembly import turn_context
@@ -999,22 +1009,10 @@ def _view_notes(req, beside: list, view, *, owner: bool) -> list:
     text, kind = _plan_mode.note_for(in_plan_mode(req), view)
     if text:
         beside = turn_context.put(beside, turn_context.ATTACHMENT, "plan_mode", text, mode=kind)
-    from openprogram.programs.tools.planning.goal import chat as goal_chat
-    branch = getattr(req, "branch_id", None)
-    try:
-        note = goal_chat.goal_note(req.session_id, branch, (view or {}).get("goal"))
-        todo = (view or {}).get("todo") or {}
-        reminder = goal_chat.todo_reminder(req.session_id, branch, todo.get("turns_since_use"),
-                                           todo.get("turns_since_reminder")) if view is not None else ""
-    except Exception:  # noqa: BLE001 - a Goal store that cannot be read sends no note
-        _log.warning("goal note not built for %s", req.session_id, exc_info=True)
-        note, reminder = None, ""
-    if note is not None:
-        text, disclosure, full = note
-        beside = turn_context.put(beside, turn_context.ATTACHMENT, "goal", text,
-                                  disclosure=disclosure, full=full)
-    if reminder:
-        beside = turn_context.put(beside, turn_context.ATTACHMENT, "todo_reminder", reminder)
+    from openprogram.runtime.conversation import turn_hooks
+    for turn_notes in turn_hooks.handlers("turn_notes"):
+        for ident, text, fields in turn_notes(req, view):
+            beside = turn_context.put(beside, turn_context.ATTACHMENT, ident, text, **fields)
     return beside
 
 
@@ -1117,7 +1115,7 @@ def _new_turn_agent_context(
         # The deferred tools: all of them when no earlier note is in view
         # (the conversation's start, the first turn after a summary), then
         # only what was added and removed (``programs.catalog_note``).
-        from openprogram.programs import catalog_note
+        catalog_note = program_host.host().catalog_note
         if reported is not None:
             catalog_before = turn_context.catalog_shown(reported)
         else:
@@ -1129,7 +1127,7 @@ def _new_turn_agent_context(
         # What computer_use can operate: the whole list when no earlier note
         # is in view, then each device added, changed and removed, so its
         # tool definition never changes (``computer_use.tool.devices_note``).
-        from openprogram.programs.tools.computer_use.computer_use.devices import devices_note
+        from openprogram.runtime.conversation.screen_tool import devices_note
         ident = turn_context.DEVICES
         if reported is not None:
             devices_before = turn_context.catalog_shown(reported, ident)
@@ -1476,7 +1474,7 @@ def _agent_loop_config(req, *, agent_profile, model, transform_context,
         convert_to_llm=_default_convert_to_llm,
         transform_context=transform_context,
         # Pass session_id so providers that support it
-        # (openai_codex/openai_responses/azure) set prompt_cache_key on
+        # (openai_responses/azure) set prompt_cache_key on
         # every request. Without it OpenAI prompt cache can only match
         # the anonymous static prefix (~ instructions), so longer
         # conversations sit at ~10-20% hit rate even though the message
@@ -1568,7 +1566,7 @@ def _start_agent_stream(req, context, config, continuation, loop_cancel, stream_
     if continuation is None:
         content_blocks: list = []
         if req.user_text:
-            from openprogram.runtime.permissions.authority import render_model_input_from
+            from openprogram.state.authority import render_model_input_from
             content_blocks.append(TextContent(
                 text=render_model_input_from(req, req.user_text)
             ))
@@ -2038,7 +2036,7 @@ def run_loop_blocking(
     """
     if continuation is None and stream_fn is None:
         # A conversation on an outside agent (Codex) runs its turn there.
-        from openprogram.runtime.harnesses import turn_engine
+        from openprogram.runtime.harness_link import turn_engine
         engine = turn_engine(req)
         if engine is not None:
             return engine.run_turn(

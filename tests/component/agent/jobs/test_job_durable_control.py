@@ -432,14 +432,16 @@ def test_resource_claim_and_release_pairs_are_atomic_and_idempotent(durable_job)
     assert sum(intent["kind"] == "resource.release.intent" for intent in intents) == 1
 
 
-def test_resource_saga_repairs_a_legacy_one_sided_release_intent(durable_job, monkeypatch):
+def test_resource_saga_repairs_a_legacy_one_sided_release_intent(durable_job):
     """Startup reconciliation completes a pair left by an interrupted writer."""
     runner, _ledger, execution_store, _db = durable_job
-    # The background pass must not repair the pair before the test looks at it.
-    monkeypatch.setattr(runner, "_reconcile_resources", lambda: None)
     job_id, _execution_record = _execution(runner, execution_store)
     job = runner._canonical_job(job_id)
     assert job is not None and job.admission_id
+    # The interrupted writer's process is gone: no dispatcher or reconciler
+    # loop may repair the pair (every intent commit wakes them) before the
+    # test has looked at it.
+    runner.shutdown()
     payload = {"reason_code": "pause.repair", "terminal_version": None}
     execution_store().enqueue_resource_intent(
         job_id,
@@ -481,6 +483,10 @@ def test_restart_requeues_claimed_resume_before_attempt_without_error_projection
     assert job is not None and job.admission_id
     from openprogram.runtime.execution import CommandKind
 
+    # The process dies after this point: the claim below is the test's own,
+    # and the dispatcher and reconciler loops (woken by every run-table
+    # commit) would race it for the resource intent and the admission.
+    runner.shutdown()
     command = execution_store().accept_command(
         command_id="cmd-recovery-continue", execution_id=job_id,
         expected_version=paused.status_version,
@@ -502,7 +508,6 @@ def test_restart_requeues_claimed_resume_before_attempt_without_error_projection
     from openprogram.runtime.jobs.resource_governance import ResourceGovernor
 
     monkeypatch.setattr(ResourceGovernor, "claim_next", lambda self, **_kwargs: None)
-    runner.shutdown()
     restarted = JobRunner(max_workers=1, governor=ResourceGovernor(ledger))
     try:
         monkeypatch.setattr(restarted, "_owner_holds_worker_lock", lambda _owner: False)

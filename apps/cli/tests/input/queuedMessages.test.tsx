@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { mkdtempSync, writeFileSync } from 'fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -19,7 +19,10 @@ beforeEach(() => {
   stateDir = mkdtempSync(join(tmpdir(), 'op-queue-'));
   vi.stubEnv('OPENPROGRAM_STATE_DIR', stateDir);
 });
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => {
+  vi.unstubAllEnvs();
+  rmSync(stateDir, { recursive: true, force: true });
+});
 
 describe('queue model', () => {
   it('keeps order, takes, removes and sends oldest first', () => {
@@ -162,6 +165,7 @@ describe('attaching by paste', () => {
       expect(got[0]!.files![0]).toMatchObject({ kind: 'image', path: image, data: Buffer.from([1, 2, 3]).toString('base64') });
     } finally {
       view.unmount();
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 
@@ -209,6 +213,7 @@ describe('attaching by paste', () => {
       expect(got[0]!.files).toEqual([]);
     } finally {
       view.unmount();
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 });

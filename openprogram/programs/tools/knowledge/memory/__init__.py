@@ -14,10 +14,11 @@ import json
 from functools import wraps
 
 from openprogram.programs._host.runtime import ToolReturn, function
+from openprogram.state.memory.tool_names import GET_NAME, SEARCH_NAME, UPDATE_NAME
 from .memory import (
-    SEARCH_NAME, SEARCH_SPEC, memory_search,
-    GET_NAME, GET_SPEC, memory_get,
-    UPDATE_NAME, UPDATE_SPEC, memory_update,
+    SEARCH_SPEC, memory_search,
+    GET_SPEC, memory_get,
+    UPDATE_SPEC, memory_update,
 )
 
 
@@ -61,14 +62,3 @@ _register(SEARCH_NAME, SEARCH_SPEC, memory_search, max_chars=30_000)
 _register(GET_NAME, GET_SPEC, memory_get, max_chars=30_000)
 _register(UPDATE_NAME, UPDATE_SPEC, memory_update, max_chars=8_000)
 
-
-# What "the memory tools" means, for everything that has to name them as a
-# group: the toolset preset, the Functions page grouping, and the switch
-# that hides them when there is no backing store. Written once here so a
-# renamed tool cannot leave one of those lists quietly pointing at nothing.
-MEMORY_TOOL_NAMES: tuple[str, ...] = (SEARCH_NAME, GET_NAME, UPDATE_NAME)
-
-
-__all__ = [
-    "SEARCH_NAME", "GET_NAME", "UPDATE_NAME", "MEMORY_TOOL_NAMES",
-]

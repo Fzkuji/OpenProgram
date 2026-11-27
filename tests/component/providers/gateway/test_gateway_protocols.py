@@ -118,7 +118,7 @@ def provider(monkeypatch) -> Iterator[FakeProvider]:
             raise conversion.GatewayError(404, "not_found", f"model {value!r} is not set up in OpenProgram")
         return model
 
-    monkeypatch.setattr(conversion, "resolve_model", resolve)
+    monkeypatch.setattr(conversion, "lookup_model", resolve)
     try:
         yield fake
     finally:
@@ -190,7 +190,8 @@ def test_anthropic_request_reaches_the_provider_as_openprogram_context(client, p
     assert response.status_code == 200
     context, options = provider.calls[0]
     assert context.system_prompt == "Be brief.\n\nUse tools."
-    assert [t.name for t in context.tools] == ["read"]
+    # Anthropic's web search tool is the gateway's own web_search (test_gateway_web_search.py)
+    assert [t.name for t in context.tools] == ["read", "web_search"]
     assert context.tools[0].cache_control == {"type": "ephemeral"}
     first, assistant, result, follow = context.messages
     assert isinstance(first, UserMessage) and isinstance(first.content[1], ImageContent)
@@ -383,3 +384,73 @@ def test_chat_completions_with_tools(client, provider) -> None:
     whole = client.post("/gateway/openai/v1/chat/completions", json={
         "model": REF, "messages": [{"role": "user", "content": "q"}]}).json()
     assert whole["choices"][0]["message"]["content"] == "plain"
+
+
+# A level asked inside the model id (magpie askedAt)
+
+def test_asked_at_splits_a_level_only() -> None:
+    from openprogram.models.gateway.conversion import asked_at
+    assert asked_at("p/m:high") == ("p/m", "high")
+    assert asked_at("p/m:OFF") == ("p/m", "none")
+    assert asked_at("p/m:free") == ("p/m:free", "")
+    assert asked_at("p/m:low+high") == ("p/m:low+high", "")
+    assert asked_at("p/m") == ("p/m", "")
+
+
+def test_a_level_in_the_model_id_is_asked_over_the_body(client, provider) -> None:
+    provider.replies += [[("text", "a")], [("text", "b")], [("text", "c")], [("text", "d")]]
+    client.post("/gateway/openai/v1/chat/completions", json={
+        "model": REF + ":high", "reasoning_effort": "low", "messages": [{"role": "user", "content": "q"}]})
+    client.post("/gateway/openai/v1/responses", json={"model": REF + ":low", "input": "hi"})
+    client.post("/gateway/anthropic/v1/messages", json={
+        "model": REF + ":medium", "max_tokens": 10, "messages": [{"role": "user", "content": "q"}]})
+    client.post(f"/gateway/gemini/v1beta/models/{REF}:high:generateContent",
+                json={"contents": [{"role": "user", "parts": [{"text": "q"}]}]})
+    assert [options.reasoning for _, options in provider.calls] == ["high", "low", "medium", "high"]
+    unknown = client.post("/gateway/openai/v1/chat/completions", json={
+        "model": REF + ":turbo", "messages": [{"role": "user", "content": "q"}]})
+    assert unknown.status_code == 404
+
+
+def test_models_tell_cursor_private_inference_their_apis(monkeypatch) -> None:
+    from openprogram.models.gateway import conversion, models_info
+    rows = [{"id": "anthropic/claude-sonnet-4-5", "api": "anthropic-messages", "reasoning": True,
+             "thinking_levels": ["low", "high"], "context_window": 200000, "max_tokens": 64000, "vision": True},
+            {"id": "openai/gpt-5", "api": "openai-responses"},
+            {"id": "deepseek/deepseek-chat", "api": "openai-completions"},
+            {"id": "google/gemini-3", "api": "google-generative-ai"},
+            {"id": "openrouter/anthropic/claude-x", "api": "openai-completions"}]
+    monkeypatch.setattr(conversion, "enabled_model_refs", lambda: rows)
+    assert all("api_types" not in m for m in models_info.models_list()["data"])
+    listed = {m["id"]: m for m in models_info.models_list(models_info.CURSOR_LOCAL)["data"]}
+    assert listed["anthropic/claude-sonnet-4-5"]["api_types"] == ["anthropic_messages"]
+    assert listed["anthropic/claude-sonnet-4-5"]["capabilities"] == {
+        "supports_tool_use": True, "supports_streaming": True, "output_modalities": ["text"],
+        "supports_reasoning": True, "reasoning_effort": ["low", "high"], "context_length": 200000,
+        "max_output_tokens": 64000, "supports_vision": True}
+    assert listed["openai/gpt-5"]["api_types"] == ["responses"]
+    assert listed["deepseek/deepseek-chat"]["api_types"] == ["chat_completions"]
+    assert listed["google/gemini-3"]["api_types"] == ["chat_completions", "responses", "anthropic_messages"]
+    # a Claude its provider serves on Chat is asked there: no Anthropic Messages to prefer
+    assert listed["openrouter/anthropic/claude-x"]["api_types"] == ["chat_completions"]
+
+
+def test_cursor_private_inference_lists_with_its_own_key(monkeypatch) -> None:
+    """Cursor Private Inference asks /models with the key it is given, so the
+    list it reads carries api_types, which it picks a model's API from."""
+    from openprogram.interfaces.server.routes import gateway
+    from openprogram.models.gateway import conversion
+    from openprogram.models.gateway.agents import cursor_local
+    from openprogram.models.gateway.keys import token_for
+    monkeypatch.setattr(conversion, "enabled_model_refs",
+                        lambda: [{"id": "anthropic/claude-sonnet-4-5", "api": "anthropic-messages"}])
+    from openprogram.models.gateway import agents
+    monkeypatch.setattr(agents, "all_agents", lambda: [cursor_local.agent()])
+    app = FastAPI()
+    gateway.register(app)
+    with TestClient(app) as test_client:
+        own = test_client.get("/gateway/openai/v1/models",
+                              headers={"Authorization": f"Bearer {token_for(cursor_local.ID)}"}).json()
+        plain = test_client.get("/gateway/openai/v1/models").json()
+    assert own["data"][0]["api_types"] == ["anthropic_messages"]
+    assert "api_types" not in plain["data"][0]

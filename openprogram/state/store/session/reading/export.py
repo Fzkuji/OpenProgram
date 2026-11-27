@@ -22,7 +22,7 @@ import json
 import time
 from typing import Any, Optional
 
-from openprogram.models.providers.recording.recording import remove_secret_values
+from openprogram.state.secret_removal import remove_secret_values
 
 # Tool results are the one field that can run to megabytes. Cap them well
 # above transcript's prompt budget: an export is for reading, not for

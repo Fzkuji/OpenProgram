@@ -1,21 +1,158 @@
 <title>模型网关</title>
-<meta name="description" content="Claude Code、Codex 等 Harness 如何使用 OpenProgram 里设置的任何模型：网关路由、每种协议如何读成 OpenProgram 自己的消息类型再写回、网关密钥、启动覆盖，以及可选地改写 Harness 自己的配置。决定取自 magpie。">
+<meta name="description" content="Claude Code、Codex 等外部智能体如何使用 OpenProgram 里设置的任何模型：智能体注册表、配置编辑器、每个智能体自己的密钥和路径、让智能体跟上模型列表、网关的协议（Anthropic、OpenAI Responses 和 Chat、Gemini、Ollama），以及每种协议如何读成 OpenProgram 自己的消息类型。移植自 magpie。">
 <meta name="covers" content="openprogram/models/gateway/ openprogram/interfaces/server/routes/gateway.py openprogram/interfaces/server/routes/settings/harness_models.py">
 <h1>模型网关</h1>
 
-<p>Claude Code 和 Codex 把模型调用发给 Worker，而不是 Anthropic 或 OpenAI。Worker 用用户在 OpenProgram 的提供商里选的模型回答，用 Harness 自己的协议。</p>
-<p>上游调用只经过 OpenProgram 配置的提供商和它们自己的凭据。Anthropic 模型和 OpenProgram 其他地方一样用 Anthropic API key；Harness 发来的密钥或令牌只用于进入网关，从不转发。</p>
+<p>外部智能体（Claude Code、Codex，以及任何使用同样 API 的客户端）把模型调用发给 Worker，而不是发给它们的厂商。Worker 用用户在 OpenProgram 的提供商里选的模型回答，用智能体自己的协议。</p>
+<p>上游调用只经过 OpenProgram 配置的提供商和它们自己的凭据。Anthropic 模型和 OpenProgram 其他地方一样用 Anthropic API key；智能体发来的密钥或令牌只用于进入网关，从不转发。不转发任何订阅登录：没有 ChatGPT 登录流量，也没有 Claude 登录令牌。</p>
+<p>设计移植自 magpie（yetone/magpie，MIT 许可），它的 Go 代码覆盖约九十个智能体。移植代码的模块里注明了对应的 magpie 文件。</p>
 
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">部分</th><th scope="col">位置</th></tr></thead>
 <tbody>
-<tr><th scope="row">协议</th><td><code translate="no">openprogram/models/gateway/messages.py</code>（Anthropic Messages）、<code translate="no">responses.py</code>（OpenAI Responses）、<code translate="no">chat_completions.py</code></td></tr>
+<tr><th scope="row">智能体注册表</th><td><code translate="no">openprogram/models/gateway/agents/</code>：<code translate="no">base.py</code>（接口）、每个智能体一个模块（<code translate="no">codex.py</code>、<code translate="no">claude_code.py</code>、<code translate="no">crush.py</code> …）、<code translate="no">model_rows.py</code>（按智能体自己的写法列出启用的模型）、<code translate="no">engine.py</code>（连接、断开、同步、状态）、<code translate="no">lifecycle.py</code>、<code translate="no">running.py</code>；不靠改文件接入的智能体用 <code translate="no">local_api.py</code>、<code translate="no">appdb.py</code>、<code translate="no">applink.py</code>、<code translate="no">keychain.py</code>、<code translate="no">userenv.py</code>、<code translate="no">shellfn.py</code>、<code translate="no">reach.py</code></td></tr>
+<tr><th scope="row">配置编辑器</th><td><code translate="no">edit/</code>：<code translate="no">toml_text.py</code>、<code translate="no">jsonc.py</code>、<code translate="no">yaml_text.py</code>、<code translate="no">dotenv.py</code>、<code translate="no">mark.py</code>；<code translate="no">stash.py</code>、<code translate="no">&lt;state&gt;/gateway/harness-stash.json</code></td></tr>
+<tr><th scope="row">协议</th><td><code translate="no">messages.py</code>、<code translate="no">responses.py</code>、<code translate="no">responses_ws.py</code>、<code translate="no">compact.py</code>、<code translate="no">chat_completions.py</code>、<code translate="no">gemini.py</code>、<code translate="no">ollama.py</code>、<code translate="no">models_info.py</code></td></tr>
 <tr><th scope="row">共用部分</th><td><code translate="no">conversion.py</code>（模型引用、签名、选项）、<code translate="no">stream.py</code>（一次上游调用、错误）</td></tr>
+<tr><th scope="row">密钥和归属</th><td><code translate="no">keys.py</code>、<code translate="no">&lt;state&gt;/gateway/key</code>；<code translate="no">attribution.py</code>；在 <code translate="no">owner_auth.py</code> 里校验</td></tr>
 <tr><th scope="row">路由</th><td><code translate="no">openprogram/interfaces/server/routes/gateway.py</code></td></tr>
-<tr><th scope="row">密钥</th><td><code translate="no">keys.py</code>、<code translate="no">&lt;state&gt;/gateway/key</code>；在 <code translate="no">owner_auth.py</code> 里校验</td></tr>
 <tr><th scope="row">启动覆盖</th><td><code translate="no">launch.py</code>：<code translate="no">codex_launch</code>、<code translate="no">claude_code_launch</code></td></tr>
-<tr><th scope="row">终端配置</th><td><code translate="no">harness_config.py</code>、<code translate="no">config_files.py</code>、<code translate="no">stash.py</code>、<code translate="no">&lt;state&gt;/gateway/harness-stash.json</code></td></tr>
-<tr><th scope="row">设置</th><td><code translate="no">state/settings.py</code> 里的 <code translate="no">harnesses.*</code>；<code translate="no">GET/PUT /api/harnesses/models</code>；设置 → 第三方 Harness 上的模型卡片</td></tr>
+<tr><th scope="row">设置</th><td><code translate="no">state/settings.py</code> 里的 <code translate="no">harnesses.*</code>；<code translate="no">GET/PUT /api/harnesses/models</code>、<code translate="no">POST /api/harnesses/restart</code>、<code translate="no">POST /api/harnesses/import</code>；设置 → 第三方 Harness 上的模型卡片</td></tr>
+</tbody>
+</table>
+
+<h2 id="registry">智能体注册表</h2>
+<p>一个智能体是一份描述，不是驱动程序（magpie <code translate="no">agent.go</code>、<code translate="no">agents.go</code>）。它的模块返回一个 <code translate="no">Agent</code>，或由 <code translate="no">agents()</code> 返回多个（Qoder 和 Qoder CN、QwenPaw 的各个智能体）；<code translate="no">agents/__init__.py</code> 在 <code translate="no">MODULES</code> 里按显示顺序列出模块。所有动文件的事都归引擎，所以新增一个智能体只需写它的描述。</p>
+<table class="stack">
+<thead><tr><th scope="col">字段</th><th scope="col">说明</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">id</code>、<code translate="no">name</code>、<code translate="no">icon</code>、<code translate="no">aliases</code>、<code translate="no">kind</code></th><td>怎么命名、查找（<code translate="no">find</code>：id、别名、唯一前缀）和显示</td></tr>
+<tr><th scope="row"><code translate="no">path</code>、<code translate="no">dir</code>、<code translate="no">bin</code>、<code translate="no">app</code>、<code translate="no">held_at</code></th><td>它的配置文件和目录、命令、桌面应用；用于检测（<code translate="no">installed</code>），以及目录还在但命令已不在（<code translate="no">cli_gone</code>，magpie <code translate="no">gone.go</code>）。<code translate="no">detect_only</code> 让 <code translate="no">detect</code> 取代默认检测（和别的程序共用的目录、只是插件），<code translate="no">sign</code> 是另一个已安装的迹象，<code translate="no">bin_not</code> 排除同名的别家命令</td></tr>
+<tr><th scope="row"><code translate="no">fields</code></th><td>OpenProgram 设置的项：<code translate="no">model</code>，以及在设置前跟随它的安静字段（Claude Code 的 Opus、Sonnet、Haiku 档位）</td></tr>
+<tr><th scope="row"><code translate="no">wire(at)</code></th><td>连接时写的文件，用 <code translate="no">Write</code> 表示：路径、格式、点分的 <code translate="no">sets</code> 和 <code translate="no">deletes</code>、<code translate="no">keep</code>（写入、从不还原）、<code translate="no">listing</code>（它的模型列表副本），或整个文件（<code translate="no">format="file"</code>）。<code translate="no">at</code> 提供所选模型、某个协议的网关地址和密钥</td></tr>
+<tr><th scope="row"><code translate="no">Write.members</code></th><td>和用户自己的条目共用一个列表（整个文件就是一个 JSON 列表也行），按一个字段区分：写在用户条目之后或原来的位置，断开时只拿掉这些；连接前就有的列表留下，空的也留下（没有 <code translate="no">provider_sources</code> 的 AstrBot 会被当成 4.10 以前的版本）。同一个文件的两次写入依次生效，所以模型列表可以单独同步</td></tr>
+<tr><th scope="row"><code translate="no">Members.loose</code></th><td>智能体自己的设置会改的条目字段：WorkBuddy 的思考档位和开关、OpenPencil 的名字和开关、Tuanjie Cowork 除指向以外的所有字段。不算偏离</td></tr>
+<tr><th scope="row"><code translate="no">Write.owns</code></th><td>完全属于 OpenProgram 的对象（它的提供商条目）：用户在里面加的内容保留，加在哪一层都不算偏离；里面的删除照样生效（OpenCode 的插件自己取模型列表后，它的模型列表）；断开时整个拿掉，改没改过都一样（magpie 也删掉自己的条目）</td></tr>
+<tr><th scope="row"><code translate="no">Write.loose</code></th><td>用户或智能体会改写的字段（<code translate="no">*</code> 表示任意键）：名字、它加密的密钥、JetBrains 的 <code translate="no">*.isRegistered</code>。不算偏离，同步和重连照常进行</td></tr>
+<tr><th scope="row"><code translate="no">Write.picks</code></th><td>智能体自己的选择器成组改写的键：Pi 的 /model、Aside 的选择、omp 的角色、Craft 的默认连接、LiveAgent 的模型和提供商对。不算偏离。断开时，键 <code translate="no">on</code> 仍指向 OpenProgram 就整组还原，否则整组保留（magpie 的 Disconnect）</td></tr>
+<tr><th scope="row"><code translate="no">Write.base</code></th><td>文件不存在时当作智能体自己会生成的内容（omp 从 <code translate="no">models.json</code> 搬成的 <code translate="no">models.yml</code>，magpie <code translate="no">JSONToYAML</code>）：不记成 OpenProgram 写的，断开时只拿掉它的提供商</td></tr>
+<tr><th scope="row"><code translate="no">Members.kept</code>、<code translate="no">key</code></th><td>OpenProgram 自己的条目里用户可以改的字段（Droid 的名字和上限；对应 magpie 的 droidKept）：每个条目按 key 和上次写的内容配对，值和上次写的不同（改了或删了）就是用户的，下次同步保留</td></tr>
+<tr><th scope="row"><code translate="no">Write.shared</code></th><td>几个智能体共写的文件（QwenPaw 所有智能体共用的提供商文件）：原件记在第一个智能体的记录里，没有已连接智能体的存档提到它时才还原；先断开的只还原别人没写过的键（OpenCode 的模型）。后加入的接过前一个写过的键的原值和它建的文件夹，最后一个走时删掉</td></tr>
+<tr><th scope="row"><code translate="no">Agent.shared_used</code></th><td>在智能体自己的文件还原之后询问：它自己的某个部分仍在用这个共享文件，文件就留下（在 QwenPaw 里改用 OpenProgram 提供商的 QwenPaw 智能体；magpie <code translate="no">qwenpawNamesMagpie</code>）。它的记录连同原先的内容转存到 <code translate="no">&lt;state&gt;/gateway/left-shared.json</code>；下次连接接手这份记录，之后最后一次断开就删掉文件或放回原件</td></tr>
+<tr><th scope="row"><code translate="no">protocol</code>、<code translate="no">ua</code>、<code translate="no">named_key</code>、<code translate="no">path_named</code>、<code translate="no">path_keyed</code></th><td>它说的协议、发送的 User-Agent 前缀，以及是否给它专属的密钥或地址（见<a href="#attribution">归属</a>）</td></tr>
+<tr><th scope="row"><code translate="no">before_copy</code>、<code translate="no">notice</code>、<code translate="no">on_route</code>、<code translate="no">after</code>、<code translate="no">harness</code></th><td>第一次写入前整份复制；改动后显示的提示；连接或断开后的工作（Codex 应用）；每次改动（包括同步）即时交给正在运行的应用（Aside）；OpenProgram 是否也在自己的对话里运行它</td></tr>
+<tr><th scope="row"><code translate="no">unwire</code>、<code translate="no">loose</code>、<code translate="no">check</code>、<code translate="no">keep</code></th><td>在还原原值前，把智能体自己的条目从它的应用会重写的列表里拿掉（magpie <code translate="no">Unwire</code>：NewMax、Paseo、ZCode、MiniMax Code）；应用自己会改的键，不算偏离；已连接的智能体为什么没走网关；每 10 秒运行一次的守护（Claude Science 的守护进程、OpenMausBot 的列表）</td></tr>
+<tr><th scope="row"><code translate="no">unwired</code></th><td>断开时在原值还原之后运行：Pi 格式的智能体在 OpenProgram 的提供商没了之后，把 <code translate="no">enabledModels</code> 里指向 OpenProgram 模型的条目拿掉，否则它们指向不存在的模型（magpie <code translate="no">piScopeWithout</code>；omp 连 <code translate="no">openprogram/**</code> 一起）；列表空了就删掉</td></tr>
+<tr><th scope="row"><code translate="no">detect</code>、<code translate="no">extra_agents()</code>、<code translate="no">Field.options</code></th><td>它自己在本机的标志；在本机找到的、主行之外的行（其他每个 <code translate="no">~/.claude…</code> 目录，magpie <code translate="no">claude_dirs.go</code>）；从选项里选的字段，模型离开列表时不会被挪走（Codex 的作用范围和后台压缩、Kiro Crew 的 Harness、Claude Desktop 的网关和运行位置），没有可选项时不显示</td></tr>
+<tr><th scope="row"><code translate="no">launch</code>、<code translate="no">gateway</code></th><td>只从启动方式拿网关的智能体的启动命令（状态里的 <code translate="no">launch</code>，agy）；模型字段是自家模型选项的智能体为假（Cursor CLI、Devin）。连接只改了选项时也运行 <code translate="no">after</code>（agy 的 fast tools）</td></tr>
+<tr><th scope="row"><code translate="no">App.instance</code>、<code translate="no">App.reopen</code></th><td>一个应用同时跑两份时，哪个进程是接入的那份，以及它自己的重启方式（Claude Desktop 的副本：给跑在它文件夹上的进程发 SIGTERM，再打开它的启动器）</td></tr>
+<tr><th scope="row"><code translate="no">edit.row_path</code></th><td>把 SQLite 键值表的一行当作文件文本来读写，在一个 <code translate="no">BEGIN IMMEDIATE</code> 事务里完成，从不新建数据库；读时旁边不留任何文件，用 <code translate="no">immutable=1</code> 或连同 WAL 的副本（NewMax 的 <code translate="no">settings</code> 表 <code translate="no">app</code> 行）</td></tr>
+<tr><th scope="row"><code translate="no">live</code>、<code translate="no">detect</code></th><td>不是改文件的接入（magpie 每个字段的 <code translate="no">Set</code> 加 <code translate="no">Unwire</code>）：<code translate="no">connect</code>、<code translate="no">disconnect</code>、<code translate="no">sync</code>、<code translate="no">check</code>、<code translate="no">start</code> 钩子，拿到上次保存的内容，返回这次要保存的，存在 stash 记录里。<code translate="no">detect</code> 取代按文件、目录和命令的检测</td></tr>
+<tr><th scope="row"><code translate="no">link</code>、<code translate="no">added</code>、<code translate="no">open_link</code></th><td>只通过自己的导入链接接入网关的应用（magpie <code translate="no">Import</code>、<code translate="no">Added</code>）：链接本身、应用里是否已有（只读不写；读不了就是未知），以及怎么交出链接。这类智能体没有字段</td></tr>
+<tr><th scope="row"><code translate="no">Field.multi</code>、<code translate="no">Field.with_catalog</code></th><td>可同时选多个选项的选择，每行一个，显示为勾选菜单（Kimi Code 的子智能体池）；模型字段的选项是智能体自己的模型，和 OpenProgram 的并列（DeepSeek Harness 的 DeepSeek 模型）：两边都能选，重新落座只移动 OpenProgram 的模型</td></tr>
+<tr><th scope="row"><code translate="no">root_paths</code></th><td>智能体在端点主机根路径上请求、地址里的密钥够不着的路径（Muse Code 的 <code translate="no">/muse-code/models</code>）：按它的专属路径提供（<a href="#attribution">归属</a>）</td></tr>
+<tr><th scope="row"><code translate="no">telemetry.py</code></th><td>智能体发给自己厂商的使用数据开关（Crush、Goose、Kimi Code；magpie <code translate="no">telemetry.go</code>），是一个保留的选择：关闭时写入它文档里的键，用户自己设过的键不动；改回默认只移除写过的键，连接与否都生效</td></tr>
+</tbody>
+</table>
+<p>没有 <code translate="no">model</code> 字段也没有链接的智能体是一个开关：它自己列出网关的模型，只能打开或关闭。</p>
+<p>引擎负责连接（先存原值，再写每个文件，有一个失败就回滚已写的）、断开（还原）、只同步模型列表文件，并报告状态：是否安装、是否已连接、偏离、改动后是否有在跑的应用。模型卡片列出注册表里在本机或已连接的智能体，Codex 和 Claude Code 始终列出。</p>
+<p>设置还原得和原来一样的文件写回用户自己的原始字节：存档在第一次写入前留下它的文本（最多 256 KB），和 magpie 的 <code translate="no">beforeMagpie</code> 对它的副本做的一样。单行的 JSON 文件按单行编辑。</p>
+
+<h2 id="agents">智能体</h2>
+<table class="stack">
+<thead><tr><th scope="col">智能体</th><th scope="col">连接时写入</th></tr></thead>
+<tbody>
+<tr><th scope="row">Codex</th><td>见<a href="#launch">下文</a>；另有 <code translate="no">[agents] default_subagent_model</code>、<code translate="no">[memories]</code> 的模型、只给 OpenProgram 用的 profile（<code translate="no">openprogram.config.toml</code>，<code translate="no">codex -p openprogram</code>）、后台压缩字段（<code translate="no">[features.async_compaction]</code>，在 Codex 自己的 65% 处或所选比例处）及远程压缩能力，以及 Codex 应用显示错误页时重新打开它</td></tr>
+<tr><th scope="row">Claude Code</th><td>见<a href="#launch">下文</a>；子智能体模型；其他每个含 Claude Code 文件的 <code translate="no">~/.claude…</code> 目录是一行 <code translate="no">claude_code#&lt;名字&gt;</code></td></tr>
+<tr><th scope="row">Claude Desktop</th><td>它的第三方推理网关模式：<code translate="no">Claude/</code> 和 <code translate="no">Claude-3p/claude_desktop_config.json</code> 里的 <code translate="no">deploymentMode: "3p"</code>，一份带网关和专属密钥的 <code translate="no">Claude-3p/configLibrary/&lt;id&gt;.json</code> 配置，在 <code translate="no">_meta.json</code> 里启用。它只接受像 Anthropic 的 id，所以网关列出别名再映射回去（<code translate="no">desktop.py</code>）。不改 Cowork 的出站列表</td></tr>
+<tr><th scope="row">Claude Desktop：运行位置</th><td>在 Mac 上，一份放在独立文件夹（<code translate="no">Claude-OpenProgram-3p</code>）里的副本，由 <code translate="no">~/Applications/Claude OpenProgram.app</code> 带 <code translate="no">--user-data-dir</code> 启动，和用户自己已登录的 Desktop 并排运行（magpie <code translate="no">claudedesktop_isolated.go</code>）</td></tr>
+<tr><th scope="row">Claude Desktop：网关</th><td>本机，或本机可从任何地方访问时的 https 地址，供 Desktop 的 SSH 远程会话使用；SSH 主机白名单留给用户自己设（magpie <code translate="no">claudedesktop_gateway.go</code>）</td></tr>
+<tr><th scope="row">Claude Science</th><td>不写文件：用带专属密钥的地址作为 <code translate="no">ANTHROPIC_BASE_URL</code> 重启它的守护进程（<code translate="no">stop</code>、<code translate="no">serve --detached</code>），并保持运行。它仍把自己的 Claude 登录作为 bearer 发来；网关凭地址放行，从不检查或转发它（<code translate="no">science.py</code>）。守护进程拿不到 OpenProgram 的 Anthropic 密钥或 <code translate="no">OPENPROGRAM_*</code> 变量；里面有会话在跑时，等它空闲了才替换</td></tr>
+<tr><th scope="row">T3 Code</th><td><code translate="no">~/.t3/userdata/settings.json</code>：一个带网关环境变量和模型的 claudeAgent 实例，以及一个用 <code translate="no">-c</code> 覆盖的 Codex 实例；两者都带它的专属密钥并标为敏感，内联的 <code translate="no">--settings</code> 把 <code translate="no">ANTHROPIC_API_KEY</code> 和云开关置空</td></tr>
+<tr><th scope="row">OpenMausBot</th><td><code translate="no">~/.openmausbot/config.json</code>：<code translate="no">instances.openprogram</code>，带网关环境变量的 claudeAgent；应用运行时拒绝，提供重启</td></tr>
+<tr><th scope="row">Kiro Crew</th><td><code translate="no">~/.kiro/crew/config.json</code> 的 <code translate="no">agent.acp_backend</code>：一个已连接的 Harness（Codex、Claude Code …），需要时一并连接它</td></tr>
+<tr><th scope="row">Paseo</th><td><code translate="no">~/.paseo/config.json</code> 的 <code translate="no">agents.providers.claude.additionalModels</code>：标为 <code translate="no">via OpenProgram</code> 的模型，排在用户自己的之后；Claude Code 也须连接</td></tr>
+<tr><th scope="row">NewMax</th><td><code translate="no">~/.newmax/newmax.db</code> 的 <code translate="no">app</code> 行：一个提供商条目（Anthropic、专属密钥、最多 20 个模型）和它在 <code translate="no">providerOrder</code> 里的 id；NewMax 运行时拒绝</td></tr>
+<tr><th scope="row">MiniMax Code</th><td><code translate="no">~/.minimax/config.yaml</code>：<code translate="no">custom_provider.openprogram</code> 和 <code translate="no">defaultModel</code>；模型键是网关能还原的扁平 id（<code translate="no">deepseek~pro</code>）</td></tr>
+<tr><th scope="row">ZCode</th><td><code translate="no">~/.zcode/v2/config.json</code> 的 <code translate="no">provider.openprogram</code>，以及 <code translate="no">provider_config.json</code> 里的规则，保留在 ZCode 里设的 API 格式、名称、开关和手动设置的模型；在 Anthropic Messages 格式下，给提供商能搜索的每个模型打开原生联网搜索，用户取消勾选的保持关闭</td></tr>
+</tbody>
+</table>
+
+<h2 id="agents-beyond-files">编辑器、运行中的应用和导入链接</h2>
+<table class="stack">
+<thead><tr><th scope="col">智能体</th><th scope="col">OpenProgram 怎么接入（magpie 文件）</th></tr></thead>
+<tbody>
+<tr><th scope="row">VS Code、VS Code Insiders、VSCodium</th><td>每个配置档的 <code translate="no">chatLanguageModels.json</code> 里一组 <code translate="no">openprogram</code>，以及 <code translate="no">chat.defaultModel</code>；VSCodium 的这一组跟随它的 Copilot Chat 提供的类型。连接前就为空的列表断开后仍为空；默认模型仍是这一组里的时，断开时换回用户原来的（<code translate="no">vscode.go</code>）</td></tr>
+<tr><th scope="row">Zoo Code</th><td>一个导入文件，并在每个 VS Code 配置档里设 <code translate="no">zoo-code.autoImportSettingsPath</code>（<code translate="no">zoocode.go</code>）</td></tr>
+<tr><th scope="row">Zed</th><td>JSONC 里的提供商（整块归 OpenProgram）和 <code translate="no">agent.default_model</code>：同步不动用户的选择，断开时只在它仍指向 OpenProgram 的提供商时换回；密钥按 API 地址存进系统凭据库。经网关前面的代理的 API 地址，在网关从那里应答后保留；billion-context 的 <code translate="no">/bili/</code> 前缀在端口变了之后跟过去（<code translate="no">zed.go</code>、<code translate="no">reach.go</code>）</td></tr>
+<tr><th scope="row">Cursor Private Inference</th><td>一个开关：为用户设置 <code translate="no">CURSOR_LOCAL_AGENT_*</code>，Worker 启动时再设一次（Linux 的 environment.d 文件建出来就是 0600；OpenProgram 的标记文件不含密钥）；它的 <code translate="no">effort</code> 是请求没指定档位时网关用的档位。它读到的 <code translate="no">/models</code> 给每个模型带上 <code translate="no">api_types</code>（它用哪个 API 请求这个模型）和 <code translate="no">capabilities</code>（<code translate="no">cursorlocal.go</code>、<code translate="no">cursorLocalModel</code>）</td></tr>
+<tr><th scope="row">Antigravity</th><td>两个配置文件里的网关设置，以及给出每个模型窗口的 <code translate="no">/models?format=antigravity</code>。有两个以上档位的模型每个档位列一条 <code translate="no">&lt;id&gt;:&lt;level&gt;</code>，不超过应用保留的 32 条；应用从 medium 或最低档启动，或从选的 <code translate="no">effort</code> 启动。网关设置仍带 OpenProgram 的密钥时，断开会换回应用里原来选的模型（<code translate="no">antigravity.go</code>、<code translate="no">antigravity_models.go</code>）</td></tr>
+<tr><th scope="row">Dim</th><td>运行时通过它守护进程的 JSON-RPC，Windows 上经 Dim 自己的管道桥，一分钟没有应答就关掉。守护进程不在时，用户 shell 配置里的 <code translate="no">dima</code> 函数（<code translate="no">python -I -m openprogram dim run</code>，启动型智能体共用的 shell 函数）带着网关的变量启动 dima，直到同步连上守护进程（<code translate="no">dim.go</code>）</td></tr>
+<tr><th scope="row">Kun、Nowledge Mem、OpenHanako、Alma、Shelley、Avibe</th><td>应用运行时通过它自己的本地 API（回环地址或 Unix socket 上的 HTTP）；OpenHanako 关着时改它的文件；Avibe 是开关。关掉时，应用的默认模型还是 OpenProgram 的，就换回它原来的。Alma 或 Shelley 在卸载状态下被关掉，装回并应答后再把 OpenProgram 移出（<code translate="no">kun.go</code>、<code translate="no">nowledgemem.go</code>、<code translate="no">hanako.go</code>、<code translate="no">alma.go</code>、<code translate="no">shelley.go</code>、<code translate="no">avibe.go</code>）</td></tr>
+<tr><th scope="row">miniQ</th><td><code translate="no">settings.json</code> 里的 provider（整块归 OpenProgram，模型保留 miniQ 里选的），并经 WebSocket 告诉正在运行的守护进程（<code translate="no">miniq.go</code>）</td></tr>
+<tr><th scope="row">Cindy、AionUi、Cherry Studio、Lody</th><td>在应用里确认的导入链接，只在本机有程序能打开它的协议时才交出；应用里是否已有从它的数据库读（Lody 不读）（<code translate="no">applink*.go</code>、<code translate="no">cindy.go</code>、<code translate="no">aionui.go</code>、<code translate="no">cherrystudio.go</code>、<code translate="no">lody.go</code>）</td></tr>
+</tbody>
+</table>
+<h2 id="provider-tables">带提供商表的智能体</h2>
+<p>这些智能体把 OpenProgram 当作自己的一个提供商，和用户原有的并列，移植自 magpie 的同名文件。它们的其他提供商和设置不动。</p>
+<ul>
+<li>一个指向网关、带该智能体密钥的条目。</li>
+<li>按智能体自己的格式列出启用的模型：窗口、输出上限、图片、推理档位；模型变化时重写。</li>
+<li>默认模型指向所选模型；按提供商命名模型的写作 <code translate="no">openprogram/&lt;provider&gt;/&lt;model&gt;</code>。</li>
+</ul>
+<table class="stack">
+<thead><tr><th scope="col">智能体</th><th scope="col">配置</th><th scope="col">写入</th></tr></thead>
+<tbody>
+<tr><th scope="row">Crush</th><td><code translate="no">~/.config/crush/crush.json</code>、<code translate="no">~/.local/share/crush/crush.json</code></td><td>providers.openprogram（type openai，模型列表）；数据文件里的 models.large、models.small</td></tr>
+<tr><th scope="row">Goose</th><td><code translate="no">~/.config/goose/config.yaml</code>、<code translate="no">~/.config/goose/custom_providers/openprogram.json</code></td><td>自定义提供商（engine openai，模型列表）；GOOSE_PROVIDER、GOOSE_MODEL</td></tr>
+<tr><th scope="row">Kimi Code</th><td><code translate="no">~/.kimi-code/config.toml</code>、<code translate="no">~/.kimi/config.toml</code></td><td>[providers.openprogram]（type kimi）；每个模型一个 [models."openprogram/…"]；default_model；子智能体模型；子智能体池，可同时选多个模型</td></tr>
+<tr><th scope="row">jcode</th><td><code translate="no">~/.jcode/config.toml</code></td><td>配置档 [providers.openprogram] 及其模型；[provider] default_provider、default_model</td></tr>
+<tr><th scope="row">Mistral Vibe</th><td><code translate="no">~/.vibe/config.toml</code></td><td>一个 [[providers]]，每个模型一个 [[models]]；active_model</td></tr>
+<tr><th scope="row">AtomCode</th><td><code translate="no">~/.atomcode/config.toml</code></td><td>[provider_accounts.openprogram]；每个模型一个 [models."openprogram/…"]；default_provider、default_model</td></tr>
+<tr><th scope="row">Grok Build、Kigi</th><td><code translate="no">~/.grok/config.toml</code>、<code translate="no">~/.kigi/config.toml</code></td><td>每个模型一个 [model."openprogram/…"]，走其提供商自己的 API；[models] default；[features] campaigns = false</td></tr>
+<tr><th scope="row">Grok App</th><td><code translate="no">agent-home/config.toml</code></td><td>只写它的提供商通道（数据目录下的文件）；路由仍归 App</td></tr>
+<tr><th scope="row">Reasonix Studio</th><td><code translate="no">~/.reasonix/config.toml</code>、<code translate="no">~/.reasonix/.env</code></td><td>一个带 model_overrides 的 [[providers]]；default_model、agent.planner_model；密钥为 OPENPROGRAM_REASONIX_API_KEY</td></tr>
+<tr><th scope="row">Mister Morph</th><td><code translate="no">~/.morph/config.yaml</code></td><td>接管 llm.*：网关上的 Responses、模型及其窗口</td></tr>
+<tr><th scope="row">PenguinHarness</th><td><code translate="no">~/.penguin/data/&lt;project&gt;/.project_config.toml</code></td><td>[providers.openprogram]（openai-responses）、[[models]]、default_model</td></tr>
+<tr><th scope="row">Hermes Agent</th><td><code translate="no">~/.hermes/config.yaml</code>、<code translate="no">~/.hermes/profiles/*/config.yaml</code></td><td>每个配置档里的 providers.openprogram；model.provider、model.default；各配置档的模型是该行的字段</td></tr>
+<tr><th scope="row">Raycast</th><td><code translate="no">~/.config/raycast/ai/providers.yaml</code></td><td>providers 里的 openprogram 及其模型；模型在 Raycast 里选</td></tr>
+<tr><th scope="row">Muse Code</th><td><code translate="no">~/.config/muse/settings.json</code></td><td>指向网关的 endpoint_transport（Responses，auth none，密钥在地址里）和 model；模型列表来自 /muse-code/models</td></tr>
+<tr><th scope="row">DeepSeek Harness、DS Bot</th><td><code translate="no">~/.dsh</code></td><td>每个配置档 cordis.patch.yml 里的路由和起始模型；密钥写入 .env 和 .credentials.yaml；这台电脑上的 dsh 都在 0.2.2-rc.2 及以后时加 Gemini 路由；思考强度；压缩模型由网关把 dsh 的压缩请求改到它上面；没有配置档的旧 dsh 写 config.yaml；DS Bot 的主目录是它自己的数据目录；dsh 自己的模型和 OpenProgram 的模型并列可选，选中后在 dsh 自己的提供商上开始；dsh 经网关的网页搜索</td></tr>
+</tbody>
+</table>
+<ul>
+<li>主模型之外的字段：Crush 的 small、Kimi 的子智能体、Reasonix 的 planner 和 DeepSeek Harness 的压缩模型，设置前跟随主模型；Hermes 各配置档的模型；各智能体的思考强度或思考档位。</li>
+<li>智能体计费时的价格；Crush、Goose 和 Kimi Code 的遥测开关。</li>
+<li>与用户条目共用的列表（Vibe、Reasonix、Penguin、Raycast）在断开时去掉 OpenProgram 的条目，即使用户之后改过。</li>
+<li>尚未支持：WSL（注册表还没有）。</li>
+</ul>
+
+<h2 id="editors">改写智能体自己的配置</h2>
+<table class="stack">
+<thead><tr><th scope="col">步骤</th><th scope="col">处理</th></tr></thead>
+<tbody>
+<tr><th scope="row">读取</th><td>先解析文件。解析不了的文件视为未知：什么都不写，卡片说明原因</td></tr>
+<tr><th scope="row">暂存</th><td>第一次写入前，保存每个将要改的键的原值（或它原本不存在）</td></tr>
+<tr><th scope="row">暂存损坏或是旧格式</th><td>暂存文件解析不了时一切都停下：不连接、不还原、不忘记，卡片说明原因。连接中途写入失败时，放回已写的文件和这次新加的暂存记录。注册表之前的旧记录（一个文件、原值和写入的值）按单文件记录读取，关掉时照样还原用户自己的设置</td></tr>
+<tr><th scope="row">写入</th><td>只改这些键，支持 TOML、JSON 或 JSONC、YAML、dotenv。注释、键顺序、缩进和 CRLF 都保留；每个结果先解析并与预期改动比对；写入是临时文件改名覆盖原文件。符号链接仍是链接，写的是它指向的文件；有其他硬链接的文件原地写（magpie <code translate="no">edit.Target</code>、<code translate="no">hardLinked</code>）</td></tr>
+<tr><th scope="row">表数组</th><td>TOML 里与用户共用的列表（<code translate="no">[[providers]]</code>、<code translate="no">[[models]]</code>）只改 OpenProgram 自己的块，在其中第一块的位置重写，没有就加在文件末尾。一块到它最后一个键为止，所以下一个表上方的注释留着；用户的块和块之间的内容原样不动。跨多行的值保留右括号后面的注释（仿 magpie <code translate="no">SetTOMLArrayTables</code>）</td></tr>
+<tr><th scope="row">标注</th><td>OpenProgram 写的每一行 TOML、YAML 或 dotenv 上方都有一行注释（<code translate="no"># openprogram: …</code>），说明在 OpenProgram 里关掉即可撤销（magpie <code translate="no">mark.go</code>）</td></tr>
+<tr><th scope="row">还原</th><td>关掉，或回到智能体自己的设置时，仍是 OpenProgram 所写值的键会被还原。之后改过的值是偏离：卡片显示出来，从不覆盖还原。OpenProgram 添加的对象和文件变空后移除</td></tr>
+<tr><th scope="row">整文件副本</th><td>整份写入的文件（DeepSeek Harness 的 patch 列表）在第一次写入前复制一份；文件仍是 OpenProgram 留下的样子时，断开连接把副本逐字节放回。只有别的程序改过文件，副本才会按当时的文件刷新，并去掉 OpenProgram 的条目</td></tr>
+<tr><th scope="row">保留</th><td>Codex 的 <code translate="no">[model_providers.openprogram]</code> 表从不删除，因为在它上面开始的线程没有它就打不开；只还原 <code translate="no">model_provider</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="lifecycle">让智能体保持同步</h2>
+<table class="stack">
+<thead><tr><th scope="col">事件</th><th scope="col">处理</th></tr></thead>
+<tbody>
+<tr><th scope="row">启用的模型变了</th><td>重写每个已连接智能体里内容不同的模型列表文件（magpie <code translate="no">Sync</code>）。空列表从不触发处理</td></tr>
+<tr><th scope="row">某个模型不再提供</th><td>用着它的字段，改用另一个提供商的同一模型（同 id，否则小写、点和下划线换成短横线、去掉日期后相同的 id）；档位找不到就重新跟随主模型；主模型找不到就保留并说明。从不断开智能体，也不清空它在 OpenProgram 里的设置（magpie <code translate="no">reseat.go</code>）</td></tr>
+<tr><th scope="row">由谁来做</th><td>只有 Worker 做，在不会写到一半被杀掉的线程上，CLI 命令从不做。稳定版和开发版共用 <code translate="no">~/.codex</code> 和 <code translate="no">~/.claude</code>：一个实例只在自己写的每个键、地址和密钥仍是它的值时才动这些文件。重新应用不会忘掉仍在原处的已写键，只有文件真的改了才更新改动时间</td></tr>
+<tr><th scope="row">Worker 端口变了</th><td>启动时，记录的地址不同的智能体用原来的选择重新连接（magpie <code translate="no">Rewire</code>）。自己记着所选模型的应用（Dim、Kun、Nowledge Mem、OpenHanako、Alma、Shelley、miniQ）只换新的地址和密钥，用户在应用里后来选的模型不变</td></tr>
+<tr><th scope="row">桌面应用读的是旧配置</th><td>如果它的进程在改动前就启动了，卡片提供重启：让应用退出再重新打开（magpie <code translate="no">apprestart.go</code>）</td></tr>
+<tr><th scope="row">命令不在了</th><td>目录还在时卡片会标出（magpie <code translate="no">cliHeld</code>）</td></tr>
 </tbody>
 </table>
 
@@ -23,70 +160,179 @@
 <table class="stack">
 <thead><tr><th scope="col">路径</th><th scope="col">客户端</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">POST /gateway/anthropic/v1/messages</code></th><td>Claude Code；流式和整段回复</td></tr>
+<tr><th scope="row"><code translate="no">POST /gateway/anthropic/v1/messages</code></th><td>Claude Code；流式和整段回复。Anthropic 的网页搜索工具：提供商自己能搜就交给它，否则用 OpenProgram 自己的网页搜索作答，每次回复最多搜六次，以 Anthropic 自己的搜索块告知</td></tr>
 <tr><th scope="row"><code translate="no">POST /gateway/anthropic/v1/messages/count_tokens</code></th><td>本地估算（一个 CJK 字符算 1，其他算 ¼）</td></tr>
-<tr><th scope="row"><code translate="no">POST /gateway/openai/v1/responses</code></th><td>Codex；普通 HTTP 加服务器推送事件（Codex 只对声明了 <code translate="no">supports_websockets</code> 的提供商用 WebSocket）</td></tr>
-<tr><th scope="row"><code translate="no">POST /gateway/openai/v1/chat/completions</code></th><td>只会 Chat Completions 的 Harness</td></tr>
-<tr><th scope="row"><code translate="no">GET /gateway/*/v1/models</code></th><td>已启用的模型，写作 <code translate="no">provider/model</code></td></tr>
+<tr><th scope="row"><code translate="no">POST /gateway/openai/v1/responses</code></th><td>Codex；服务端事件流</td></tr>
+<tr><th scope="row"><code translate="no">WS /gateway/openai/v1/responses</code></th><td>WebSocket 上的 Responses：每个 <code translate="no">response.create</code> 帧是一轮，每个事件一帧；连接保留最近两次回复供 <code translate="no">previous_response_id</code> 使用，不认识的 id 回 <code translate="no">previous_response_not_found</code>，预热（<code translate="no">generate: false</code>）不调用模型，收到 <code translate="no">response.interrupt</code> 结束当前一轮（magpie <code translate="no">responses_ws.go</code>）。一轮进行中最多排队 32 帧，再多就发错误帧并关闭连接</td></tr>
+<tr><th scope="row"><code translate="no">POST /gateway/openai/v1/responses/compact</code></th><td>模型的提供商用 API key 走 Responses API 时，转到提供商自己的路由；否则回 400，Codex 随后在 <code translate="no">/responses</code> 上自己压缩。只发送 OpenProgram 给这个提供商配置的 API key，从不发送登录令牌；请求按 <code translate="no">/responses</code> 的规则检查，用量记在该智能体名下</td></tr>
+<tr><th scope="row"><code translate="no">POST /gateway/openai/v1/chat/completions</code></th><td>只说 Chat Completions 的智能体</td></tr>
+<tr><th scope="row"><code translate="no">GET /gateway/*/v1/models[/{id}]</code>、<code translate="no">GET /gateway/openai/v1</code></th><td>启用的模型，写作 <code translate="no">provider/model</code>，每个都带客户端读取的各种窗口字段名、回复上限、思考档位、模态和 <code translate="no">tool_call</code>；不认识的 id 回 404（magpie <code translate="no">modelObject</code>、<code translate="no">toolsTold</code>）；<code translate="no">?format=opencode</code> 或 <code translate="no">opencode2</code> 是 <a href="#opencode">OpenCode 插件</a>取的列表。每个路由都接受带档位的模型 <code translate="no">&lt;model&gt;:&lt;level&gt;</code>（none 到 max，<code translate="no">:off</code> 即 none），优先于请求体里的档位；有整个 id 的模型就是那个模型（magpie <code translate="no">askedAt</code>）</td></tr>
+<tr><th scope="row"><code translate="no">/gateway/gemini/v1beta/models[/{model}:{method}]</code></th><td>Gemini CLI 和 Google 的 SDK：<code translate="no">generateContent</code>、<code translate="no">streamGenerateContent</code>、<code translate="no">countTokens</code>；密钥用 <code translate="no">x-goog-api-key</code> 或 <code translate="no">?key=</code>（magpie <code translate="no">gemini.go</code>）</td></tr>
+<tr><th scope="row"><code translate="no">/gateway/ollama/api/{version,tags,show,chat,generate}</code>、<code translate="no">/gateway/ollama/v1/chat/completions</code></th><td>只接受 Ollama 服务器作为自定义端点的客户端（VS Code 和 Visual Studio 的 Copilot）；NDJSON 回复（magpie <code translate="no">ollama.go</code>、<code translate="no">ollama_chat.go</code>）。放在 <code translate="no">/gateway/ollama</code> 下，因为服务器根的 <code translate="no">/api</code> 属于应用自己</td></tr>
 </tbody>
 </table>
-<p>已有的 <code translate="no">/v1/chat/completions</code> 用 OpenProgram Agent 回答，是另一个端点（<a href="openai-compatible-endpoint.zh.html">OpenAI 兼容端点</a>）。</p>
+<p>已有的 <code translate="no">/v1/chat/completions</code> 用 OpenProgram 智能体回答，是另一个端点（<a href="openai-compatible-endpoint.zh.html">OpenAI 兼容端点</a>）。</p>
 
 <h2 id="conversion">一种内部格式</h2>
-<p>请求读成 Agent 循环用的同一套 <code translate="no">Context</code>、消息和 <code translate="no">SimpleStreamOptions</code>，经 <code translate="no">stream_simple</code> 发出，提供商的事件再按客户端的协议写回。</p>
-<p>提供商适配器已经在这些类型和各家上游 API 之间双向转换，网关只补客户端这一侧。所以每次调用都有提供商层的凭据轮换、重试和容错；网关不再加一层重试。</p>
+<p>请求读成智能体循环用的同一套 <code translate="no">Context</code>、消息和 <code translate="no">SimpleStreamOptions</code>，经 <code translate="no">stream_simple</code> 发出，再把提供商的事件用客户端的协议写回。</p>
+<p>提供商适配器已经在这些类型和每个上游 API 之间双向转换，所以网关只补客户端一侧。调用因此获得提供商层的凭据轮换、重试和容错；网关不再加第二层重试。</p>
 <table class="stack">
 <thead><tr><th scope="col">问题</th><th scope="col">决定</th></tr></thead>
 <tbody>
-<tr><th scope="row">模型名</th><td>显式的 <code translate="no">provider/model</code> 引用（<code translate="no">split_model_ref</code>），可带 <code translate="no">openprogram:</code> 前缀；不认识的名字返回 404，从不起别名</td></tr>
-<tr><th scope="row">思考签名</th><td>模型自己的值包上生成它的模型再交给客户端，只回到那个模型。Anthropic 模型的 Claude Code 客户端拿到的是 Anthropic 自己的签名。从不编造签名；没签名的思考块不发给 Anthropic。</td></tr>
-<tr><th scope="row">Codex 自由格式工具</th><td><code translate="no">apply_patch</code> 以一个带 <code translate="no">input</code> 字符串的函数交给模型，语法写进描述，再以 <code translate="no">custom_tool_call</code> 返回</td></tr>
-<tr><th scope="row">缓存标记</th><td>保留客户端在工具和内容上的 <code translate="no">cache_control</code>；断点由 Anthropic 适配器照常放置和限数</td></tr>
-<tr><th scope="row">客户端请求头</th><td>正文以外的东西都不到提供商：没有密钥，没有 <code translate="no">anthropic-beta</code></td></tr>
-<tr><th scope="row">错误</th><td>第一个字节之前：该协议的错误响应（Anthropic <code translate="no">{type:"error"}</code>、OpenAI <code translate="no">{error:{…}}</code>）；上下文超长写成“prompt is too long”或 <code translate="no">context_length_exceeded</code>，让 Harness 去压缩；上游凭据被拒是 502，不是会把 Harness 送去重新登录的 401。第一个字节之后：流内错误事件，不再重发。</td></tr>
-<tr><th scope="row">用量</th><td>记进 OpenProgram 的账本，<code translate="no">call_kind = "harness"</code>，按 Harness 标注</td></tr>
+<tr><th scope="row">模型名</th><td>显式的 <code translate="no">provider/model</code> 引用（<code translate="no">split_model_ref</code>），可带 <code translate="no">openprogram:</code> 前缀；不认识的名字回 404，从不做别名</td></tr>
+<tr><th scope="row">思考签名</th><td>模型自己的值（Anthropic 签名、Responses 推理项、Gemini <code translate="no">thoughtSignature</code>）包上生成它的模型再交给客户端，只回到那个模型。Claude Code 用 Anthropic 模型时拿到 Anthropic 自己的签名。从不伪造；没有签名的思考块从不发给 Anthropic。</td></tr>
+<tr><th scope="row">Codex 自由格式工具</th><td><code translate="no">apply_patch</code> 以只有一个 <code translate="no">input</code> 字符串的函数交给模型，语法写在描述里，结果以 <code translate="no">custom_tool_call</code> 返回</td></tr>
+<tr><th scope="row">Gemini 请求</th><td>snake_case 或 camelCase 都行；函数结果无论以什么角色发来都算用户一侧，按 id 对应调用，否则对应同名的第一个未回答调用；OpenAPI schema 转成 JSON Schema</td></tr>
+<tr><th scope="row">Ollama 请求</th><td>读成 Chat Completions 请求：裸 base64 图片、参数为对象的工具调用（缺 id 时补上）、<code translate="no">num_predict</code> 作为回复上限，本地运行器的其他选项丢弃；空请求是预热，回 <code translate="no">done_reason: "load"</code></td></tr>
+<tr><th scope="row">缓存标记</th><td>保留客户端在工具和内容上的 <code translate="no">cache_control</code>；Anthropic 适配器照常放置和限制断点</td></tr>
+<tr><th scope="row">客户端请求头</th><td>正文之外的内容都不到达提供商：没有密钥，没有 <code translate="no">anthropic-beta</code></td></tr>
+<tr><th scope="row">错误</th><td>第一个字节之前：协议自己的错误响应；上下文超长写成让智能体去压缩的样子；上游凭据被拒是 502，绝不是会把智能体送去自己登录的 401。第一个字节之后：流内错误，之后什么都不再发。</td></tr>
 </tbody>
 </table>
 
-<h2 id="auth">网关密钥</h2>
-<p>owner 令牌每次 Worker 启动都会变，配置文件存不住它。网关密钥是随机的，只有本人可读地放在状态目录里，重启后不变。</p>
-<p>owner-auth 中间件只在 <code translate="no">/gateway/</code> 路径上接受它（<code translate="no">Authorization: Bearer</code> 或 <code translate="no">x-api-key</code>）；owner 令牌在那里也可以用。每个网关请求都要其中之一，不论来自哪个地址。备份把 <code translate="no">gateway/</code> 和凭据放在一起，因为写进终端配置的是这个密钥。</p>
+<h2 id="attribution">密钥和归属</h2>
+<p>所有者令牌每次 Worker 启动都会变，配置文件存不住它。网关密钥是随机的，只有所有者可读，存在状态目录，重启后不变；备份会和凭据一起保留 <code translate="no">gateway/</code>。</p>
+<table class="stack">
+<thead><tr><th scope="col">问题</th><th scope="col">决定</th></tr></thead>
+<tbody>
+<tr><th scope="row">智能体专属密钥</th><td><code translate="no">opgw-agent-&lt;id&gt;.</code> 加上以网关密钥对 id 计算的 HMAC（仿 magpie <code translate="no">TokenFor</code>），每个智能体都用它（<code translate="no">engine.agent_key</code>），Claude Code 的启动文件也是：任何文件都不写网关密钥本身。共用一个提供商的智能体共用一个密钥（<code translate="no">key_of</code>：OpenChamber 用 OpenCode 的）。它不泄露网关密钥，只接受已注册智能体的 id</td></tr>
+<tr><th scope="row">密钥变了</th><td>存档记下每个智能体所给密钥的哈希。文件里是别的密钥的（在每个智能体都有自己的密钥之前连接的），下次同步或 Worker 启动时（<code translate="no">lifecycle.rewire</code>）整个重写</td></tr>
+<tr><th scope="row">智能体专属地址</th><td><code translate="no">/gateway/agent/&lt;id&gt;/…</code>，按去掉前缀后的路径服务（magpie <code translate="no">agentpath.go</code>）；<code translate="no">/gateway/agent/&lt;id&gt;.&lt;mac&gt;/…</code> 带着它的专属密钥，无论它发什么 bearer 都放行（<code translate="no">path_keyed</code>，Claude Science）</td></tr>
+<tr><th scope="row">不发密钥的智能体</th><td>Command Code、fx、Empryo、Ante 和 OpenBot 没有密钥字段，或有但不会发。magpie 允许它们从本机不带密钥进来；这里把它们自己的密钥放进地址的一段，<code translate="no">/gateway/agent/&lt;id&gt;.&lt;mac&gt;/…</code>（<code translate="no">path_keyed</code>），这样本机浏览器里的网页仍然用不了用户的提供商</td></tr>
+<tr><th scope="row">应用自己的窗口</th><td>Copilot for Obsidian 从 Obsidian 的窗口调用（<code translate="no">Origin: app://obsidian.md</code>）。在 <code translate="no">/gateway/</code> 上这个来源会得到 CORS 应答（包括预检）；其他网页一律拒绝（magpie <code translate="no">cors.go</code>）</td></tr>
+<tr><th scope="row">Obsidian 不带密钥</th><td>它的设置在库里，库会同步和发布，所以那里不写密钥。<code translate="no">/gateway/agent/obsidian/…</code>（<code translate="no">path_named</code>）只在 HTTP 请求的对端和 Host 都是本机、没有转发、Origin 是 <code translate="no">app://obsidian.md</code> 时不带密钥放行，和 magpie 放行 Obsidian 一样</td></tr>
+<tr><th scope="row">在哪里接受密钥</th><td>只在 <code translate="no">/gateway/</code> 路径上，形式为 <code translate="no">Authorization: Bearer</code>、<code translate="no">x-api-key</code>，Gemini 路径上还可以是 <code translate="no">x-goog-api-key</code> 和 <code translate="no">?key=</code>。所有者令牌可放在请求头里；URL 和日志会留下 <code translate="no">?key=</code>，那里只接受网关密钥。每个网关请求都需要其中之一，来自任何地址都一样，上面 Obsidian 的窗口和下面 Muse 的模型列表除外</td></tr>
+<tr><th scope="row">主机根路径</th><td>Muse Code 在 <code translate="no">/muse-code/models</code> 请求模型列表，那里在 <code translate="no">/gateway/</code> 之外，地址里的密钥到不了。它按 Muse 的专属路径提供，只在 Muse 已连接、对端和唯一的 Host 都是本机回环、没有转发（不带 <code translate="no">Forwarded</code>、<code translate="no">X-Forwarded-*</code> 或 <code translate="no">X-Real-IP</code>）、不带 <code translate="no">Origin</code> 时不需要密钥，和 Obsidian 的窗口一样，网页和代理都读不到</td></tr>
+<tr><th scope="row">用量</th><td>记为 <code translate="no">call_kind = "harness"</code>，按智能体标注：先看路径，再看密钥，再看 User-Agent，最后是协议</td></tr>
+</tbody>
+</table>
 
-<h2 id="launch">Harness 使用它的两种方式</h2>
+<h2 id="launch">Codex 和 Claude Code 的两种用法</h2>
 <table class="stack">
 <thead><tr><th scope="col"></th><th scope="col">Codex</th><th scope="col">Claude Code</th></tr></thead>
 <tbody>
-<tr><th scope="row">由 OpenProgram 为对话启动</th><td><code translate="no">-c</code> 覆盖：<code translate="no">model_provider = "openprogram"</code>、带 <code translate="no">env_key</code> 的 <code translate="no">model_providers.openprogram</code> 表、<code translate="no">model</code>、<code translate="no">model_context_window</code>；密钥放在环境变量里</td><td>环境变量：<code translate="no">ANTHROPIC_BASE_URL</code>、<code translate="no">ANTHROPIC_AUTH_TOKEN</code>、Opus/Sonnet/Haiku 档位变量、<code translate="no">ANTHROPIC_SMALL_FAST_MODEL</code>、<code translate="no">CLAUDE_CODE_SUBAGENT_MODEL</code>；云开关关闭</td></tr>
-<tr><th scope="row">也用于终端</th><td><code translate="no">config.toml</code>：<code translate="no">model_provider</code>、<code translate="no">model</code> 和带 <code translate="no">experimental_bearer_token</code> 的表</td><td><code translate="no">settings.json</code>：<code translate="no">env</code> 下同样的变量和顶层 <code translate="no">model</code>；开启期间去掉 <code translate="no">CLAUDE_CODE_USE_BEDROCK</code>/<code translate="no">_VERTEX</code>/<code translate="no">_FOUNDRY</code></td></tr>
+<tr><th scope="row">由 OpenProgram 为对话启动</th><td><code translate="no">-c</code> 覆盖：<code translate="no">model_provider = "openprogram"</code>、带 <code translate="no">env_key</code> 的 <code translate="no">model_providers.openprogram</code> 表、<code translate="no">model</code>、<code translate="no">model_context_window</code>；密钥放在环境变量里</td><td><code translate="no">--settings</code> 加状态目录里这个对话自己的一份文件（magpie <code translate="no">claude_launch.go</code> 只有一份）：<code translate="no">ANTHROPIC_BASE_URL</code>、<code translate="no">ANTHROPIC_AUTH_TOKEN</code>、档位变量、<code translate="no">ANTHROPIC_SMALL_FAST_MODEL</code>、选了时的 <code translate="no">CLAUDE_CODE_SUBAGENT_MODEL</code>，以及指明这份文件的 <code translate="no">x-openprogram-launch</code> 请求头；<code translate="no">ANTHROPIC_API_KEY</code> 和云开关置空。换了模型或档位就重新启动进程。不写用户的 <code translate="no">settings.json</code>；会话里的 <code translate="no">/model</code> 或 opus 改 1M 留在那里的改动，每轮结束后还原（magpie <code translate="no">ClaudeLaunchAfter</code>）</td></tr>
+<tr><th scope="row">也用于终端</th><td><code translate="no">config.toml</code>：<code translate="no">model_provider</code>、<code translate="no">model</code>、<code translate="no">model_catalog_json</code>，以及带 <code translate="no">experimental_bearer_token</code> 的表</td><td><code translate="no">settings.json</code>：<code translate="no">env</code> 下的同样变量和顶层 <code translate="no">model</code>；开着时移除 <code translate="no">CLAUDE_CODE_USE_BEDROCK</code>/<code translate="no">_VERTEX</code>/<code translate="no">_FOUNDRY</code></td></tr>
 </tbody>
 </table>
-<p>从不设置 <code translate="no">ANTHROPIC_MODEL</code>：它会盖过用 <code translate="no">/model</code> 选的模型。Harness 的配置里不加别的东西：没有 MCP 服务器、权限或指令，也没有提到网关的提示词。</p>
-
-<h2 id="terminal">改写 Harness 自己的配置</h2>
-<ol>
-<li>先解析文件。解析不了的文件内容未知：什么都不写，页面说明原因。</li>
-<li>第一次写之前，把每个要改的键的原值（或它原本不存在）存进暂存。</li>
-<li>只改这些键。TOML 逐行修改，并解析结果、和预期的改动比对；JSON 保留键的顺序和缩进。注释、CRLF 和符号链接都保留；写入是临时文件改名覆盖原文件。</li>
-<li>关闭它，或改回 Harness 自己的登录时，恢复每个仍是 OpenProgram 所写的值。用户之后改过的值算漂移：卡片上会显示，也不会被恢复覆盖。只有恢复写入成功后才删掉暂存条目。</li>
-<li>Codex 的 <code translate="no">[model_providers.openprogram]</code> 表从不删除，因为在它上面开始的线程没有它就打不开；只把 <code translate="no">model_provider</code> 改回去。</li>
-</ol>
+<p>Claude Code 的 Explore 和 Plan 声明 <code translate="no">model: inherit</code>，Claude Code 先读它、后读 <code translate="no">CLAUDE_CODE_SUBAGENT_MODEL</code>；设了子智能体模型时，网关把它们的工具轮次挪到那个模型上（<code translate="no">claude_subagent.py</code>，magpie #7176）；请求指明了对话的启动文件时从那份文件读，否则读用户的 <code translate="no">settings.json</code>。</p>
+<p>从不设置 <code translate="no">ANTHROPIC_MODEL</code>：它会覆盖用 <code translate="no">/model</code> 选的模型。智能体配置里不加别的：没有 MCP 服务器、权限或指令，提示词里也不提网关。Codex 的 join 模式会转发 ChatGPT 登录流量，不提供。</p>
 
 <h2 id="codex-app">Codex 应用</h2>
-<p>ChatGPT.app 里的 Codex 应用在同一个 <code translate="no">~/.codex</code> 上运行自己的 <code translate="no">codex app-server</code>，所以同一份 <code translate="no">config.toml</code> 对它也生效（<code translate="no">codex_app.py</code>）。</p>
+<p>ChatGPT.app 里的 Codex 应用在同一个 <code translate="no">~/.codex</code> 上运行自己的 <code translate="no">codex app-server</code>，所以同一份 <code translate="no">config.toml</code> 也作用于它（<code translate="no">codex_app.py</code>）。</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">缺口</th><th scope="col">OpenProgram 的做法</th></tr></thead>
 <tbody>
-<tr><th scope="row">它的模型选择器</th><td>列的是 <code translate="no">model/list</code>，对 Codex 不自带的提供商只显示 Codex 自己的模型。已启用的模型写进 <code translate="no">config.toml</code> 旁边的 <code translate="no">openprogram-models.json</code>，由 <code translate="no">model_catalog_json</code> 指向；选中的排第一。每一项是 Codex 对不认识模型用的元数据：OpenProgram 知道的窗口或 272K，模型的思考档位作为它的推理强度，以及所装 Codex 版本的 <code translate="no">prompt.md</code> 指令，读一次后保留</td></tr>
-<tr><th scope="row">读到改动</th><td>它的 app-server 只在启动时读配置。开启或关闭时，等 20 秒没有会话文件写入（最多等 15 分钟），用 SIGTERM 结束应用自己的 app-server（在应用包内、走 stdio、用这个 Codex 目录）；应用会立刻再起一个，窗口和对话都保留。只换模型不重启</td></tr>
+<tr><th scope="row">它的模型选择器</th><td>列的是 <code translate="no">model/list</code>，对它不自带的提供商只显示 Codex 自己的模型。启用的模型写进 <code translate="no">config.toml</code> 旁的 <code translate="no">openprogram-models.json</code>，由 <code translate="no">model_catalog_json</code> 指向；选中的排第一，启用的模型变化时重写。每一项是 Codex 对未知模型的元数据：OpenProgram 知道的窗口或 272K、模型的思考档位作为推理强度，以及已安装 Codex 版本的 <code translate="no">prompt.md</code> 指令，读一次后保存</td></tr>
+<tr><th scope="row">读到改动</th><td>它的 app-server 只在启动时读配置。打开或关闭时，在 20 秒内没有写入会话文件后，用 SIGTERM 结束应用自己的 app-server（在应用包里、stdio、用这个 Codex home），最多等 15 分钟；应用会再起一个，窗口和对话都保留。只换模型不重启任何东西</td></tr>
+</tbody>
+</table>
+
+<h2 id="chat-agents">用 Chat Completions 提供商条目接入的智能体</h2>
+<p>这些智能体在一个 JSON 文件里接受用户自己的提供商。每个模块移植自对应的 magpie 文件（<code translate="no">qwen.go</code>、<code translate="no">copilot_byok.go</code> … <code translate="no">qwenpaw.go</code>）：OpenProgram 的条目名为 <code translate="no">openprogram</code>，用户自己的条目原地不动，智能体原先指向的设置先存下、断开时还原。</p>
+<table class="stack">
+<thead><tr><th scope="col">智能体</th><th scope="col">配置</th><th scope="col">写入</th></tr></thead>
+<tbody>
+<tr><th scope="row">Qwen Code</th><td><code translate="no">~/.qwen/settings.json</code></td><td>modelProviders.openai 里的条目，用自己的环境变量密钥；模型、认证方式</td></tr>
+<tr><th scope="row">Copilot CLI</th><td><code translate="no">~/.copilot/providers.json</code>、<code translate="no">settings.json</code></td><td>BYOK 提供商及其模型；模型</td></tr>
+<tr><th scope="row">Command Code</th><td><code translate="no">~/.commandcode/providers.json</code>、<code translate="no">settings.json</code></td><td>提供商 openprogram，不带密钥；模型</td></tr>
+<tr><th scope="row">fx</th><td><code translate="no">~/.fx/settings.json</code></td><td>提供商 openprogram，auth none，思考档位；提供商和模型</td></tr>
+<tr><th scope="row">Empryo</th><td><code translate="no">~/.empryo/config.json</code></td><td>providers 条目；defaultModel</td></tr>
+<tr><th scope="row">nanobot</th><td><code translate="no">~/.nanobot/config.json</code></td><td>providers.openprogram；agents.defaults</td></tr>
+<tr><th scope="row">Paimon</th><td><code translate="no">~/.config/paimon/config.json</code></td><td>providers.litellm；模型、上下文窗口</td></tr>
+<tr><th scope="row">Ante</th><td><code translate="no">~/.ante/catalog.json</code>、<code translate="no">settings.json</code></td><td>提供商和 preferred_models；提供商和模型</td></tr>
+<tr><th scope="row">Cline</th><td><code translate="no">~/.cline/data/settings/providers.json</code>、<code translate="no">models.json</code>、<code translate="no">globalState.json</code></td><td>openai-compatible 提供商和模型；VS Code 扩展的状态</td></tr>
+<tr><th scope="row">Qoder, Qoder CN</th><td><code translate="no">~/.qoder/settings.json</code>、<code translate="no">~/.qoder-cn/settings.json</code></td><td>providers.openprogram，含每个模型的思考档位；模型</td></tr>
+<tr><th scope="row">Open Code Review</th><td><code translate="no">~/.opencodereview/config.json</code></td><td>custom_providers.openprogram；提供商和模型</td></tr>
+<tr><th scope="row">Snow CLI</th><td><code translate="no">~/.snow/profiles/openprogram.json</code>、<code translate="no">active-profile.json</code>、<code translate="no">config.json</code></td><td>一个自己的配置档并设为当前</td></tr>
+<tr><th scope="row">Tuanjie Cowork</th><td><code translate="no">~/.codely/settings.json</code></td><td>customModelProviders 和 customModels 条目</td></tr>
+<tr><th scope="row">OpenPencil</th><td>配置目录下的 <code translate="no">openpencil/settings.json</code></td><td>一个 builtin_agents 条目；应用运行时拒绝改</td></tr>
+<tr><th scope="row">WorkBuddy, WorkBuddy AI</th><td><code translate="no">~/.workbuddy/models.json</code>、<code translate="no">~/.workbuddy-ai/models.json</code></td><td>模型条目（纯列表或 {models}）；重启应用</td></tr>
+<tr><th scope="row">CodeBuddy</th><td><code translate="no">~/.codebuddy/models.json</code>、<code translate="no">settings.json</code></td><td>模型条目；模型</td></tr>
+<tr><th scope="row">Copilot (JetBrains)</th><td><code translate="no">~/.config/github-copilot/byok.json</code></td><td>openprogram-provider-config、-api-key、-models-config</td></tr>
+<tr><th scope="row">Droid</th><td><code translate="no">~/.factory/settings.json</code></td><td>customModels，每个用其提供商的协议；sessionDefaultSettings.model</td></tr>
+<tr><th scope="row">Obsidian</th><td>每个库的 <code translate="no">.obsidian/plugins/copilot/data.json</code></td><td>Copilot for Obsidian 的提供商、模型和默认模型</td></tr>
+<tr><th scope="row">AstrBot</th><td>其根目录下的 <code translate="no">data/cmd_config.json</code></td><td>provider_sources 和 provider 条目；默认对话模型</td></tr>
+<tr><th scope="row">OpenClaw</th><td><code translate="no">~/.openclaw/openclaw.json</code></td><td>models.providers.openprogram；agents.defaults.model</td></tr>
+<tr><th scope="row">QwenPaw</th><td><code translate="no">~/.qwenpaw.secret/providers/custom/openprogram.json</code>、每个智能体的 <code translate="no">agent.json</code></td><td>一个自定义提供商；每个智能体行的 active_model</td></tr>
+</tbody>
+</table>
+<p>这些文件里没有移植的：思考档位字段（这里的字段是模型选择，换模型时会被移动）、遥测开关、WSL 副本、用户自有模型的选择器和逐个智能体的检查提示。</p>
+
+<h2 id="opencode">OpenCode 格式</h2>
+<p><code translate="no">opencode_format.py</code> 是 OpenCode 的配置形状，移植自 magpie 的 <code translate="no">openCodeLike</code>、<code translate="no">opencode_v2.go</code> 和 <code translate="no">opencode_providers.go</code>：提供商 <code translate="no">openprogram</code>，用 <code translate="no">@ai-sdk/openai-compatible</code>、网关的 Chat Completions 和密钥、<code translate="no">setCacheKey</code>，列出每个已启用模型的窗口、图片输入、<code translate="no">reasoning</code>，思考档位写成 <code translate="no">variants</code>（从弱到强；没有档位就写空集合，OpenCode 2 不会自己补 low、medium、high）。</p>
+<p>模型写作 <code translate="no">openprogram/&lt;provider&gt;/&lt;model&gt;</code>。这个提供商是 OpenProgram 自己的对象（<code translate="no">Write.owns</code>）；用户加的内容保留且不算偏离：请求头、<code translate="no">setCacheKey</code>、variant、自己填的 <code translate="no">limit.output</code>。</p>
+<p>最后一项是 magpie 的 <code translate="no">outputsKept</code>：存档记下 OpenProgram 给每个模型要过的回复上限，不在其中的值就是用户的。</p>
+<p>提供商是同步时重写的模型列表；选中的模型是同一文件上的另一次写入，用户之后改选的保持不变。小模型重新不选时归智能体自己：OpenProgram 写过的那个删掉，连同为放它而加的对象。</p>
+<table class="stack">
+<thead><tr><th scope="col">智能体</th><th scope="col">写什么</th></tr></thead>
+<tbody>
+<tr><th scope="row">OpenCode</th><td><code translate="no">$OPENCODE_CONFIG_DIR</code> 或 <code translate="no">$XDG_CONFIG_HOME/opencode</code>，取 <code translate="no">opencode.jsonc</code>、<code translate="no">opencode.json</code>、<code translate="no">config.json</code> 中第一个存在的。OpenCode 1 写 <code translate="no">provider</code> 和 <code translate="no">small_model</code>（只在选了小模型时）；PATH 上的 <code translate="no">opencode</code> 是 2.x 时用 OpenCode 2 的写法：<code translate="no">providers</code>（<code translate="no">package</code>、<code translate="no">settings</code>、<code translate="no">compatibility</code>，variants 是列表）和 <code translate="no">agents.title.model</code>；换到 OpenCode 2 时把 <code translate="no">provider</code> 下的提供商按 OpenCode 2 的写法搬过去，用户的请求头和 variant 一起带上（magpie <code translate="no">openCodeFromV1</code>）。用普通密钥，靠 User-Agent 区分</td></tr>
+<tr><th scope="row">OpenCode 的模型列表</th><td>1.4.0 和 2.0.5 起提供商写入时不带模型，旁边的 <code translate="no">plugins/openprogram-models.js</code> 在 OpenCode 启动时取 <code translate="no">/models?format=opencode</code>（<code translate="no">opencode2</code>），取不到就用写入时的列表。用户设的 variant 或回复上限保留并优先，和同步会写的内容比较。用户自己的提供商若 <code translate="no">baseURL</code> 指向网关且列出这个模型，就用它</td></tr>
+<tr><th scope="row">OpenChamber</th><td><code translate="no">preferences.json</code>（版本 1，否则不动）里的 <code translate="no">defaultModel</code>、<code translate="no">smallModelOverride</code>，以及 <code translate="no">settings.json</code> 里的副本；<code translate="no">defaultVariant</code> 只在模型换了时清掉；提供商和插件写进 OpenCode 的配置，和 OpenCode 共用（<code translate="no">Write.shared</code>）</td></tr>
+<tr><th scope="row">MiMo Code、DevEco Code</th><td>OpenCode 1 的写法，分别在 <code translate="no">$MIMOCODE_HOME/config</code> 或 <code translate="no">~/.config/mimocode</code>；<code translate="no">$DEVECO_CONFIG_DIR</code> 或 <code translate="no">~/.config/deveco</code>。DevEco Code 有自己的密钥，因为它有些部分发的是 OpenCode 的 User-Agent</td></tr>
+<tr><th scope="row">JetBrains Air、IDE 里的 Air</th><td>在 <code translate="no">acp.json</code>（应用的配置目录；IDE 插件是 <code translate="no">~/.jetbrains</code>，本机有 2026.2 或更新的 IDE 才显示，用 <code translate="no">detect_only</code>）加一个 <code translate="no">OpenProgram</code> 智能体：<code translate="no">opencode acp</code>，<code translate="no">OPENCODE_CONFIG</code> 指向旁边的 <code translate="no">openprogram-opencode.json</code>，里面是提供商、模型和只留它的 <code translate="no">enabled_providers</code>。<code translate="no">opencode</code> 从 PATH、<code translate="no">~/.opencode/bin</code> 或 IDE 的 ACP 注册目录里找</td></tr>
+<tr><th scope="row">OpenBot</th><td><code translate="no">openbot-custom-providers-v1.json</code>（版本 1，否则不动）里和用户自己的项并列的一项 <code translate="no">openprogram</code>（<code translate="no">Write.members</code>），地址 <code translate="no">/gateway/agent/openbot.&lt;mac&gt;/openai/v1</code>，<code translate="no">secret: null</code>：最多 64 个它接受的模型。它的密钥由系统钥匙串加密，所以密钥放在地址里（<code translate="no">path_keyed</code>）。用户给这一项的名字、harness 和 secret 保留（<code translate="no">Members.kept</code>）。断开时拿掉这一项（magpie <code translate="no">openBotUnwire</code>），保留 <code translate="no">version</code>；OpenProgram 建的文件只剩它和空列表时整个删掉</td></tr>
+</tbody>
+</table>
+<p>目录里有价格的模型，写成 OpenCode 的 <code translate="no">cost</code>（OpenCode 2 是分档列表）。没有移植：WSL 里的 Air。</p>
+
+<h2 id="pi-format">Pi 格式的智能体</h2>
+<p>Pi 把新会话的模型记在 <code translate="no">settings.json</code>，提供商记在 <code translate="no">models.json</code>。<code translate="no">agents/pi_like.py</code>（magpie 的 <code translate="no">piLike</code>、<code translate="no">piModelOn</code>）在那里写入提供商 <code translate="no">openprogram</code>：</p>
+<ul>
+<li>Chat 走 <code translate="no">/v1</code>，每个模型走其提供商原生的 API：Responses；Messages 走 Anthropic 根路径；Gemini 走 <code translate="no">/v1beta</code>。</li>
+<li>每个模型带上窗口、回复上限、列全所有档位的 <code translate="no">thinkingLevelMap</code> 和提示缓存时长。</li>
+<li><code translate="no">enabledModels</code> 存在且没有条目包含该模型时，把模型加进去。用户在这个块里加的键保留。</li>
+<li>同步后，指向已不再提供的模型的条目移出 <code translate="no">enabledModels</code>，模型回来时条目也回来；列表空了就删掉，之后再恢复（magpie <code translate="no">scope_gone.go</code>）。移出的条目记在 stash 记录里（<code translate="no">Wiring.record</code>，同步时也保存）。StepCode 和 omp 同样处理。</li>
+<li>断开时所选模型只在 <code translate="no">defaultProvider</code> 仍是 <code translate="no">openprogram</code> 时还原；之后 <code translate="no">enabledModels</code> 去掉所有指向 OpenProgram 模型的条目（magpie <code translate="no">piScopeWithout</code>）。</li>
+<li>选项字段：<code translate="no">effort</code>（<code translate="no">defaultThinkingLevel</code>）；Pi 还有 <code translate="no">protocol</code>，让所有模型都走 Chat、Responses 或 Messages（magpie <code translate="no">piProtocolField</code>）；选了协议就替换用户在提供商上设的 api。</li>
+</ul>
+<table class="stack">
+<thead><tr><th scope="col">智能体</th><th scope="col">位置</th><th scope="col">连接时写入</th></tr></thead>
+<tbody>
+<tr><th scope="row">Pi、OmO、Prime Agent、mu</th><td><code translate="no">~/.pi/agent</code>、<code translate="no">~/.omo/agent</code>、<code translate="no">~/.prime/agent</code>、<code translate="no">~/.mu/agent</code>（各自的环境变量可改）</td><td><code translate="no">defaultProvider</code>/<code translate="no">defaultModel</code> 和提供商，各用带自己名字的密钥；Pi 和 mu 不用 Gemini API</td></tr>
+<tr><th scope="row">StepCode</th><td><code translate="no">~/.stepcode/config.toml</code>、<code translate="no">models.json</code></td><td>同样的键写进 TOML，提供商写进 models.json</td></tr>
+<tr><th scope="row">Aside</th><td><code translate="no">~/.aside/u/&lt;账户&gt;</code>：选定的账户（<code translate="no">account</code>，Aside 有两个以上账户时才可选；记在 stash 旁的 <code translate="no">aside-account.json</code>），否则当前账户</td><td>带所选思考档位的 <code translate="no">defaultModel</code>，和 <code translate="no">modelCategories</code> 下的角色，形如 <code translate="no">{provider, modelId, thinkingLevel}</code>；随后经 <code translate="no">aside repl</code> 交给正在运行的 Aside（<code translate="no">Agent.after</code>），做不到时下次启动读取</td></tr>
+<tr><th scope="row">Craft Agents</th><td><code translate="no">~/.craft-agent/config.json</code></td><td>在 <code translate="no">llmConnections</code> 里、用户的连接旁加一个 <code translate="no">authType: none</code> 的 <code translate="no">pi_compat</code> 连接（<code translate="no">Write.members</code>，名字归用户改）并设为默认；Craft 不发密钥，所以它自己的密钥放在地址里（<code translate="no">path_keyed</code>）；在 Craft 里选的模型同步后保留，在 Craft 里换的默认连接归用户；断开时若用户原来的连接已不在，就去掉默认项</td></tr>
+<tr><th scope="row">Pencil</th><td><code translate="no">~/.pencil/models.json</code></td><td>只写提供商，所有模型走 Chat；模型在 Pencil 里选</td></tr>
+<tr><th scope="row">MothX</th><td><code translate="no">~/.mothx/settings.json</code></td><td>提供商（<code translate="no">openai-chat</code>、<code translate="no">thinkingFormat: openai</code>）、默认模型和它的思考档位；同步只写提供商，在 MothX 的 /model 里选的模型保留</td></tr>
+<tr><th scope="row">LiveAgent</th><td>K-brain 的 <code translate="no">config.json</code>（JSONC）</td><td>按原生 API 分三个提供商，每个都整个属于 OpenProgram（<code translate="no">Write.owns</code>），保留用户改的名字、请求格式和关掉的模型；在 LiveAgent 里删掉的模型或提供商，之后同步不再加回，全部删掉后同步什么也不写（magpie <code translate="no">liveAgentWired</code>）；它运行时拒绝修改。断开时，选在这些提供商上的模型还原；LiveAgent 自己选的，重置成 K-brain 自带的（magpie <code translate="no">liveAgentUnwire</code>）</td></tr>
+<tr><th scope="row">omp 及其 profile</th><td><code translate="no">~/.omp/agent/config.yml</code>、<code translate="no">models.yml</code>；<code translate="no">profiles/&lt;name&gt;</code> 各占一行（<code translate="no">extra_agents()</code>）</td><td><code translate="no">modelRoles</code>（default 和九个可选角色，各有自己的思考档位，没选时保留原来的）、<code translate="no">enabledModels</code> 里的 <code translate="no">openprogram/**</code>、按版本给出档位的提供商；<code translate="no">defaultThinkingLevel</code>、advisor 的审阅、等待和唤醒（<code translate="no">advisor.*</code>，写成字符串）以及协议，走 Messages 时模型按思考预算。旧的 <code translate="no">models.json</code> 照 omp 自己的方式搬到 <code translate="no">models.yml</code>（<code translate="no">Write.base</code>）；在 omp 里改到别处的角色，断开时保留</td></tr>
+</tbody>
+</table>
+
+<h2 id="gemini-agents">Gemini API，以及只用自家模型的智能体</h2>
+<p>Gemini CLI 和 Antigravity CLI 用 Google 的 Gemini API 连网关；Cursor CLI 和 Devin 没有网关能顶替的端点，只设它们的模型，模型字段是它们自家模型里的选项（<code translate="no">Agent.gateway</code> 为假：reseat 和 rewire 不动它们）。</p>
+<table class="stack">
+<thead><tr><th scope="col">智能体</th><th scope="col">连接时写什么</th></tr></thead>
+<tbody>
+<tr><th scope="row">Gemini CLI（<code translate="no">gemini.py</code>）</th><td><code translate="no">~/.gemini/.env</code>：<code translate="no">GOOGLE_GEMINI_BASE_URL</code> 和 <code translate="no">GEMINI_API_KEY</code>；<code translate="no">settings.json</code>：<code translate="no">security.auth.selectedType = gemini-api-key</code>、<code translate="no">model.name</code>。密钥是它专属的。登录方式和模型是 <code translate="no">loose</code>：它的 <code translate="no">/auth</code> 和 <code translate="no">/model</code> 会改写它们，同一模型重新连接时保留那里的选择，断开时两者一起恢复。只按命令检测（<code translate="no">detect_only</code>），因为 Antigravity 也用 <code translate="no">~/.gemini</code>。OpenProgram 自己的 Gemini CLI 对话仍用本人的登录：进程拿回暂存的值（<code translate="no">GEMINI_CLI_SYSTEM_SETTINGS_PATH</code>）</td></tr>
+<tr><th scope="row">Antigravity CLI（<code translate="no">agy.py</code>）</th><td>整份写 <code translate="no">~/.gemini/antigravity-cli/openprogram-settings.json</code>：<code translate="no">modelProvider = gemini</code>、所选模型、每个已启用模型一个自定义模型（<code translate="no">openprogram/&lt;ref&gt;</code>，支持 low、medium、high 中两档以上的再按档各加一个）以及用户自己的。<code translate="no">settings.json</code> 不动；agy 用 <code translate="no">GEMINI_API_KEY</code>、<code translate="no">GOOGLE_GEMINI_BASE_URL</code>、<code translate="no">--settings</code> 和 <code translate="no">--model</code> 启动，密钥是它专属的（<code translate="no">Agent.launch</code>）。同步或以同一模型重新连接时，保留在 agy 的 <code translate="no">/model</code> 里选的模型；在卡片上换了模型则以卡片为准。断开时先把这个选择从 <code translate="no">settings.json</code> 拿掉（<code translate="no">unwire</code>）</td></tr>
+<tr><th scope="row">Antigravity CLI 的启动</th><td>连接时在每个 shell 的配置文件里加一个 <code translate="no">agy</code> 函数，放在 <code translate="no"># &gt;&gt;&gt; openprogram agy &gt;&gt;&gt;</code> 标记行之间（<code translate="no">shellfn.py</code>，magpie 的 <code translate="no">shell_function</code>：zsh、bash、fish，以及执行策略允许运行配置文件的 PowerShell）；它运行 <code translate="no">python -I -m openprogram agy run</code>，当前目录里的 <code translate="no">json.py</code> 或 <code translate="no">openprogram/</code> 不会被导入（PowerShell 读 <code translate="no">agy env</code>）。链接的配置文件仍是链接。断开时删掉</td></tr>
+<tr><th scope="row">Antigravity CLI 的选项</th><td><code translate="no">effort</code>：网关给 agy 请求用的推理强度（<code translate="no">agent_effort.py</code>；请求自己写了 <code translate="no">thinkingLevel</code> 时不改）。<code translate="no">fasttools</code>：fast-tools 插件（<code translate="no">agents/fasttools/</code>，OpenProgram 以 <code translate="no">fast-tools mcp</code> 运行的 MCP 服务），由 <code translate="no">after</code> 写入，<code translate="no">keep</code> 让它一直启动当前的 OpenProgram。两项都是 <code translate="no">kept</code> 字段：用户自己的设置，存在 stash 之外的 <code translate="no">kept_picks.py</code> 里：断开后仍保留，下次连接时带回；断开时也能开关 fast tools（<code translate="no">engine.set_kept</code>）</td></tr>
+<tr><th scope="row">Cursor CLI（<code translate="no">cursor.py</code>）</th><td><code translate="no">~/.cursor/cli-config.json</code> 的 <code translate="no">model.*</code> 和 <code translate="no">hasChangedDefaultModel</code>。按这个文件或 <code translate="no">cursor-agent</code> 检测，不看编辑器的目录</td></tr>
+<tr><th scope="row">Devin（<code translate="no">devin.py</code>）</th><td><code translate="no">~/.config/devin/config.json</code> 的 <code translate="no">agent.model</code>。模型是 <code translate="no">devin models list</code> 的模型族之一；<code translate="no">effort</code> 选项列出该模型有的档位，两者合成一个变体 id 写入，取最近的档位，距离相同取高的。没选推理强度时，换模型族保留原变体 id 的推理强度</td></tr>
 </tbody>
 </table>
 
 <h2 id="peers">取自 magpie</h2>
-<p>magpie（yetone/magpie）运行同类网关。</p>
-<ul>
-<li>采用的：显式模型引用、不设 <code translate="no">ANTHROPIC_MODEL</code> 的 Claude Code 档位变量、从不删除的 Codex 提供商表、Codex 应用的模型目录和路由变化时重启它的 app-server、写前暂存和漂移、拒绝改写解析不了的配置、按客户端协议返回错误且第一个字节后不再回退。</li>
-<li>没采用的：靠运行 <code translate="no">claude</code> 程序提供 Claude 订阅、把针对一家的规则用到所有家、往 Harness 配置里加没要求的东西。</li>
-</ul>
+<table class="stack">
+<thead><tr><th scope="col">方面</th><th scope="col">采用</th></tr></thead>
+<tbody>
+<tr><th scope="row">智能体</th><td>把智能体写成描述、每个一个模块；每个智能体自己的密钥和路径；重新同步、换座和改地址；应用重启</td></tr>
+<tr><th scope="row">配置文件</th><td>TOML、JSONC、YAML、dotenv 的精确编辑器和行注释；写前暂存、偏离、暂存损坏时停止一切改动；从不删除的 Codex 提供商表；Codex 应用的目录和 app-server 重启</td></tr>
+<tr><th scope="row">协议</th><td>Responses WebSocket 和 <code translate="no">/responses/compact</code>；Gemini 和 Ollama API；<code translate="no">/models</code> 里的模型元数据；显式模型引用；不设 <code translate="no">ANTHROPIC_MODEL</code> 的 Claude Code 档位变量；用客户端协议报错、第一个字节后不回退</td></tr>
+<tr><th scope="row">不采用</th><td>提供 Claude 或 ChatGPT 订阅（运行 <code translate="no">claude</code> 程序、Codex 的 join 模式、账户池）；往智能体配置里加没被要求的内容</td></tr>
+</tbody>
+</table>
 
 <h2 id="status">实现状态</h2>
-<p>还不支持：Codex 走 WebSocket、经 Anthropic 协议传 Gemini 工具调用的 thought signature、提供商侧网页搜索、PDF 文档。重置 OpenProgram 时还不会调用 <code translate="no">harness_config.restore_all</code>。</p>
+<table class="stack">
+<thead><tr><th scope="col">方面</th><th scope="col">现状</th></tr></thead>
+<tbody>
+<tr><th scope="row">智能体</th><td>注册表里有 Codex、Claude Code、<a href="#agents">Anthropic 环境变量这一族及 Kiro Crew</a>、<a href="#chat-agents">用 Chat Completions 接入的智能体</a>、<a href="#opencode">OpenCode 格式</a>和 <a href="#pi-format">Pi 格式</a>的智能体、<a href="#gemini-agents">Gemini API 和只用自家模型的智能体</a>，<a href="#agents-beyond-files">编辑器、运行中的应用和导入链接</a>，以及<a href="#provider-tables">带提供商表的智能体</a>；magpie 列表里其余的接下来逐个加，每个一个模块</td></tr>
+<tr><th scope="row">没从 magpie 搬的</th><td>WSL 主机、Codex 的 WSL 自动接入、隔离副本自己的 Claude Code 文件夹和带角标的图标，以及已接入的 Desktop 在自己的文件夹和副本之间直接迁移（运行位置只在关闭时改）；Pi 的扩展（<code translate="no">extensions/magpie.ts</code>）和 Alma 的图像模型，因为网关不提供决策模型和图像模型</td></tr>
+<tr><th scope="row">尚未支持</th><td>WSL 里的配置和 shell 函数（agy 的、Dim 的）；提供 CLI 更新或安装列表；不发密钥的 Ollama 客户端（暂时无法认证）；Codex 的 <code translate="no">supports_websockets</code>（magpie 也不设）；经 Anthropic 协议传 Gemini 工具调用的 thought signature；PDF 文档；重置 OpenProgram 时调用 <code translate="no">engine.disconnect_all</code></td></tr>
+<tr><th scope="row">网页搜索</th><td>Anthropic 的 <code translate="no">web_search</code> 服务端工具会请能搜索的提供商去搜；不能搜索的由网关用 OpenProgram 自己的网页搜索代搜，只在 <code translate="no">/v1/messages</code> 上（magpie <code translate="no">search.go</code>）</td></tr>
+</tbody>
+</table>

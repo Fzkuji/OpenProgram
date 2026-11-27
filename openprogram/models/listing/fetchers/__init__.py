@@ -31,7 +31,7 @@ from typing import Any
 # Generic OpenAI-compatible /v1/models fetcher — the fallback for every
 # provider that DOESN'T ship its own list_models.py. It belongs to no single
 # provider, so it stays here rather than in a provider directory.
-from ..probe_log import KIND_MODEL_LIST, probe
+from openprogram.models.usage.probe_log import KIND_MODEL_LIST, probe
 from .openai_compat import _fetch_openai_compat
 import logging
 
@@ -128,19 +128,12 @@ def fetch_and_normalize(provider_id: str, timeout: float = 15.0) -> dict[str, An
 
     raw = fetcher(provider_id, timeout)
     upstream_error: str | None = None
-    stale = False
     if isinstance(raw, dict) and "error" in raw:
         upstream_error = str(raw["error"])
         supplied = raw.get("models")
         if isinstance(supplied, list) and supplied:
             raw = supplied
-            stale = True
         else:
-            from openprogram.models.providers.catalog.subscription_catalog import load_catalog
-
-            cached, _ = load_catalog(provider_id)
-            if cached:
-                return {"models": cached, "stale": True, "error": upstream_error}
             return {"error": upstream_error}
     items = raw if isinstance(raw, list) else []
     if not items:
@@ -258,10 +251,6 @@ def fetch_and_normalize(provider_id: str, timeout: float = 15.0) -> dict[str, An
                     entry["thinking_variant"] = variant
         models.append(entry)
 
-    if models and not stale:
-        from openprogram.models.providers.catalog.subscription_catalog import save_catalog
-
-        save_catalog(provider_id, models)
     result: dict[str, Any] = {"models": models}
     if upstream_error:
         result.update(error=upstream_error, stale=True)
@@ -313,39 +302,6 @@ def fetch_models_remote(provider_id: str, timeout: float = 15.0) -> dict[str, An
             nonlocal changed, catalogue_changed
             pcfg = cfg.setdefault(provider_id, {})
             before_models = list(pcfg.get("models") or [])
-            from openprogram.models.providers.catalog.subscription_catalog import SUBSCRIPTION_PROVIDERS
-
-            auto_catalog = provider_id in SUBSCRIPTION_PROVIDERS and bool(by_id) and not error
-            disabled = set(pcfg.get("disabled_models") or [])
-            existing_rows = {
-                row.get("id"): row
-                for row in (pcfg.get("models") or [])
-                if isinstance(row, dict) and row.get("id")
-            }
-            if auto_catalog:
-                # The subscription endpoint is authoritative. New ids become
-                # usable automatically; explicit user disables remain tombstoned.
-                for mid, fresh in by_id.items():
-                    if mid in disabled:
-                        continue
-                    spec = {
-                        key: value for key, value in fresh.items()
-                        if key != "enabled"
-                    }
-                    spec["source"] = "subscription-catalog"
-                    _upsert_spec_row(pcfg, spec)
-                    (refreshed if mid in existing_rows else added).append(mid)
-                    changed = True
-                # Retire models removed from a successful official catalogue,
-                # while preserving manual/custom rows.
-                pcfg["models"] = [
-                    row for row in (pcfg.get("models") or [])
-                    if row.get("id") in by_id
-                    or row.get("source") == "manual"
-                    or pcfg.get("source") == "custom"
-                ]
-                catalogue_changed = before_models != pcfg.get("models", [])
-                return
             enabled_ids = [
                 row.get("id")
                 for row in (pcfg.get("models") or [])

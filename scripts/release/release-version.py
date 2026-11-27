@@ -1,12 +1,19 @@
 #!/usr/bin/env python3
 """Every place a release's version is written, changed or checked together.
 
-    release-version.py set X.Y.Z
-        Write X.Y.Z into every place below, or change nothing when any of
+    release-version.py set VERSION
+        Write VERSION into the places below, or change nothing when any of
         them cannot be found.
-    release-version.py check vX.Y.Z [--commit REV]
-        Exit 0 when every place says X.Y.Z, in the working tree or in the
-        commit REV; otherwise name each place that differs.
+    release-version.py check vVERSION [--commit REV]
+        Exit 0 when every place agrees with VERSION, in the working tree or in
+        the commit REV; otherwise name each place that differs.
+
+A version is X.Y.Z or X.Y.Z.W. X.Y.0 is a feature release: Actions builds the
+installers, so every place says it. Any other version is a code-only release,
+published as an in-app update with no build: only the code's own places
+(pyproject.toml, uv.lock) move, and the installer places (the Electron
+package, its lock entry, the install scripts' default) keep the 3-part
+version of the last installer build in the same X.Y series.
 
 The Release workflow builds the tagged tree and stops at the first place that
 disagrees: ``verify-release-version.py`` reads the project files and the
@@ -28,7 +35,8 @@ import tomllib
 from typing import Callable
 
 ROOT = Path(__file__).resolve().parents[2]
-VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
+VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+(?:\.[0-9]+)?")
+TAG = re.compile(r"v[0-9]+\.[0-9]+\.[0-9]+(?:\.[0-9]+)?")
 
 
 @dataclass(frozen=True)
@@ -38,6 +46,7 @@ class Place:
     path: str
     pattern: re.Pattern[str]  # group 1 is the version
     parsed: Callable[[str], str | None] | None = None  # a real parser, to confirm the edit
+    installer: bool = False  # moves only with a feature release X.Y.0
 
     def read(self, text: str) -> str | None:
         found = self.pattern.findall(text)
@@ -68,16 +77,37 @@ def _uv_project(text: str) -> str | None:
     return None
 
 
-V = r"([0-9]+\.[0-9]+\.[0-9]+)"
+V = r"([0-9]+\.[0-9]+\.[0-9]+(?:\.[0-9]+)?)"
 PLACES = (
     Place("pyproject.toml", re.compile(rf'(?m)^\[project\]\n(?:[^\[\n].*\n|\n)*?version = "{V}"$'), _toml_project),
-    Place("apps/desktop/package.json", re.compile(rf'(?m)\A\{{\n  "name": "openprogram-desktop",\n  "version": "{V}",$'), _json_version),
-    Place("package-lock.json", re.compile(rf'(?m)^    "apps/desktop": \{{\n      "name": "openprogram-desktop",\n      "version": "{V}",$'), _npm_workspace),
+    Place("apps/desktop/package.json", re.compile(rf'(?m)\A\{{\n  "name": "openprogram-desktop",\n  "version": "{V}",$'),
+          _json_version, installer=True),
+    Place("package-lock.json", re.compile(rf'(?m)^    "apps/desktop": \{{\n      "name": "openprogram-desktop",\n      "version": "{V}",$'),
+          _npm_workspace, installer=True),
     Place("uv.lock", re.compile(rf'(?m)^\[\[package\]\]\nname = "openprogram"\nversion = "{V}"\nsource = \{{ editable = "\." \}}$'), _uv_project),
-    Place("scripts/release/install-release.sh", re.compile(rf'(?m)^OPENPROGRAM_VERSION="\$\{{OPENPROGRAM_VERSION:-{V}\}}"$')),
+    Place("scripts/release/install-release.sh", re.compile(rf'(?m)^OPENPROGRAM_VERSION="\$\{{OPENPROGRAM_VERSION:-{V}\}}"$'),
+          installer=True),
     Place("scripts/release/install-release.ps1", re.compile(
-        rf'(?m)^\$Version = if \(\$env:OPENPROGRAM_VERSION\) \{{ \$env:OPENPROGRAM_VERSION \}} else \{{ "{V}" \}}$')),
+        rf'(?m)^\$Version = if \(\$env:OPENPROGRAM_VERSION\) \{{ \$env:OPENPROGRAM_VERSION \}} else \{{ "{V}" \}}$'),
+        installer=True),
 )
+
+
+def _parts(version: str) -> tuple[int, ...]:
+    return tuple(int(part) for part in version.split("."))
+
+
+def is_feature_release(version: str) -> bool:
+    """X.Y.0: the release Actions builds installers for."""
+    parts = _parts(version)
+    return len(parts) == 3 and parts[2] == 0
+
+
+def installer_version_fits(installer: str | None, version: str) -> bool:
+    """An installer place under a code-only ``version``: a 3-part X.Y.Z of the same X.Y, not newer."""
+    if installer is None or not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", installer):
+        return False
+    return _parts(installer)[:2] == _parts(version)[:2] and _parts(installer) <= _parts(version)
 
 
 def _from_tree(root: Path) -> Callable[[str], str | None]:
@@ -104,15 +134,30 @@ def versions(read: Callable[[str], str | None]) -> dict[str, str | None]:
 
 
 def mismatches(version: str, read: Callable[[str], str | None]) -> list[str]:
-    return [f"{path} says {said or 'nothing'}" for path, said in versions(read).items() if said != version]
+    installer = {place.path for place in PLACES if place.installer}
+    wrong = []
+    for path, said in versions(read).items():
+        if path in installer and not is_feature_release(version):
+            fits = installer_version_fits(said, version)
+        else:
+            fits = said == version
+        if not fits:
+            wrong.append(f"{path} says {said or 'nothing'}")
+    return wrong
 
 
 def set_version(version: str, root: Path = ROOT) -> list[str]:
-    """Write ``version`` everywhere, or raise and write nothing."""
+    """Write ``version`` into its places, or raise and write nothing.
+
+    A code-only version leaves the installer places as they are.
+    """
     if not VERSION.fullmatch(version):
-        raise SystemExit(f"a release version looks like 1.2.3, not {version}")
+        raise SystemExit(f"a release version looks like 1.2.3 or 1.2.3.4, not {version}")
+    feature = is_feature_release(version)
     updated: dict[Path, str] = {}
     for place in PLACES:
+        if place.installer and not feature:
+            continue
         file = root / place.path
         text = file.read_text(encoding="utf-8") if file.is_file() else None
         if text is None or place.read(text) is None:
@@ -124,7 +169,7 @@ def set_version(version: str, root: Path = ROOT) -> list[str]:
     for file, text in updated.items():
         with file.open("w", encoding="utf-8", newline="") as handle:
             handle.write(text)
-    return [place.path for place in PLACES]
+    return [place.path for place in PLACES if feature or not place.installer]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -140,8 +185,8 @@ def main(argv: list[str] | None = None) -> int:
         for path in set_version(options.version):
             print(f"{path}: {options.version}")
         return 0
-    if not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", options.tag):
-        print(f"a release tag looks like v1.2.3, not {options.tag}", file=sys.stderr)
+    if not TAG.fullmatch(options.tag):
+        print(f"a release tag looks like v1.2.3 or v1.2.3.4, not {options.tag}", file=sys.stderr)
         return 2
     version = options.tag[1:]
     read = _from_commit(ROOT, options.commit) if options.commit else _from_tree(ROOT)

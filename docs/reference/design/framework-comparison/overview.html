@@ -27,7 +27,7 @@
 <li>Unconfirmed: stable versioned remote-control SDK, complete public headless event protocol, maintained IDE extension. Owner-authenticated WebSocket and Python library entry points are internal or embedded and promise no external compatibility.</li>
 <li>OpenProgram and OpenClaw both keep agent guidance in agent workspaces. OpenClaw ships <code translate="no">migrate-claude</code> and <code translate="no">migrate-hermes</code>; Codex desktop and CLI import Claude Code and Cursor setup and recent work. OpenProgram has no importer for external sessions, configuration or skills.</li>
 </ul>
-<p><code translate="no">extensions/mcp/server/server.py</code> · <code translate="no">interfaces/acp/server.py</code> · <code translate="no">interfaces/cli/commands/capabilities/mcp.py</code> · <code translate="no">runtime/agent_registry/workspace.py</code></p>
+<p><code translate="no">interfaces/mcp_server/server.py</code> · <code translate="no">interfaces/acp/server.py</code> · <code translate="no">interfaces/cli/commands/capabilities/mcp.py</code> · <code translate="no">runtime/agent_registry/workspace.py</code></p>
 </details>
 <details><summary>Unexpected: evidence</summary>
 <ul>
@@ -146,7 +146,7 @@
 <thead><tr><th scope="col">Item</th><th scope="col">State</th><th scope="col">Where</th></tr></thead>
 <tbody>
 <tr><th scope="row">Scripted provider</th><td>Partial: test-only</td><td><code translate="no">tests/component/providers/scripted_provider.py</code></td></tr>
-<tr><th scope="row">MCP server</th><td>Done: authenticated stdio, allowed tools only, existing registration, permission modes and allow patterns. No remote SDK, OpenAI-compatible endpoint or inbound webhooks</td><td><code translate="no">extensions/mcp/server/server.py</code>, <code translate="no">interfaces/cli/commands/capabilities/mcp.py</code></td></tr>
+<tr><th scope="row">MCP server</th><td>Done: authenticated stdio, allowed tools only, existing registration, permission modes and allow patterns. No remote SDK, OpenAI-compatible endpoint or inbound webhooks</td><td><code translate="no">interfaces/mcp_server/server.py</code>, <code translate="no">interfaces/cli/commands/capabilities/mcp.py</code></td></tr>
 <tr><th scope="row">Trajectory export</th><td>Partial: Markdown or HTML, redacted</td><td><code translate="no">state/store/session/reading/export.py</code></td></tr>
 <tr><th scope="row">Recoverable deletion</th><td>Partial: <code translate="no">trash list</code>, <code translate="no">trash restore</code>, manifest</td><td><code translate="no">host/sandbox/recoverable_delete.py</code>, <code translate="no">interfaces/cli/commands/maintenance/trash.py</code></td></tr>
 <tr><th scope="row">Feature registry and default stages</th><td>Not implemented</td><td>None</td></tr>

@@ -1,7 +1,7 @@
 """OAuth 2.0 Device Authorization Grant (RFC 8628).
 
 Used by providers where the agent runs without a browser — Nous Portal,
-GitHub Copilot, OpenAI Codex's device mode, Qwen. Flow:
+Qwen. Flow:
 
   1. POST device endpoint → get ``device_code`` + ``user_code`` + verification URI
   2. Show the user_code + URI; they open it on a phone/other device and type the code

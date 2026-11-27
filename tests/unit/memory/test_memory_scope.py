@@ -264,7 +264,6 @@ def test_history_written_before_authority_is_still_accepted(tmp_path):
 
 def test_cli_turns_carry_owner_authority(authorities):
     """CLI messages reach the writer attributed to the owner."""
-    from openprogram.runtime.permissions import authority
     from openprogram.state import authority as state_authority
     from openprogram.state.memory import writing
 
@@ -274,7 +273,7 @@ def test_cli_turns_carry_owner_authority(authorities):
     })
     reply_msg = state_authority.stamp_schema({
         "role": "assistant", "id": "m1_reply", "content": "hi",
-        **authority.runtime_authority(owner, "cli"),
+        **state_authority.runtime_authority(owner, "cli"),
     })
 
     rows = writing._records("s1", [user_msg, reply_msg])

@@ -15,7 +15,7 @@ import pytest
 
 from openprogram.host import machines
 from openprogram.host.machines import status
-from openprogram.programs._host.execution import ToolReturn
+from openprogram.runtime.agent.tool_execution import ToolReturn
 from openprogram.programs.tools.computer_use.computer_use.routing import registry
 from openprogram.programs.tools.computer_use.computer_use import tool
 from openprogram.programs.tools.computer_use.computer_use.providers import paired

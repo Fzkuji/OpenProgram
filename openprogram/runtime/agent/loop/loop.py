@@ -60,8 +60,8 @@ async def _run_loop(current_context, new_messages, config, cancel_event, ev_stre
     from openprogram.models.providers.structured_output import StructuredOutputError
     from openprogram.models.providers.utils.failures.errors import ExecInterrupt
 
-    from openprogram.programs._authoring import guides
-    guides_token = guides.begin_loop()
+    from openprogram.runtime.agent.loop import hooks
+    entered = hooks.begin_run()
     state = current_recovery.get()
     try:
         await _run_loop_with_recovery(current_context, new_messages, config, cancel_event, ev_stream, stream_fn)
@@ -72,7 +72,7 @@ async def _run_loop(current_context, new_messages, config, cancel_event, ev_stre
         state.mark_paused()
         raise
     finally:
-        guides.end_loop(guides_token)
+        hooks.end_run(entered)
         if token is not None:
             current_recovery.reset(token)
 

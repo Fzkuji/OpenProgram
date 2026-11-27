@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * A message's actions on the phone: a long press on it opens them as a
- * sheet, where the desktop shows a row of icons under each message on
+ * A message's actions on the phone: a long press on it opens them as
+ * Framework7's action sheet (iOS's own menu in the phone app), where the desktop shows a row of icons under each message on
  * hover (bubbles/message-actions.tsx). The rows are that bar's own
  * buttons, named by their labels, so each action runs the same code and
  * one the bar disables is disabled here. Happy and Paseo keep their
@@ -13,10 +13,11 @@
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 
 import { armNativePress, nativeMenus } from "@/lib/mobile/native-menu";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { MENU_ITEM_STATES, MENU_PANEL, itemCls } from "@/components/ui/menu/menu-styles";
+import { Actions, ActionsButton, ActionsGroup } from "framework7-react";
 import { haptic } from "@/lib/mobile/bridge";
-import { cn } from "@/lib/utils";
+import { useTranslation } from "@/lib/i18n";
+
+import { PhonePortal } from "./phone-portal";
 
 const HOLD_MS = 450;
 const SLOP = 8;
@@ -128,29 +129,30 @@ export function PhoneMessageMenu({ root, children }: { root: RefObject<HTMLEleme
     setActions(null);
   };
 
+  const { text } = useTranslation();
   return (
     <>
       {children}
-      <DropdownMenu open={!!actions} onOpenChange={(open) => { if (!open) close(); }}>
-        <DropdownMenuTrigger asChild>
-          <span className="phone-message-menu-anchor" aria-hidden="true" />
-        </DropdownMenuTrigger>
-        <DropdownMenuContent className={MENU_PANEL} onCloseAutoFocus={(event) => event.preventDefault()}>
-          {(actions ?? []).map((action) => (
-            <DropdownMenuItem
-              key={action.label}
-              className={cn(itemCls(false), MENU_ITEM_STATES)}
-              disabled={action.disabled}
-              // After the sheet closes, so an action that opens its own
-              // dialog or editor is not closed with it.
-              onSelect={() => { window.setTimeout(() => action.button.click(), 0); }}
-            >
-              <span className="phone-sheet-icon" aria-hidden="true" dangerouslySetInnerHTML={{ __html: action.icon }} />
-              {action.label}
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <PhonePortal>
+        <Actions opened={!!actions} onActionsClosed={close}>
+          <ActionsGroup>
+            {(actions ?? []).map((action) => (
+              <ActionsButton
+                key={action.label}
+                className={action.disabled ? "disabled" : undefined}
+                // After the sheet closes, so an action that opens its own
+                // dialog or editor is not closed with it.
+                onClick={() => { window.setTimeout(() => action.button.click(), 0); }}
+              >
+                {action.label}
+              </ActionsButton>
+            ))}
+          </ActionsGroup>
+          <ActionsGroup>
+            <ActionsButton strong>{text("Cancel", "取消")}</ActionsButton>
+          </ActionsGroup>
+        </Actions>
+      </PhonePortal>
     </>
   );
 }

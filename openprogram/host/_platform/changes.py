@@ -41,6 +41,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Iterable
 
+from openprogram.host._platform import process_exits
+
 _log = logging.getLogger(__name__)
 
 #: A file change reaches its waiters within about this long.
@@ -270,7 +272,6 @@ def start_watching() -> bool:
     elsewhere (the CLI, tests) registrations are only kept and waiters look
     on their ``poll``."""
     global _started, _unavailable
-    from . import process_exits
     process_exits.start()
     try:
         import watchfiles  # noqa: F401
@@ -317,7 +318,6 @@ def unwatch(path: str | os.PathLike, topic: str) -> None:
 def stop_watching() -> None:
     """End the file and process watcher threads (the Worker is stopping)."""
     global _started
-    from . import process_exits
     process_exits.stop()
     _started = False
     _stopping.set()
@@ -433,6 +433,10 @@ def _dispatch(paths: Iterable[Path]) -> None:
             signal(topic, *sorted(keys))
     if moved:
         _restart_watchers()
+
+
+# A process that ends is announced like any other change.
+process_exits.announce_exits(lambda topic, key: signal(topic, key))
 
 
 __all__ = [

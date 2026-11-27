@@ -325,7 +325,7 @@ export function ConvItem({
           </span>)
         )}
         {agent && !activity ? (
-          // The agent the chat runs in, in its own colours at the row's end
+          // The agent the chat runs in, by its own logo at the row's end
           // (T3 Code's provider mark); it steps aside for the ⋯ button on hover.
           <span aria-hidden="true" className="flex shrink-0
             transition-opacity duration-150 group-hover:opacity-0"
@@ -406,7 +406,7 @@ export function ConvItem({
 
 /** Where a synced conversation also lives, by its source. */
 const ALSO_IN: Record<string, string> = {
-  codex: "Codex App", "claude-code": "Claude Code", "deepseek-harness": "DeepSeek Harness",
+  codex: "ChatGPT", "claude-code": "Claude Code", "deepseek-harness": "DeepSeek Harness",
 };
 
 /** What a chat running in an outside agent shows on hover: its model and

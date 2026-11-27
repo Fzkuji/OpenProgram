@@ -23,7 +23,7 @@ def _worker_lock_is_held(monkeypatch):
 
     runner_mod.shutdown_runner()
     monkeypatch.setattr(
-        "openprogram.operations.worker.lock.is_held_by", lambda _pid: True,
+        "openprogram.host.worker.lock.is_held_by", lambda _pid: True,
     )
     yield
     runner_mod.shutdown_runner()

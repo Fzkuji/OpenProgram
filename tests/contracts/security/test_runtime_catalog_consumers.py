@@ -462,7 +462,7 @@ def test_model_listing_openai_compat_freezes_configured_origin(
     from openprogram.models.listing.fetchers import openai_compat
 
     monkeypatch.setattr(
-        "openprogram.models.providers.settings.env_api_keys.resolve_api_key_with_auth_store",
+        "openprogram.models.auth.env_api_keys.resolve_api_key_with_auth_store",
         lambda _provider: "secret",
     )
     monkeypatch.setattr(
@@ -530,32 +530,6 @@ def test_models_dev_public_loader_uses_fixed_registry_client(
     )
 
 
-def test_codex_connectivity_probe_uses_configured_registry_client(
-    monkeypatch, managed_clients
-):
-    import importlib
-
-    test_provider = importlib.import_module(
-        "openprogram.models.listing.test_provider"
-    )
-
-    monkeypatch.setattr(
-        "openprogram.models.providers.settings.env_api_keys.resolve_api_key_with_auth_store",
-        lambda _provider: "secret",
-    )
-    monkeypatch.setattr(
-        "openprogram.models.providers.settings.storage._resolve_base_url",
-        lambda _provider: "http://127.0.0.1:19014/backend-api",
-    )
-    test_provider._codex_ping("openai-codex", "gpt-test", 1)
-
-    assert managed_clients[0] == (
-        "client",
-        "webui.model_listing.configured",
-        "http://127.0.0.1:19014",
-    )
-
-
 def test_configured_credential_probe_hides_4xx_peer_body(monkeypatch, server):
     from openprogram.models.listing import credentials
 
@@ -580,7 +554,7 @@ def test_configured_model_fetcher_hides_4xx_peer_body(monkeypatch, server):
 
     base = f"http://127.0.0.1:{server.port}/echo-error"
     monkeypatch.setattr(
-        "openprogram.models.providers.settings.env_api_keys.resolve_api_key_with_auth_store",
+        "openprogram.models.auth.env_api_keys.resolve_api_key_with_auth_store",
         lambda _provider: "HEADER-SECRET",
     )
     monkeypatch.setattr(
@@ -604,7 +578,7 @@ def test_configured_model_fetcher_rejects_non_2xx_without_leaking(
     origin = f"http://127.0.0.1:{server.port}"
     base = f"{origin}/redirect-without-location/{status}/TOKEN-PATH?sig=QUERY-SECRET"
     monkeypatch.setattr(
-        "openprogram.models.providers.settings.env_api_keys.resolve_api_key_with_auth_store",
+        "openprogram.models.auth.env_api_keys.resolve_api_key_with_auth_store",
         lambda _provider: "HEADER-SECRET",
     )
     monkeypatch.setattr(

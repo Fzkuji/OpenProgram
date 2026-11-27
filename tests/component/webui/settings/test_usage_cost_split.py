@@ -24,7 +24,7 @@ def client(tmp_path, monkeypatch):
                           cost_total=cost, cost_source=source)
 
     ledger.append_many([event("deepseek", 0.5), event("deepseek", 0.0, "unknown"),
-                        event("openai-codex", 3.0), event("zai-coding-plan", 1.0)])
+                        event("kimi-coding", 3.0), event("zai-coding-plan", 1.0)])
     app = FastAPI()
     from openprogram.interfaces.server.routes.settings import usage
     usage.register(app)
@@ -41,7 +41,7 @@ def test_summary_splits_billed_included_and_unpriced(client):
     # Cached tokens count in the total even where the stored total left them out.
     assert totals["total_tokens"] == 4 * 115
     included = {row["provider"]: row["included"] for row in body["by_model"]}
-    assert included == {"deepseek": False, "openai-codex": True, "zai-coding-plan": True}
+    assert included == {"deepseek": False, "kimi-coding": True, "zai-coding-plan": True}
 
 
 def test_trend_carries_the_billed_cost(client):

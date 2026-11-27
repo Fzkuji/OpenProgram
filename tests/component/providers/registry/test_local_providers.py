@@ -54,8 +54,8 @@ def local_server(monkeypatch):
     thread.start()
     base = f'http://127.0.0.1:{server.server_port}'
     monkeypatch.setattr(storage, '_read_providers_cfg', lambda: {'ollama': {'base_url':base}})
-    monkeypatch.setattr('openprogram.models.providers.settings.env_api_keys.resolve_api_key_with_auth_store', lambda *a: None)
-    monkeypatch.setattr('openprogram.models.providers.settings.env_api_keys.resolve_provider_key', lambda *a: None)
+    monkeypatch.setattr('openprogram.models.auth.env_api_keys.resolve_api_key_with_auth_store', lambda *a: None)
+    monkeypatch.setattr('openprogram.models.auth.env_api_keys.resolve_provider_key', lambda *a: None)
     requests.payload = payload
     yield base, requests
     server.shutdown()

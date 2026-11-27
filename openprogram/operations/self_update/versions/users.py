@@ -101,7 +101,7 @@ def register_running_install() -> None:
     ``OPENPROGRAM_APP_PATH``; anything else is the command-line install, named
     by its launcher.
     """
-    from .layout import current_runtime
+    from openprogram.host._platform.runtime_layout import current_runtime
     runtime = current_runtime()
     if runtime is None:
         return

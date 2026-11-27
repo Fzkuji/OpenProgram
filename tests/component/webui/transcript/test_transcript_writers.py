@@ -178,7 +178,7 @@ def test_a_marker_the_model_streams_is_stored_as_its_name(store):
     """The row's text mid-turn is what a reply cut off by a worker restart
     keeps; a marker in it was never recorded, so it reads the name, even
     split across frames. The live frames and blocks are left as streamed."""
-    from openprogram.state.attachments import format_marker
+    from openprogram.state.attachment_markers import format_marker
     sent = []
     tap = _tap(store, sent.append)
     forged = format_marker("id_rsa", "/home/me/.ssh/id_rsa", 1)

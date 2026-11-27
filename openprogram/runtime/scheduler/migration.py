@@ -9,13 +9,13 @@ from pathlib import Path
 import shutil
 from typing import Any
 
-from openprogram.programs.tools.jobs.cron import cron as cron_tool
+from openprogram.runtime.scheduler import store
 
 from . import service
 
 
 def legacy_archive_path() -> Path:
-    return Path(cron_tool._resolve_path()).parent / "migrations" / "commitments.jsonl"
+    return Path(store._resolve_path()).parent / "migrations" / "commitments.jsonl"
 
 
 def migrate_legacy_commitments(
@@ -25,7 +25,7 @@ def migrate_legacy_commitments(
     authority: dict[str, Any] | None = None,
 ) -> int:
     lock_target = f"{legacy_archive_path()}.migration"
-    with cron_tool._store_lock(lock_target):
+    with store._store_lock(lock_target):
         return _migrate_legacy_commitments(
             memory_root=memory_root, cwd=cwd, authority=authority,
         )

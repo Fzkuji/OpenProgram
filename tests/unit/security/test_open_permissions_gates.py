@@ -136,7 +136,7 @@ def test_a_saved_rule_does_not_put_unrestricted_back_inside_the_grant(owner, mon
 
     calls = []
     tool = _tool("computer_use", calls)
-    monkeypatch.setattr("openprogram.programs.get_agent_tool", lambda _name: tool)
+    monkeypatch.setattr(code, "_computer_use_tool", lambda: tool)
     args = {"type": "window", "args": {"app": "Safari"}}
     rules = PermissionRules(allow=["computer_use"])
     def request(mode):

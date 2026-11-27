@@ -1,14 +1,14 @@
 <title>Installation, packaging, release and upgrade</title>
 <meta name="description" content="Who installs OpenProgram how, what every release contains, and how installs are verified, upgraded and removed.">
 <h1>Installation, packaging, release and upgrade</h1>
-<p><strong>Official releases</strong>: v1.5.1 is the version this tree builds; v1.4.0 is the latest tagged. One complete product runtime per platform and architecture. The macOS App adds only the Electron shell to it and the CLI only launchers; Windows and Linux Apps are a <a href="#thin-shell">thin shell</a> plus a seed. Checks, downloads and platform handoff are in <a href="automatic-updates.html">Automatic updates</a>.</p>
+<p><strong>Official releases</strong>: v1.5.1 is the version this tree builds; v1.4.0 is the latest tagged. One complete product runtime per platform and architecture. Apps are a <a href="#thin-shell">thin shell</a> plus a seed; an unsigned macOS App keeps the full layout. The CLI adds only launchers. Checks, downloads and platform handoff are in <a href="automatic-updates.html">Automatic updates</a>.</p>
 
 <h2>Who gets what</h2>
 <table class="stack">
 <thead><tr><th scope="col"></th><th scope="col">Desktop</th><th scope="col">CLI / server</th><th scope="col">Development</th></tr></thead>
 <tbody>
 <tr><th scope="row">Source</th><td>GitHub Release</td><td>Same Release</td><td>Git checkout</td></tr>
-<tr><th scope="row">Product runtime</th><td>macOS: platform archive + Electron. Windows, Linux: thin shell + seed</td><td>Platform archive</td><td>Same capabilities + development overlay</td></tr>
+<tr><th scope="row">Product runtime</th><td>Thin shell + seed. macOS without signing or update key: platform archive + Electron</td><td>Platform archive</td><td>Same capabilities + development overlay</td></tr>
 <tr><th scope="row">System Python, Node.js</th><td>Not needed</td><td>Not needed</td><td>Toolchain needed</td></tr>
 <tr><th scope="row">Git</th><td>Bundled, pinned, first on <code translate="no">PATH</code></td><td>Same</td><td>System Git needed</td></tr>
 <tr><th scope="row">Upgrade target</th><td>Published runtime</td><td>Same</td><td>Explicit Git ref</td></tr>
@@ -50,24 +50,24 @@
 <thead class="sr"><tr><th scope="col">Artifact</th><th scope="col">Platforms</th></tr></thead>
 <tbody>
 <tr><th scope="row">Runtime archive + checksum</th><td>macOS arm64, x64; Linux x86_64, arm64; Windows x86_64 (ZIP), arm64 behind a switch</td></tr>
-<tr><th scope="row">Desktop</th><td>macOS DMG and ZIP; Windows NSIS EXE; Linux deb and AppImage; one copy each, under its versioned name</td></tr>
-<tr><th scope="row">Update assets</th><td><code translate="no">version-</code>, <code translate="no">base-</code> and <code translate="no">toolchain-&lt;platform&gt;.tar.zst</code>, <code translate="no">repo.bundle</code>, <code translate="no">SHA256SUMS</code>, signed <code translate="no">update-manifest.json</code></td></tr>
+<tr><th scope="row">Desktop</th><td>macOS DMG and ZIP; Windows NSIS EXE; Linux deb and AppImage; one copy each, under its versioned name. The notarized App from the ZIP, the Windows install folder and the AppImage are also published as shell layers on the <code translate="no">updates</code> release (<a href="automatic-updates.html#format">automatic updates</a>)</td></tr>
+<tr><th scope="row">Updates</th><td>None on the release. In-app updates live on the rolling <code translate="no">updates</code> release (<a href="automatic-updates.html">automatic updates</a>)</td></tr>
 <tr><th scope="row">Developer</th><td>Wheel and sdist, not user entries</td></tr>
 <tr><th scope="row"><code translate="no">release-manifest.json</code></th><td>Schema 1: version, and path, bytes, SHA-256 per file</td></tr>
 </tbody>
 </table>
 <p class="note">arm64 and x64 build separately, no universal2. A platform leg that fails leaves its files out and is named under "Not in this release"; publication stops only when the wheel or every macOS and Linux runtime is missing. Thin Apps need a trusted update signing key, because without one they could never update.</p>
-<p class="note">A leg whose artifact holds no installer or archive counts as failed and publishes nothing. When a planned package or a platform's update files are missing, the publish job turns red after the release is public and names each one. What a switch or a missing key leaves out does not.</p>
+<p class="note">A leg whose artifact holds no installer or archive counts as failed and publishes nothing. When a planned package is missing, the publish job turns red after the release is public and names each one. What a switch or a missing key leaves out does not.</p>
 <details id="one-copy-per-file">
 <summary>Each file once, under its versioned name</summary>
 <p>A release uploads every file once. Up to v1.2.0 it also carried a version-free copy of each App installer (<code translate="no">OpenProgram-mac-arm64.dmg</code> and six more) and one <code translate="no">SHA256SUMS-&lt;os&gt;-&lt;arch&gt;</code> per App leg; from v1.3.0 it carries neither, 12 files fewer.</p>
 <table class="stack fixed">
 <thead><tr><th scope="col">Question</th><th scope="col">Answer</th></tr></thead>
 <tbody>
-<tr><th scope="row">Why versioned names, not version-free</th><td>An installed v1.2.0 App looks for <code translate="no">OpenProgram-&lt;version&gt;-mac-&lt;arch&gt;.dmg</code> (or <code translate="no">-unsigned</code>) by name in the newest release, and a signed App that replaces itself looks for <code translate="no">OpenProgram-&lt;version&gt;-mac-&lt;arch&gt;.zip</code> first, so those names must exist. Codex, OpenCode and Goose publish only version-free names, which leaves one name per file too; a second name for the same bytes is what we drop</td></tr>
+<tr><th scope="row">Why versioned names, not version-free</th><td>An installed v1.2.0 App looks for <code translate="no">OpenProgram-&lt;version&gt;-mac-&lt;arch&gt;.dmg</code> (or <code translate="no">-unsigned</code>) by name in the newest release, so those names must exist. Codex, OpenCode and Goose publish only version-free names, which leaves one name per file too; a second name for the same bytes is what we drop</td></tr>
 <tr><th scope="row">Newest-download links</th><td><code translate="no">latest.html?OpenProgram-mac-arm64.dmg</code>, published beside the documentation from <code translate="no">docs/_static_root/latest.html</code> and linked relatively, reads the newest release's file list from the GitHub API and opens that file; without an answer it opens the newest release page. Every App link on the Install and Download pages goes through it, so no install page names a release and none goes stale when one ships. Claude Code resolves "latest" the same way, from a pointer and a manifest rather than a duplicate file</td></tr>
 <tr><th scope="row">Checksums</th><td>GitHub shows each file's SHA-256 on the release page, and <code translate="no">release-manifest.json</code> lists every file's path, size and SHA-256. The App updater checks against that manifest, and the release notes' App table links to it in its checksum column</td></tr>
-<tr><th scope="row">Still published</th><td>The runtime archives' <code translate="no">.sha256</code>: <code translate="no">openprogram upgrade</code> in v1.2.0 requires that file by name before it updates. The update <code translate="no">SHA256SUMS</code>, which the signed update manifest hashes. Seed <code translate="no">.sha256</code>, read by the command-line installer</td></tr>
+<tr><th scope="row">Still published</th><td>The runtime archives' <code translate="no">.sha256</code>: <code translate="no">openprogram upgrade</code> in v1.2.0 requires that file by name before it updates. Seed <code translate="no">.sha256</code>, read by the command-line installer</td></tr>
 </tbody>
 </table>
 </details>
@@ -75,7 +75,8 @@
 <thead><tr><th scope="col">Repository variable</th><th scope="col">Leg</th></tr></thead>
 <tbody>
 <tr><th scope="row"><code translate="no">OPENPROGRAM_RELEASE_WINDOWS_RUNTIME</code>, <code translate="no">OPENPROGRAM_RELEASE_DESKTOP_MAC</code>, <code translate="no">_WINDOWS</code>, <code translate="no">_LINUX</code></th><td>On unless <code translate="no">false</code></td></tr>
-<tr><th scope="row"><code translate="no">OPENPROGRAM_RELEASE_WINDOWS_ARM64</code>, <code translate="no">_MAC_THIN</code>, <code translate="no">_CLI_SEEDS</code></th><td>Off unless <code translate="no">true</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_RELEASE_WINDOWS_ARM64</code>, <code translate="no">_CLI_SEEDS</code></th><td>Off unless <code translate="no">true</code></td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_RELEASE_MAC_THIN</code></th><td>On: the macOS App is thin whenever the Apple secrets and a trusted update key exist. <code translate="no">false</code> forces the full App</td></tr>
 </tbody>
 </table>
 <details>
@@ -123,7 +124,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Install</th><th scope="col">How</th></tr></thead>
 <tbody>
-<tr><th scope="row">Desktop</th><td>macOS: Settings downloads and verifies; the user confirms in the installer. Windows, Linux: <code translate="no">openprogram upgrade</code> on the version store; the App file only when the release needs a newer shell</td></tr>
+<tr><th scope="row">Desktop</th><td>Thin App: <code translate="no">openprogram upgrade</code> on the version store, for the release <code translate="no">channel.json</code> announces; a newer shell comes as a shell layer on macOS, Windows and an AppImage, assembled beside the App from its own files and swapped in on <strong>Restart to update</strong>; a deb gets the App file, since only root writes <code translate="no">/opt</code>. Full macOS App: Settings downloads the DMG for the user to open</td></tr>
 <tr><th scope="row">CLI, server</th><td><code translate="no">openprogram upgrade</code>. Any failed default-asset check prevents activation. Restart a running worker yourself</td></tr>
 <tr><th scope="row">Development</th><td>The same command fetches, builds, probes and restarts an explicit ref</td></tr>
 <tr><th scope="row">Programs</th><td>Migrate in separate environments; a failed migration disables only that Program</td></tr>
@@ -135,6 +136,7 @@
 <p class="note">Worker startup never applies product updates.</p>
 
 <h2>Desktop bundle</h2>
+<p>The full macOS layout, built when a release has no Apple signing or update key, or with <code translate="no">OPENPROGRAM_RELEASE_MAC_THIN=false</code>.</p>
 <pre translate="no" tabindex="0">OpenProgram.app/Contents/
 ├── MacOS/OpenProgram         # Electron launcher
 ├── Frameworks/               # Electron Framework and helpers
@@ -159,7 +161,7 @@
 <summary>Prohibited at runtime</summary>
 <ul>
 <li>PATH lookups of <code translate="no">openprogram</code>, <code translate="no">python</code>, <code translate="no">node</code>, <code translate="no">git</code>.</li>
-<li>The App or updater rewriting its own bundle. An AppImage update replaces the file beside it after verification.</li>
+<li>The App or updater rewriting its own bundle in place. A new App is assembled beside it, checked, and swapped in whole on restart.</li>
 <li>First-use downloads of Python, Web, Browser, OCR or detector weights.</li>
 <li>Reading <code translate="no">apps/web/out</code>, Program checkouts or development configuration from the repository.</li>
 <li><code translate="no">npm build</code>, pip resolution or <code translate="no">git clone</code> on user machines.</li>
@@ -244,7 +246,13 @@
 </details>
 
 <h2 id="thin-shell">Thin signed shell</h2>
-<p>A thin App is the shell alone, in <code translate="no">apps/desktop/shell/</code>, plus a seed under <code translate="no">Resources/seed</code>. Windows and Linux Apps are thin. The macOS App stays embedded unless <code translate="no">OPENPROGRAM_RELEASE_MAC_THIN</code> is on.</p>
+<p>A thin App is the shell alone, in <code translate="no">apps/desktop/shell/</code>, plus a seed under <code translate="no">Resources/seed</code>. Windows and Linux Apps are always thin; the macOS App is thin when the release is signed and has a trusted update key.</p>
+<p>An installed full macOS App moves over once by hand:</p>
+<ol>
+<li>Its update downloads the DMG, which now holds the thin App; the user drags it over the old one.</li>
+<li>The thin App finds no <code translate="no">Resources/runtime</code> and seeds <code translate="no">~/.openprogram/runtime</code> on first start.</li>
+<li>The old worker reports another version, so the App restarts it from the store.</li>
+</ol>
 <table class="stack fixed">
 <thead><tr><th scope="col">Mode</th><th scope="col">Selected at start by</th></tr></thead>
 <tbody>
@@ -323,11 +331,10 @@
 <tr><th scope="row">Single-port worker, health and recovery, Web in the runtime, capability manifest, shared runtime archive, fixed-App install, icons, CLI installers, tag-driven Release</th><td>Implemented</td></tr>
 <tr><th scope="row">macOS signed DMG and ZIP</th><td>Implemented; Apple gates are <a href="developer-id.html">external</a></td></tr>
 <tr><th scope="row">Windows Desktop</th><td>Implemented, first published with v1.2.0; never run on real Windows. <a href="windows-support.html#implementation-status">Windows support</a></td></tr>
-<tr><th scope="row">Thin shell and seed</th><td>Implemented, used by the Linux App from v1.1.0 and the Windows App from v1.1.1. The packaged shell passes the macOS smoke; Linux deb and AppImage pass under Xvfb on arm64. Open: x86_64 Linux packages, a real Windows run, and the macOS privacy-grant gate (<a href="developer-id.html">Developer ID</a>) before the macOS App can turn thin. <code translate="no">legacy_app</code> and the App ties in the supervisor still exist</td></tr>
+<tr><th scope="row">Thin shell and seed</th><td>Implemented, used by the Linux App from v1.1.0 and the Windows App from v1.1.1. The packaged shell passes the macOS smoke; Linux deb and AppImage pass under Xvfb on arm64. The signed macOS App is thin by default. Open: x86_64 Linux packages, a real Windows run, and the macOS privacy-grant check (<a href="developer-id.html">Developer ID</a>). <code translate="no">legacy_app</code> and the App ties in the supervisor still exist</td></tr>
 <tr><th scope="row">Linux Desktop</th><td>Implemented, first published with v1.1.0. Update activation and going back on Linux need one more end-to-end run</td></tr>
 <tr><th scope="row">Release workflow</th><td>Independent legs and unsigned forms implemented and tested as scripts; the workflow itself has not yet run on GitHub</td></tr>
 <tr><th scope="row">One copy per file</th><td>Implemented; first release without the version-free copies and per-leg checksum files is v1.3.0. The runtime <code translate="no">.sha256</code> files can go once no supported release's <code translate="no">openprogram upgrade</code> asks for them</td></tr>
-<tr><th scope="row"><code translate="no">openprogram update</code></th><td>Leftover command: its handler imports helpers that no longer exist and raises <code translate="no">ImportError</code>. <code translate="no">upgrade</code> is the update command</td></tr>
 </tbody>
 </table>
 <p class="note">Out of scope: App Store, credential-store integration, replacing Python or Electron, per-Program process isolation, automatic third-party Program installs.</p>

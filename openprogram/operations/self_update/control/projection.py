@@ -135,7 +135,7 @@ def _verifier(store, record):
 
 def _version_rollback_available(store) -> bool:
     """On versions, a rollback needs a retained version to go back to."""
-    from ..versions import layout as paths
+    from openprogram.host._platform import runtime_layout as paths
     from ..versions import pointer
 
     layout = paths.for_state(store.root.parent)

@@ -120,7 +120,7 @@ class _RemoteLoginUi:
 
 
 def _has_credentials(provider: str) -> bool:
-    from openprogram.models.auth.login.login_seed_models import _has_credentials as has
+    from openprogram.models.providers.settings.login_seed_models import _has_credentials as has
     return has(provider)
 
 
@@ -171,7 +171,7 @@ def register(app):
     @app.post("/api/providers/{name}/login/start")
     async def login_start(name: str, body: Any = Body(default=None)):
         _reap()
-        # Resolve aliases (e.g. "codex" -> "openai-codex") so the driver gets a
+        # Resolve aliases (e.g. "claude" -> "anthropic") so the driver gets a
         # canonical id, mirroring the CLI. Best-effort.
         try:
             from openprogram.models.auth.account.aliases import resolve as _resolve
@@ -237,7 +237,7 @@ def register(app):
                 # Providers without an account catalogue may still keep a
                 # small first-login default set.
                 try:
-                    from openprogram.models.auth.login.login_seed_models import enable_default_models_on_login
+                    from openprogram.models.providers.settings.login_seed_models import enable_default_models_on_login
                     enable_default_models_on_login(name)
                 except Exception:
                     # Login already persisted; missing default models only

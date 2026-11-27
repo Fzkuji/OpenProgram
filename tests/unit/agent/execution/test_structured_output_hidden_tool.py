@@ -58,8 +58,8 @@ class _UnusedProvider:
 
 
 @pytest.fixture(autouse=True)
-def _codex_contract(monkeypatch):
-    """Each test sees the openai-codex contract (strict tools only) in its own registry.
+def _responses_contract(monkeypatch):
+    """Each test sees the openai-responses contract (strict tools only) in its own registry.
 
     Without this the tests depended on an earlier test in the same process
     having loaded the built-in providers, which xdist does not guarantee.
@@ -67,6 +67,9 @@ def _codex_contract(monkeypatch):
     """
     from openprogram.models.providers.catalog import register
 
+    # Load the built-ins into the real registry first, so nothing in a test
+    # loads them into the test's own registry over the contract below.
+    register.register_builtins()
     monkeypatch.setattr(api_registry, "_registry", {})
     monkeypatch.setattr(api_registry, "_original_registry", {})
     monkeypatch.setattr(api_registry, "_audited_originals", {})
@@ -74,7 +77,7 @@ def _codex_contract(monkeypatch):
     monkeypatch.setattr(api_registry, "_provider_transform", None)
     monkeypatch.setattr(register, "_registered", register._registered)
     register_api_provider(
-        "openai-codex",
+        "openai-responses",
         _UnusedProvider(),
         StructuredOutputCapabilities(strict_tool=True, schema_profile="openai_strict"),
     )
@@ -84,8 +87,8 @@ def _assistant(content) -> AssistantMessage:
     has_calls = any(isinstance(block, ToolCall) for block in content)
     return AssistantMessage(
         content=content,
-        api="openai-codex",
-        provider="openai-codex",
+        api="openai-responses",
+        provider="openai",
         model="fake",
         stop_reason="toolUse" if has_calls else "stop",
         timestamp=int(time.time() * 1000),
@@ -128,8 +131,8 @@ def _config(**overrides) -> AgentLoopConfig:
         "model": Model(
             id="fake",
             name="Fake",
-            api="openai-codex",
-            provider="openai-codex",
+            api="openai-responses",
+            provider="openai",
             base_url="https://example.invalid",
         ),
         "response_format": normalize_response_format(SCHEMA),

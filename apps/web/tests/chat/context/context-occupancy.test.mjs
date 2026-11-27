@@ -10,8 +10,8 @@ const { contextTip, occupancyOf, occupancySnapshot, statsSnapshot } = await impo
 
 test("the tip of a new chat says the estimate the card shows", () => {
   const snapshot = occupancySnapshot({ total_used: 9_200, window: 500_000, basis: "estimated" }, undefined, undefined);
-  assert.equal(contextTip(occupancyOf(snapshot), "openai-codex · gpt-6.1-terra"),
-    "Context 9.2k / 500.0k (2%) · est. · openai-codex · gpt-6.1-terra");
+  assert.equal(contextTip(occupancyOf(snapshot), "opencode-go · gpt-6.1-terra"),
+    "Context 9.2k / 500.0k (2%) · est. · opencode-go · gpt-6.1-terra");
 });
 
 test("once context_stats arrive they give the total and window; the snapshot keeps its categories", () => {

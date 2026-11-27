@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import pytest
 
-from openprogram.models.usage import provider_status, quota
+from openprogram.models.listing import provider_status
+from openprogram.models.usage import quota
 from openprogram.models.usage.event import UsageEvent
 from openprogram.models.usage.ledger import UsageLedger
 from openprogram.models.usage.quota import QuotaLimit, QuotaReport
@@ -78,7 +79,7 @@ def test_the_best_key_wins():
 def test_a_spent_quota_overrides_ready():
     spent = QuotaLimit(limit_key="primary", label="5h", unit="percent", source="headers", fetched_at=NOW,
                        used_fraction=1.0, window_minutes=300, resets_at=NOW + 600)
-    health = provider_status.health_of([_key()], [QuotaReport("openai-codex", "cred-1", [spent])], NOW)
+    health = provider_status.health_of([_key()], [QuotaReport("kimi-coding", "cred-1", [spent])], NOW)
     assert health == {"state": "rate_limited", "until": NOW + 600, "detail": "5h"}
     empty = QuotaLimit(limit_key="key_limit", label="Key limit", unit="usd", source="endpoint",
                        fetched_at=NOW, limit=5, remaining=0)
@@ -110,8 +111,8 @@ def test_spend_counts_cached_tokens_and_the_cache_share(tmp_path):
 
 def test_a_subscription_reads_as_included(tmp_path):
     ledger = UsageLedger(db_path=tmp_path / "usage.db")
-    rows = _rows(ledger, "openai-codex", (0, 1000, 100, 9000, 1.25, "model_catalog"))
-    spend = provider_status.spend_of("openai-codex", rows, NOW)
+    rows = _rows(ledger, "kimi-coding", (0, 1000, 100, 9000, 1.25, "model_catalog"))
+    spend = provider_status.spend_of("kimi-coding", rows, NOW)
     assert spend["included"] is True and spend["cost_usd"] is None
     assert spend["list_price_usd"] == pytest.approx(1.25)
     ledger.close()
@@ -194,9 +195,9 @@ def test_a_provider_names_its_company_and_its_way_from_the_one_table():
 
 def test_a_companys_ways_are_listed_together_where_its_first_one_was():
     rows = [{"id": pid, **provider_status.family_of(pid, pid)}
-            for pid in ("openai", "deepseek", "opencode-go", "openai-codex", "opencode")]
+            for pid in ("zhipuai", "deepseek", "opencode-go", "zai", "opencode")]
     assert [r["id"] for r in provider_status.by_company(rows)] == [  # type: ignore[arg-type]
-        "openai-codex", "openai", "deepseek", "opencode", "opencode-go"]
+        "zai", "zhipuai", "deepseek", "opencode", "opencode-go"]
 
 
 def test_recorded_totals_include_cached_tokens():
@@ -213,16 +214,16 @@ def test_recorded_totals_include_cached_tokens():
 
 
 def test_a_provider_connected_by_key_takes_keys_and_a_sign_in_one_does_not():
-    from openprogram.models.usage.provider_status import takes_keys
+    from openprogram.models.listing.provider_status import takes_keys
     assert takes_keys("deepseek") is True
-    assert takes_keys("openai-codex") is False
+    assert takes_keys("claude-code") is False
 
 
 def test_a_card_with_no_model_picked_names_the_first_model_on(monkeypatch):
     from types import SimpleNamespace
 
     from openprogram.models.providers.catalog import enabled_models
-    from openprogram.models.usage.provider_status import first_enabled_model
+    from openprogram.models.listing.provider_status import first_enabled_model
     monkeypatch.setattr(enabled_models, "ENABLED_MODELS", {
         "deepseek/deepseek-chat": SimpleNamespace(id="deepseek-chat", provider="deepseek"),
         "openai/gpt-x": SimpleNamespace(id="gpt-x", provider="openai")})
@@ -233,15 +234,15 @@ def test_a_card_with_no_model_picked_names_the_first_model_on(monkeypatch):
 def test_each_key_says_how_the_web_names_it(tmp_path, monkeypatch):
     from openprogram.models.auth import Credential, CredentialData
     from openprogram.models.auth.store import AuthStore, set_store_for_testing
-    from openprogram.models.usage.provider_status import keys_of
+    from openprogram.models.listing.provider_status import keys_of
 
     store = AuthStore(root=tmp_path / "state")
     set_store_for_testing(store)
     try:
-        store.add_credential(Credential(provider_id="openai-codex", kind="oauth", identity={"email": "a@example.com"},
+        store.add_credential(Credential(provider_id="claude-code", kind="oauth", identity={"email": "a@example.com"},
                                         payload=CredentialData(kind="oauth", auth_value="A", data={})))
-        (row,) = keys_of("openai-codex")
+        (row,) = keys_of("claude-code")
         assert (row["label"], row["email"], row["key_tail"], row["env_var"], row["signin_name"]) == \
-            ("", "a@example.com", "", None, "ChatGPT")
+            ("", "a@example.com", "", None, "Claude Code")
     finally:
         set_store_for_testing(None)

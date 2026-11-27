@@ -211,7 +211,7 @@ def test_tool_loop_subcall_attributes_to_llm_node(store):
         def _call(self, content, model="default", response_format=None):
             node_id = getattr(self, "_active_llm_node_id", None)
             if node_id is not None:
-                from openprogram.programs._host.runtime import _current_tool_call_id
+                from openprogram.runtime.agent.call_state import _current_tool_call_id
                 tool_token = _current_tool_call_id.set("dispatch-child")
                 tok = _call_id.set(node_id)
                 try:

@@ -16,7 +16,7 @@ import styles from "./status.module.css";
  *  with the same health, quota, spend and default model as a card. A
  *  company connected in more than one way is a row of its own (logo, name,
  *  its best way's health) with its ways indented under it, each by its
- *  short name ("ChatGPT", "API") with the whole title on hover.
+ *  short name ("Zen", "Go") with the whole title on hover.
  *  The columns are fixed and every cell ends in an ellipsis inside its
  *  column, with the whole text on hover, so the table never grows past the pane. */
 export function ProviderRows({

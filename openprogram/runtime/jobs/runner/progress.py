@@ -499,9 +499,8 @@ class ProgressOperations:
         def _go():
             try:
                 from openprogram.runtime.agent.turn_request import TurnRequest
-                from openprogram.runtime.conversation.production_driver import CanonicalAgentAdapter
-                from openprogram.runtime.conversation.session_settings.session_config import conversation_permission
-                from openprogram.runtime.permissions.authority import runtime_authority
+                from openprogram.runtime import conversation_link
+                from openprogram.state.authority import runtime_authority
                 from openprogram.state.memory.policy import source_writable
                 memory_override = None if all(
                     source_writable(j.parent_session_id, j.head_id) for j in jobs
@@ -509,8 +508,7 @@ class ProgressOperations:
                 marks = [(self._execution_store.get_job_agent_input(j.id) or {}).get("turn_request") or {} for j in jobs]
                 # The result returns to the branch of the turn that started
                 # the job, even when the person selected another meanwhile.
-                from openprogram.runtime.conversation.session_settings.branch_config import branch_holding
-                caller_branch = branch_holding(deliver_session, job.caller_msg_id or job.parent_msg_id)
+                caller_branch = conversation_link.branch_holding(deliver_session, job.caller_msg_id or job.parent_msg_id)
                 req = TurnRequest(
                     **({"branch_id": caller_branch} if caller_branch else {}),
                     session_id=deliver_session,
@@ -521,7 +519,7 @@ class ProgressOperations:
                     notice=notice_items(jobs),
                     agent_id=job.agent_id or "main",
                     source="job_followup",
-                    **conversation_permission(deliver_session),
+                    **conversation_link.conversation_permission(deliver_session),
                     **runtime_authority(job, "job_followup"),
                     # branch_from is left at INHERIT_PARENT: the dispatcher
                     # resolves it to the tip of the turn's branch (the
@@ -531,7 +529,7 @@ class ProgressOperations:
                 )
                 from openprogram.runtime.events import emit_ws_frame
                 # The notice turn streams to the open chat like any turn.
-                adapter = CanonicalAgentAdapter(event_sink=emit_ws_frame)
+                adapter = conversation_link.agent_adapter(event_sink=emit_ws_frame)
                 admission = adapter.admit(
                     req,
                     trusted_actor=runtime_authority(job, "job_followup"),
@@ -559,12 +557,11 @@ class ProgressOperations:
             # would restart at 0 (A↔B ping-pong could never exhaust it)
             # and jobs spawned here would record no parent, escaping the
             # cascade in cancel_execution.
-            from openprogram.programs.tools.agents.send_message.send_message.depth import (
+            from openprogram.runtime.jobs.chain_budgets import (
                 set_chain_generations, set_chain_messages,
             )
             # The reply hop costs what the child already spent — an
             # explicit send_message reply lands at the same count.
-            set_chain_messages(chain_messages)
             # Generations are the dispatcher's, not the child's: this
             # turn is the dispatcher reading a result, and reading a
             # result creates nobody. Binding the child's count instead
@@ -572,6 +569,7 @@ class ProgressOperations:
             # create any further agent in that chain, which is exactly
             # the "dispatch a batch, read it, dispatch the next batch"
             # shape the whole tool exists for.
+            set_chain_messages(chain_messages)
             set_chain_generations(chain_generations)
             # The follow-up continues the DISPATCHER's work, not the
             # finished job's, so it chains where the job did. None for a

@@ -10,6 +10,8 @@ that releases a prepared request only after its origin turn is durable.
 
 ## Files in this directory
 
+- **`candidate_source.py`** — A candidate's source: the registered Git worktree and commit an update builds from
+- **`runtime_gate.py`** — Self-update's answers to the runtime's maintenance gate
 - **`store.py`** — Crash-safe file store for conversational self-update state
 - **`types.py`** — Durable data contract for conversational self-update
 
@@ -18,7 +20,7 @@ that releases a prepared request only after its origin turn is durable.
 - **`control/`** — Control implementation
 - **`delivery/`** — Delivery implementation
 - **`github_release/`** — Shared helpers for OpenProgram's explicit update commands
-- **`official/`** — Official releases for an installation that runs from the version store
+- **`official/`** — Official updates for an installation that runs from the version store
 - **`repair/`** — Repair implementation
 - **`trial/`** — Trial: a candidate version run on a sanitized copy of the data, before it can go live
 - **`verification/`** — Verification implementation

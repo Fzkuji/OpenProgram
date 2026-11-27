@@ -384,14 +384,75 @@ def select_request_origin(active_access: ActiveWebAccess) -> str:
     return sorted(active_access.effective_origins)[0]
 
 
+def backend_accepts_owner_challenge(
+    port: int,
+    *,
+    expected_revision: str | None = None,
+    origin: str | None = None,
+) -> bool:
+    """Verify the active listener without sending the owner credential.
+
+    ``origin`` names the exact Origin to verify, dialled as written. That
+    matters before a token is handed out for it: proving *some* loopback
+    listener is ours says nothing about the host a browser would actually
+    open, which may be a proxy or a DNS name pointing somewhere else.
+    Defaults to the internal client's own request Origin.
+    """
+    import secrets
+
+    from openprogram.host.security.safe_http import configured_safe_client
+    from openprogram.host.security.url_policy import OwnerURLException
+
+    try:
+        active_access = read_active_web_access()
+        token = read_web_token()
+    except OwnerAuthError:
+        return False
+    if active_access.port != int(port):
+        return False
+
+    request_origin = origin or select_request_origin(active_access)
+    if request_origin not in active_access.effective_origins:
+        return False
+    nonce = base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b"=").decode("ascii")
+    query = {"nonce": nonce}
+    if expected_revision is not None:
+        query["revision"] = expected_revision
+    # Dial the Origin itself — no Host rewrite. The listener sees the same
+    # authority the caller will later use, so a proof here is a proof for
+    # that exact URL, TLS and all.
+    try:
+        with configured_safe_client(
+            "runtime.local_probe",
+            request_origin,
+            owner_exception=OwnerURLException(
+                consumer="runtime.local_probe", origin=request_origin
+            ),
+        ) as client:
+            response = client.get(
+                f"{request_origin}/api/auth/challenge",
+                params=query,
+                timeout=1.0,
+            )
+        response.raise_for_status()
+        payload = response.json()
+        expected_proof = create_owner_challenge_proof(
+            token=token,
+            nonce=nonce,
+            revision=expected_revision or "",
+        )
+    except Exception:
+        return False
+    proof = payload.get("proof") if isinstance(payload, dict) else None
+    return isinstance(proof, str) and hmac.compare_digest(proof, expected_proof)
+
+
 def resolve_backend_endpoint(state_dir: Path | None = None) -> BackendEndpoint:
     """Resolve the active backend endpoint, challenge-verified, with token.
 
     Order matters: the snapshot and the challenge come first, the token is
     read only once the listener has proven it holds the same token.
     """
-    from openprogram.operations.worker.ports import backend_accepts_owner_challenge
-
     active_access = read_active_web_access(state_dir)
     origin = select_request_origin(active_access)
     if not backend_accepts_owner_challenge(active_access.port, origin=origin):

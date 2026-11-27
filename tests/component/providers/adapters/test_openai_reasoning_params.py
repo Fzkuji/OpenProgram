@@ -13,7 +13,6 @@ import pytest
 from openprogram.models.providers.adapters.azure_openai_responses.azure_openai_responses import (
     _build_params as _build_azure_params,
 )
-from openprogram.models.providers.adapters.openai_codex.openai_codex import _build_request_body
 from openprogram.models.providers.adapters.openai_responses import openai_responses
 from openprogram.models.providers.adapters.openai_responses.openai_responses import _build_params
 from openprogram.models.providers.settings import thinking_spec
@@ -41,13 +40,6 @@ def test_a_model_that_does_not_reason_asks_for_nothing():
     assert "include" not in params and "reasoning" not in params
 
 
-def test_the_xai_subscription_never_asks_for_encrypted_reasoning():
-    params = _build_params(_model("grok-4.5", provider="xai-subscription"), Context(),
-                           {"reasoning_effort": "high"})
-    assert "include" not in params
-    assert params["reasoning"] == {"effort": "high", "summary": "auto"}
-
-
 def test_an_effort_sends_the_effort_its_summary_and_the_include():
     params = _build_params(_model(), Context(), {"reasoning_effort": "medium"})
     assert params["reasoning"] == {"effort": "medium", "summary": "auto"}
@@ -65,14 +57,6 @@ def test_azure_sends_effort_none_the_same_way():
                                         provider="azure-openai-responses"),
                                  Context(), {"reasoning_effort": "none"}, "gpt-5.2")
     assert params["reasoning"] == {"effort": "none"}
-
-
-def test_the_codex_subscription_asks_for_its_reasoning_whatever_the_effort():
-    body = _build_request_body(_model(provider="openai-codex"), Context(), {}, [])
-    assert body["include"] == ENCRYPTED and "reasoning" not in body
-    body = _build_request_body(_model("gpt-4.1", reasoning=False, provider="openai-codex"),
-                               Context(), {}, [])
-    assert "include" not in body
 
 
 # ------------------------------------------------------------ the off value
@@ -94,7 +78,7 @@ def test_a_provider_with_no_spec_of_its_own_reads_its_apis():
     assert thinking_spec.off_wire_value("openai", "gpt-5.2", "openai-responses") == "none"
 
 
-@pytest.mark.parametrize("provider", ["anthropic", "openai-codex", "google", "deepseek"])
+@pytest.mark.parametrize("provider", ["anthropic", "google", "deepseek"])
 def test_off_is_no_field_where_the_provider_has_no_off_value(provider):
     assert thinking_spec.translate_reasoning(provider, "some-model", "off") is None
     assert thinking_spec.off_wire_value(provider, "some-model", "openai-completions") is None

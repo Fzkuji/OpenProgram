@@ -28,8 +28,6 @@ from ..types import PROTOCOL_VERSION
 from .maintenance import closes_admission, holds_turns, load_maintenance
 from openprogram.host._platform import filesystem
 
-HELD_MESSAGE = "Switching versions; this runs as soon as that finishes."
-HELD_REASON = "SELF_UPDATE_HELD"
 MAX_ATTEMPTS = 3
 _PREVIEW_CHARACTERS = 80
 # A component of a running turn cannot wait for itself to finish.
@@ -251,4 +249,4 @@ def drain(*, store: SelfUpdateStore | None = None, run: Callable[[dict], None] =
     return sum(len(paths) for paths in by_session.values())
 
 
-__all__ = ["HELD_MESSAGE", "HELD_REASON", "MAX_ATTEMPTS", "count", "decode", "drain", "encode", "hold"]
+__all__ = ["MAX_ATTEMPTS", "count", "decode", "drain", "encode", "hold"]

@@ -1146,7 +1146,7 @@ def continues_after_failure(session_id: str, goal: dict | None) -> bool:
             or int(goal.get("automatic_resumes") or 0) >= AUTOMATIC_FAILURE_RESUMES
             or failure_repeats(goal.get("failure"))):
         return False
-    from openprogram.runtime.conversation.always_on.runtime import UNATTENDED_GOAL_ORIGINS
+    from openprogram.programs.tools.planning.goal.standing import UNATTENDED_GOAL_ORIGINS
     if goal.get("origin") in UNATTENDED_GOAL_ORIGINS:
         return False
     try:
@@ -1256,7 +1256,7 @@ def pause_always_on(session_id: str, reason: str) -> bool:
     """Stop an unattended Goal's next turn; a person's Goal is never touched.
 
     A turn already running finishes, and its end finds the Goal paused."""
-    from openprogram.runtime.conversation.always_on.runtime import UNATTENDED_GOAL_ORIGINS
+    from openprogram.programs.tools.planning.goal.standing import UNATTENDED_GOAL_ORIGINS
     goal = goals.load_goal(session_id)
     if (not goal or goal.get("execution_mode") != "chat" or goal.get("status") != "active"
             or goal.get("origin") not in UNATTENDED_GOAL_ORIGINS):

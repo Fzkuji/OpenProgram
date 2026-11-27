@@ -12,7 +12,7 @@ from openprogram.models.usage.ledger import UsageLedger
 
 @pytest.fixture(autouse=True)
 def worker_lock(monkeypatch):
-    monkeypatch.setattr("openprogram.operations.worker.lock.is_held_by", lambda _pid: True)
+    monkeypatch.setattr("openprogram.host.worker.lock.is_held_by", lambda _pid: True)
 
 
 @pytest.fixture

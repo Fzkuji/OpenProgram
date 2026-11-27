@@ -17,8 +17,8 @@ and another computer through ``openprogram``. So a new feature needs no
 change here, and a new method is one module.
 
 Methods are registered by the modules that know them: ``local`` here,
-``ssh`` and ``docker`` by ``openprogram.host.backend``, ``openprogram`` by
-``peer``. Methods that live above the host (``osworld``, with the tool that
+``ssh`` and ``docker`` by ``shells`` (they run commands through
+``openprogram.host.backend``), ``openprogram`` by ``peer``. Methods that live above the host (``osworld``, with the tool that
 uses it) reach this registry through ``loaders``: functions that import
 those modules, added by the layer that owns them.
 """
@@ -90,7 +90,7 @@ register(Kind(name="local", label="This computer", label_zh="这台电脑", loca
 
 
 def _load() -> None:
-    import openprogram.host.backend  # noqa: F401  (registers ssh and docker)
+    import openprogram.host.machines.shells  # noqa: F401  (registers ssh and docker)
     import openprogram.host.machines.peer  # noqa: F401  (registers openprogram)
     for loader in list(loaders):
         if id(loader) in _loaded:

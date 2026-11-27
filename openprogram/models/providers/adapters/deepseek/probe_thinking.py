@@ -9,7 +9,7 @@ from __future__ import annotations
 
 
 def probe() -> dict[str, dict]:
-    from openprogram.models.providers.settings.env_api_keys import resolve_provider_key
+    from openprogram.models.auth.env_api_keys import resolve_provider_key
 
     key = resolve_provider_key("deepseek")
     if not key:

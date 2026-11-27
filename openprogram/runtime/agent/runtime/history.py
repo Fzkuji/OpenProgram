@@ -170,27 +170,24 @@ class HistoryOperations:
         """Return the ``<available_skills>`` XML block for this runtime.
 
         Same loader and same renderer as the chat path's ``capabilities``
-        component (openprogram/extensions/skills/loader.py) — one registry, one
-        listing format. Cached per config so repeat exec() calls don't
+        component (the skills extension, through ``extension_link``) — one
+        registry, one listing format. Cached per config so repeat exec() calls don't
         rescan unless it changes. Empty string when skills are disabled or
         no SKILL.md files were found, so callers can concatenate freely.
         """
         key = self._skills_key()
         if self._skills_cache_key == key:
             return self._skills_prompt_block
-        from openprogram.extensions.skills import (
-            format_skills_for_prompt,
-            list_skills,
-            load_skills,
-        )
+        from openprogram.runtime import extension_link
 
-        if key is True:
-            skills = list_skills()
-        elif key:
-            skills = load_skills(key)
-        else:
+        source = extension_link.skills() if key else None
+        if source is None:
             skills = []
-        self._skills_prompt_block = format_skills_for_prompt(skills)
+        elif key is True:
+            skills = source.list_skills()
+        else:
+            skills = source.load_skills(key)
+        self._skills_prompt_block = source.format_skills_for_prompt(skills) if source else ""
         self._skills_cache_key = key
         return self._skills_prompt_block
 

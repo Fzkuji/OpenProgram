@@ -44,8 +44,9 @@ from pathlib import Path
 import shlex
 import sys
 
-from openprogram.operations.self_update.versions import layout as paths, store
-from openprogram.operations.self_update.versions.layout import Layout
+from openprogram.host._platform import runtime_layout as paths
+from openprogram.operations.self_update.versions import store
+from openprogram.host._platform.runtime_layout import Layout
 
 root, commit = Path(sys.argv[1]), sys.argv[2]
 base = "py3.12-0123456789abcdef"

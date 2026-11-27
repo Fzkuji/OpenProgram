@@ -106,6 +106,7 @@
 <tr><th scope="row"><code translate="no">programs/applications/browser/app_endpoint.py</code></th><td>浏览器控制；对 App 的 CDP 端点的回环探测</td></tr>
 <tr><th scope="row"><code translate="no">cli/commands/capabilities/mcp.py</code></th><td>Owner 控制面；仅认证后端 opener</td></tr>
 <tr><th scope="row"><code translate="no">cli/ink.py</code>、<code translate="no">cli/commands/maintenance/doctor.py</code>、<code translate="no">cli/commands/maintenance/rescue.py</code></th><td>Owner 控制面；仅确切的回环 Worker 存活 socket</td></tr>
+<tr><th scope="row"><code translate="no">models/gateway/agents/local_api.py</code>、<code translate="no">models/gateway/agents/dim.py</code></th><td>Owner 控制面；本机应用自己 API 的 Unix socket（Shelley、Avibe、Dim 守护进程），用来把网关写进它的设置</td></tr>
 <tr><th scope="row"><code translate="no">machines/peer.py</code>、<code translate="no">computer_use/providers/paired.py</code>、<code translate="no">security/remote_access.py</code></th><td>Owner 控制面；与 owner 连接的 OpenProgram 配对、探测，并把 computer_use 调用转发过去（带它的设备凭据），只用它链接里的地址，不走代理、不跟随重定向；一个只读取局域网地址的 UDP socket</td></tr>
 <tr><th scope="row"><code translate="no">interfaces/server/web_push.py</code></th><td>Owner 控制面；每次 POST 一条加密通知到白名单里的浏览器推送服务（Apple、Google、Mozilla、Microsoft 的 https 地址），不走代理、不跟随重定向</td></tr>
 </tbody>

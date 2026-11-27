@@ -32,13 +32,17 @@ export function isReusableDraft(tab: CenterTab | undefined): boolean {
 /** Focus-or-create, like a browser's address bar: an open unsent draft tab
  *  or New tab page is reused instead of adding another empty tab. Returns
  *  the draft id. The tab strip's + still opens extra empty chats.
- *  ``fresh`` always opens a distinct draft (a project group's +). */
-export function openNewChat(options?: { fresh?: boolean }): string {
+ *  ``fresh`` always opens a distinct draft (a project group's +); ``draft``
+ *  opens that one while it is unsent (one ``prepareNewChat`` made). */
+export function openNewChat(options?: { fresh?: boolean; draft?: string | null }): string {
   const s = useCenterTabs.getState();
   const active = s.tabs.find((t) => t.id === s.activeId);
-  const existingDraft = options?.fresh
+  const prepared = options?.draft
+    ? s.tabs.find((t) => t.sessionId === options.draft && isReusableDraft(t))
+    : undefined;
+  const existingDraft = prepared ?? (options?.fresh
     ? undefined
-    : isReusableDraft(active) ? active : s.tabs.find(isReusableDraft);
+    : isReusableDraft(active) ? active : s.tabs.find(isReusableDraft));
   const existingNtp = existingDraft
     ? null
     : active?.kind === "ntp" ? active : s.tabs.find((t) => t.kind === "ntp");
@@ -55,6 +59,15 @@ export function openNewChat(options?: { fresh?: boolean }): string {
   }
   newSession(draftId);
   return draftId;
+}
+
+/** A draft for the next new chat, its settings set before it opens: the
+ *  phone's list sets them from its dock without leaving the list. The
+ *  draft opens with ``openNewChat({ draft })``. */
+export function prepareNewChat(draft?: string | null): string {
+  const s = useCenterTabs.getState();
+  const kept = draft ? s.tabs.find((t) => t.sessionId === draft && isReusableDraft(t)) : undefined;
+  return kept ? draft! : s.openDraftSessionTab();
 }
 
 /** /chat under a tab that holds a real conversation (browser Back past the

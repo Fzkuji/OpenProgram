@@ -152,7 +152,7 @@ function CredentialItem({
   const usage = todayLine(row, signIn, text);
   const lead = signIn ? planLabel(row.identity.plan) : row.env_var ? `$${row.env_var}` : "";
   const via = row.signin_name || provider.label;
-  // "Plus · signed in with ChatGPT · 12 requests today".
+  // "signed in with Qwen · 12 requests today".
   const quiet = signIn && !failure
     ? (index === 0 ? text(`signed in with ${via}`, `已用 ${via} 登录`)
       : !usage.length ? text("takes over when the one above is used up", "上一个用完后接上") : "")

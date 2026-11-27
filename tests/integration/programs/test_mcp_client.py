@@ -16,7 +16,6 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -39,11 +38,11 @@ def _server_config() -> dict:
 
 
 @pytest.fixture
-def temp_state_dir(monkeypatch):
+def temp_state_dir(monkeypatch, tmp_path):
     """Point ``openprogram.state.paths.get_state_dir`` at a fresh tmp dir
     with its own ``~/.agentic`` so the test never touches the real one.
     """
-    d = Path(tempfile.mkdtemp(prefix="mcp_test_"))
+    d = tmp_path / "mcp_test"
     state_dir = d / ".agentic"
     state_dir.mkdir(parents=True)
     monkeypatch.setenv("HOME", str(d))
@@ -147,9 +146,9 @@ def test_registry_registers_namespaced_tools(temp_state_dir):
     asyncio.run(_run())
 
 
-def test_unconfigured_loader_is_noop(monkeypatch):
+def test_unconfigured_loader_is_noop(monkeypatch, tmp_path):
     """Missing ``mcp_servers.json`` → no-op, no error."""
-    d = Path(tempfile.mkdtemp(prefix="mcp_empty_"))
+    d = tmp_path / "mcp_empty"
     (d / ".agentic").mkdir(parents=True)
     monkeypatch.setenv("HOME", str(d))
 
@@ -174,9 +173,9 @@ def test_unconfigured_loader_is_noop(monkeypatch):
     reason="exercises real MCP subprocess spawning; unreliable in bare CI. "
     "Set OPENPROGRAM_LIVE_TESTS=1 to run.",
 )
-def test_bad_command_records_error(monkeypatch):
+def test_bad_command_records_error(monkeypatch, tmp_path):
     """Server that fails to spawn should record the error, not crash."""
-    d = Path(tempfile.mkdtemp(prefix="mcp_bad_"))
+    d = tmp_path / "mcp_bad"
     state = d / ".agentic"
     state.mkdir(parents=True)
     (state / "mcp_servers.json").write_text(json.dumps({

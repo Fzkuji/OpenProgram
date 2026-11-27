@@ -11,6 +11,14 @@ artifact_dir="${2:?usage: smoke-packaged-runtime.sh mac <artifact-dir>}"
 artifact_dir="$(cd "$artifact_dir" && pwd)"
 temp_root="$(mktemp -d "${TMPDIR:-/tmp}/openprogram-packaged-smoke.XXXXXX")"
 state_home="$temp_root/home"
+# Every exit, including a check that fails before the worker starts, removes the
+# temporary HOME; once a worker is started, stop_worker stops it first.
+stop_worker() { :; }
+cleanup() {
+  stop_worker
+  rm -rf "$temp_root"
+}
+trap cleanup EXIT
 mkdir -p "$state_home"
 
 case "$platform" in
@@ -54,11 +62,9 @@ if test -f "$resources/seed/seed.json"; then
   command -v node >/dev/null 2>&1 || { printf 'node is required to unpack the seed\n' >&2; exit 1; }
   store="$state_home/.openprogram/runtime"
   port="${OPENPROGRAM_SMOKE_PORT:-$((19000 + RANDOM % 500))}"
-  cleanup() {
+  stop_worker() {
     HOME="$state_home" OPENPROGRAM_WEB_PORT="$port" "$store/bin/openprogram" worker stop >/dev/null 2>&1 || true
-    rm -rf "$temp_root"
   }
-  trap cleanup EXIT
   SEED_ROOT="$store" SEED_DIRECTORY="$seed" SHELL_SEED="$repository/apps/desktop/shell/seed.js" \
     run_with_timeout 600 node -e '
       const { seed } = require(process.env.SHELL_SEED);
@@ -138,12 +144,10 @@ test "$port" -ge 1024 && test "$port" -le 65535 && test "$port" != 18100 || {
   printf 'invalid packaged smoke port\n' >&2
   exit 1
 }
-cleanup() {
+stop_worker() {
   HOME="$state_home" OPENPROGRAM_WEB_PORT="$port" OPENPROGRAM_IMMUTABLE_RUNTIME=1 \
     "$embedded_python" -I -B -m openprogram worker stop >/dev/null 2>&1 || true
-  rm -rf "$temp_root"
 }
-trap cleanup EXIT
 
 HOME="$state_home" OPENPROGRAM_WEB_PORT="$port" OPENPROGRAM_IMMUTABLE_RUNTIME=1 \
   run_with_timeout 90 "$embedded_python" -I -B -m openprogram worker start

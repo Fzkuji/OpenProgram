@@ -476,7 +476,7 @@ def live_chat(root: Path) -> Iterator[LiveChat]:
     from openprogram.models.providers.catalog import api_registry
     from openprogram.models.providers.streaming.budget import BudgetedRequest
     from openprogram.models.providers.types import Model
-    from openprogram.operations.worker import lock as worker_lock_module
+    from openprogram.host.worker import lock as worker_lock_module
     from openprogram.runtime.agent import questions
     from openprogram.runtime.context import session_db
     from openprogram.runtime.conversation.session_settings import session_config

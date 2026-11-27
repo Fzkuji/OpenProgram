@@ -19,27 +19,32 @@ from openprogram.models.providers.utils.streams.stream_retry import ProviderStre
 NOW = 1_800_000_000.0
 
 
+def _window(key, label, minutes, used, resets_at):
+    from openprogram.models.usage import quota
+    return quota.QuotaLimit(
+        limit_key=key, label=label, unit="percent", source="endpoint", fetched_at=NOW,
+        used=used, limit=100.0, remaining=100.0 - used, used_fraction=used / 100.0,
+        window_minutes=minutes, resets_at=resets_at)
+
+
 def _http(status: int, body: str, **extra) -> ProviderStreamError:
     return ProviderStreamError(f"HTTP {status}: {body}", http_status=status, error_text=body,
-                               provider="openai-codex", **extra)
+                               provider="zai", **extra)
 
 
-def test_a_spent_codex_plan_names_its_reset():
+def test_a_spent_plan_names_its_reset():
     body = json.dumps({"error": {"type": "usage_limit_reached", "message": "The usage limit has been reached",
                                  "plan_type": "plus", "resets_in_seconds": 3600}})
     cause = failure_cause(_http(429, body), now=NOW)
     assert cause["cause"] == CAUSE_QUOTA
     assert cause["resets_at"] == NOW + 3600
-    assert cause["http_status"] == 429 and cause["provider"] == "openai-codex"
+    assert cause["http_status"] == 429 and cause["provider"] == "zai"
 
 
 def test_the_spent_window_is_named_from_the_last_quota_seen():
     from openprogram.models.usage import quota
 
-    quota.default_store.observe("openai-codex", "", quota.header_limits({
-        "x-codex-primary-used-percent": "100", "x-codex-primary-window-minutes": "300",
-        "x-codex-primary-reset-at": str(int(NOW + 900)),
-    }, now=NOW))
+    quota.default_store.observe("zai", "", [_window("primary", "5h", 300, 100.0, NOW + 900)])
     cause = failure_cause(_http(429, '{"error": {"type": "usage_limit_reached"}}'), now=NOW)
     assert cause["limit"] == "5h" and cause["resets_at"] == NOW + 900
 
@@ -110,12 +115,10 @@ def test_a_spent_window_names_its_key_and_the_other_windows(monkeypatch):
         "quota_rows": lambda self: [], "put_quota_rows": lambda self, rows: None,
         "drop_quota_rows": lambda self, *a: None})())
     monkeypatch.setattr(quota, "default_store", store)
-    store.observe("openai-codex", "cred-7", quota.header_limits({
-        "x-codex-primary-used-percent": "100", "x-codex-primary-window-minutes": "300",
-        "x-codex-primary-reset-at": str(int(NOW + 900)),
-        "x-codex-secondary-used-percent": "29", "x-codex-secondary-window-minutes": "10080",
-        "x-codex-secondary-reset-at": str(int(NOW + 86400)),
-    }, now=NOW))
+    store.observe("zai", "cred-7", [
+        _window("primary", "5h", 300, 100.0, NOW + 900),
+        _window("secondary", "Weekly", 10080, 29.0, NOW + 86400),
+    ])
     cause = failure_cause(_http(429, '{"error": {"type": "usage_limit_reached"}}'), now=NOW)
     assert cause["limit"] == "5h" and cause["account"] == "cred-7"
     assert cause["other_limits"] == [{"label": "Weekly", "left_fraction": 0.71, "resets_at": NOW + 86400}]

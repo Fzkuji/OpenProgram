@@ -23,12 +23,13 @@ logger = logging.getLogger(__name__)
 
 def root() -> Path:
     """The memory workspace, created on first use."""
-    from openprogram.state.paths import _restrict_to_owner, get_memory_dir, get_state_dir
+    from openprogram.state.paths import _restrict_to_owner, get_state_dir
+    from openprogram.state.store.project.layout import personal_memory_dir
 
     state = get_state_dir()
     from .policy import selected_root
     from .project_layer import active_root
-    path = active_root() or selected_root() or get_memory_dir()
+    path = active_root() or selected_root() or personal_memory_dir()
     path.mkdir(parents=True, exist_ok=True)
     # ``get_state_dir`` protects the profile root when it creates it, but
     # this is the call that brings it into being on a fresh install — the

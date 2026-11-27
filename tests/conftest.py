@@ -81,6 +81,22 @@ def _no_system_notifications(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_installed_app_of_this_machine(monkeypatch):
+    """No test sees the OpenProgram App installed on the machine running it.
+
+    A runtime outside an App bundle checks the App where it normally is
+    (``/Applications/OpenProgram.app``) before a conversational update; on a
+    machine with the published, Developer ID signed App there, every update
+    test would be refused for the machine rather than for what it tests.
+    Tests get an App path that does not exist; the tests of that check set
+    their own."""
+    from openprogram.operations.self_update.control import backend
+
+    monkeypatch.setattr(backend, "_installed_app", lambda: Path(_TEST_HOME) / "Applications" / "OpenProgram.app")
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _tests_leave_the_front_application_alone(monkeypatch):
     """No test reads or changes which application is in front of the person running it."""
     from openprogram.host._platform import front
@@ -226,7 +242,33 @@ if os.environ.get("OPENPROGRAM_TEST_LIVE") != "1":
 if os.environ.get("OPENPROGRAM_TEST_REAL_HOME") != "1":
     import tempfile  # noqa: E402
 
-    _TEST_HOME_MANAGER = tempfile.TemporaryDirectory(prefix="openprogram-test-home-")
+    # The home is removed when this process exits normally. One that ends
+    # without running its exit handlers (a hung test's os._exit, a killed
+    # xdist worker) cannot, so the name carries the pid and the next run
+    # removes every home whose process is gone.
+    import shutil  # noqa: E402
+
+    def _process_alive(pid: int) -> bool:
+        # openprogram is not imported before HOME moves. Windows has no
+        # signal-free probe without it, so its homes are left alone.
+        if sys.platform == "win32":
+            return True
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        return True
+
+    _TEST_HOME_PREFIX = "openprogram-test-home-"
+    for _stale in Path(tempfile.gettempdir()).glob(f"{_TEST_HOME_PREFIX}*-*"):
+        _owner = _stale.name[len(_TEST_HOME_PREFIX):].split("-", 1)[0]
+        if _owner.isdigit() and int(_owner) != os.getpid() and not _process_alive(int(_owner)):
+            shutil.rmtree(_stale, ignore_errors=True)
+    _TEST_HOME_MANAGER = tempfile.TemporaryDirectory(
+        prefix=f"{_TEST_HOME_PREFIX}{os.getpid()}-", ignore_cleanup_errors=True,
+    )
     _TEST_HOME = _TEST_HOME_MANAGER.name
     os.environ["HOME"] = _TEST_HOME
     os.environ["USERPROFILE"] = _TEST_HOME

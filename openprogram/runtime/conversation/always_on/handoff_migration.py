@@ -235,7 +235,7 @@ _EXECUTION_ID = re.compile(r"execution_id=(\S+)")
 def send_with_send_message(delivery: dict[str, Any]) -> tuple[str, Optional[str], str]:
     """Deliver one moved entry as ``send_message`` does: a tracked Job on
     the target, its reply back to the sender as a notice."""
-    from openprogram.programs.tools.agents.send_message.send_message.dispatch import deliver
+    from openprogram.runtime.conversation.peer_agents.dispatch import deliver
     from openprogram.runtime.context.session_db import default_db
     from openprogram.runtime.jobs import get_runner
     from openprogram.runtime.permissions.authority import authority_from_message, local_owner_authority

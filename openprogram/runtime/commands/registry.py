@@ -1,10 +1,13 @@
 """Process-wide merge of every command source.
 
-Phase-1 wires only the user/project file loaders plus the existing
-plugin command list (adapter). Skills + MCP land in later phases —
-the registry shape is already general enough; just call
-:func:`register_external` with new ``source`` values when they come
-online.
+The registry reads the user and project command files itself. The
+sources above the runtime push their commands in: plugins and skills
+register a sync with :func:`register_source` (``extensions.lower_layers``)
+that :func:`reload` runs, MCP servers call :func:`sync_mcp_prompts`
+with their clients when one connects, and a Program adds a shared
+built-in with :func:`register_shared_builtin` (the Goal tool's
+``/goal``). Each of them calls :func:`register_external` or
+:func:`register_builtin`; the registry never imports them.
 """
 from __future__ import annotations
 
@@ -12,6 +15,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from threading import RLock
 from typing import Any, Optional
+
+from openprogram.host import runtime_facts
 
 from .frontmatter import ParsedCommand
 from .loader import LoadedCommand, load_project, load_user
@@ -88,6 +93,27 @@ _buckets: dict[str, dict[str, CommandSpec]] = {s: {} for s in SOURCE_ORDER}
 _aliases: dict[str, dict[str, str]] = {s: {} for s in SOURCE_ORDER}
 # True once a reload has populated the file-backed layers.
 _loaded = False
+# What re-snapshots a pushed source's bucket on ``reload``, by source.
+_source_syncs: dict[str, Any] = {}
+# Built-ins with callable handlers that every host shares, by name:
+# ``(handler, description, argument_hint)``.
+_shared_builtins: dict[str, tuple[Any, str, str]] = {}
+
+
+def register_source(source: str, sync: Any) -> None:
+    """Make ``sync()`` re-snapshot the ``source`` bucket on every
+    :func:`reload` (plugins, skills). The last one registered wins."""
+    if source not in SOURCE_ORDER:
+        raise ValueError(f"unknown source: {source!r}")
+    _source_syncs[source] = sync
+
+
+def register_shared_builtin(
+    name: str, *, handler: Any, description: str = "", argument_hint: str = "",
+) -> None:
+    """Offer a built-in with a callable handler to every host; it is
+    registered by :func:`register_shared_builtins`."""
+    _shared_builtins[name] = (handler, description, argument_hint)
 
 
 def _put(spec: CommandSpec) -> None:
@@ -184,17 +210,17 @@ def reload(*, cwd: Path | None = None) -> None:
     _ingest_loaded(load_user())
     _ingest_loaded(load_project(cwd))
 
-    # Adapters are best-effort: a broken upstream shouldn't poison
+    # The pushed sources (plugins, skills) register when the extensions
+    # load, which the Programs do.
+    runtime_facts.load_programs()
+    # Sources are best-effort: a broken upstream shouldn't poison
     # the rest of the registry.
-    for mod_name in ("_plugin_adapter", "_skill_adapter"):
+    for source, sync in list(_source_syncs.items()):
         try:
-            mod = __import__(
-                f"openprogram.runtime.commands.{mod_name}", fromlist=["sync_into_registry"]
-            )
-            mod.sync_into_registry()
+            sync()
         except Exception:
-            # Adapters are optional; the rest of the registry still loads.
-            _log.warning("command adapter %s not synced", mod_name, exc_info=True)
+            # Sources are optional; the rest of the registry still loads.
+            _log.warning("command source %s not synced", source, exc_info=True)
 
     register_shared_builtins()
 
@@ -219,41 +245,29 @@ def register_shared_builtins() -> None:
             description="generate a commit message from the current Git diff",
         )
 
-    try:
-        from openprogram.programs.tools.planning.goal import goal_builtin_handler
-    except Exception:
-        # A broken goal module must not poison the rest of the registry.
-        return
-    with _lock:
-        existing = _buckets.get("builtin", {}).get("goal")
-    if existing is not None and not callable(existing.builtin_handler):
-        return
-    register_builtin(
-        "goal",
-        handler=goal_builtin_handler,
-        description=(
-            "run the Goal Workflow with current session context "
-            "(or inspect/clear its state)"),
-        argument_hint="[prompt | clear]",
-    )
+    # The Programs' shared built-ins (``/goal``) register when they load.
+    runtime_facts.load_programs()
+    for name, (handler, description, argument_hint) in list(_shared_builtins.items()):
+        with _lock:
+            existing = _buckets.get("builtin", {}).get(name)
+        if existing is not None and not callable(existing.builtin_handler):
+            continue
+        register_builtin(name, handler=handler, description=description,
+                         argument_hint=argument_hint)
 
 
-async def sync_mcp_prompts() -> None:
-    """Re-snapshot MCP prompts. Runs in an event loop so it can await
+async def sync_mcp_prompts(clients: Any) -> None:
+    """Re-snapshot MCP prompts from ``clients``, the connected MCP
+    servers. Runs in an event loop so it can await
     ``client.list_prompts()`` against live sessions. Called from the
-    MCP registry after a server reaches ready state, and from
-    ``/api/commands?refresh=mcp`` for explicit re-sync."""
-    try:
-        from openprogram.extensions.mcp.registry import list_clients
-    except Exception:
-        return
+    MCP registry after a server reaches ready state."""
     from .frontmatter import ParsedCommand
 
     with _lock:
         _buckets["mcp"] = {}
         _aliases["mcp"] = {}
 
-    for client in list_clients():
+    for client in list(clients or ()):
         if not getattr(client, "is_ready", False):
             continue
         server_name = client.config.name

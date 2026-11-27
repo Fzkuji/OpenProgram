@@ -9,8 +9,6 @@ import pytest
 
 from openprogram.models.providers.adapters.anthropic import anthropic
 from openprogram.models.providers.adapters.google import google as google_adapter
-from openprogram.models.providers.adapters.google_gemini_cli import google_gemini_cli as gcli
-from openprogram.models.providers.adapters.openai_codex import openai_codex as codex
 from openprogram.models.providers.adapters.openai_responses import openai_responses as responses
 from openprogram.models.providers.catalog.api_registry import resolve_api_provider_snapshot
 from openprogram.models.providers.shared.openai_responses import (
@@ -46,12 +44,10 @@ def _model(api, provider="p", model_id="m"):
 
 @pytest.mark.parametrize("api, expected", [
     ("openai-responses", True),
-    ("openai-codex", True),
     ("anthropic-messages", True),
     # Not advertised: google_search cannot ride next to function declarations
     # on generateContent, and agent requests always carry function tools.
     ("google-generative-ai", False),
-    ("gemini-subscription", False),
     ("openai-completions", False),
 ])
 def test_snapshot_reports_web_search_capability(api, expected):
@@ -79,7 +75,7 @@ def test_responses_adds_web_search_tool(tools):
     assert len(params["tools"]) == (2 if tools else 1)
 
 
-@pytest.mark.parametrize("provider, kept", [("openai", True), ("xai-subscription", False), ("xai", False)])
+@pytest.mark.parametrize("provider, kept", [("openai", True), ("xai", False)])
 def test_the_local_search_function_leaves_a_request_whose_provider_refuses_the_name_twice(provider, kept):
     """xAI answers 400 "Duplicate tool names: web_search" to a function
     named like its own search; OpenAI takes both."""
@@ -96,15 +92,6 @@ def test_responses_without_switch_has_no_web_search_tool():
     assert "tools" not in responses._build_params(model, Context(messages=[]), {})
     params = responses._build_params(model, Context(messages=[], tools=[_TOOL]), {"web_search": False})
     assert all(t.get("type") != "web_search" for t in params["tools"])
-
-
-def test_codex_adds_web_search_without_function_tools():
-    model = _model("openai-codex", "openai-codex", "gpt-5.5")
-    body = codex._build_request_body(model, Context(messages=[]), SimpleStreamOptions(web_search=True), [])
-    assert body["tools"] == [{"type": "web_search"}]
-    assert body["tool_choice"] == "auto"
-    off = codex._build_request_body(model, Context(messages=[]), SimpleStreamOptions(), [])
-    assert "tools" not in off
 
 
 class _AnthropicStream:
@@ -161,22 +148,6 @@ def test_anthropic_without_switch_has_no_web_search_tool(monkeypatch):
     assert "tools" not in params
 
 
-def _gcli_body(tools, opts):
-    model = _model("gemini-subscription", "gemini-subscription", "gemini-2.5-pro")
-    return gcli._build_request_body(model, Context(messages=[], tools=tools), opts, [], "proj")
-
-
-def test_gemini_cli_google_search_without_function_tools():
-    body = _gcli_body(None, {"web_search": True})
-    assert body["request"]["tools"] == [{"google_search": {}}]
-    assert "tools" not in _gcli_body(None, {})["request"]
-
-
-def test_gemini_cli_function_tools_win_over_google_search():
-    tools = _gcli_body([_TOOL], {"web_search": True})["request"]["tools"]
-    assert len(tools) == 1 and "functionDeclarations" in tools[0]
-
-
 def test_google_sdk_config_google_search():
     model = _model("google-generative-ai", "google", "gemini-2.5-flash")
     cfg = google_adapter._build_config(model, Context(messages=[]), SimpleStreamOptions(web_search=True))
@@ -208,7 +179,7 @@ def _responses_output(model):
 
 
 def test_responses_stream_web_search_call_and_citations():
-    model = _model("openai-codex", "openai-codex", "gpt-5.5")
+    model = _model("openai-responses", "openai", "gpt-5.5")
     output = _responses_output(model)
     stream = _Collector()
     raw_item = {
@@ -348,28 +319,6 @@ def test_anthropic_search_error_marks_failed(monkeypatch):
 # Gemini stream
 # --------------------------------------------------------------------------
 
-_GROUNDING = {
-    "webSearchQueries": ["capital of france"],
-    "groundingChunks": [{"web": {"uri": "https://g.example", "title": "G"}}],
-    "groundingSupports": [{"segment": {"startIndex": 0, "endIndex": 5},
-                           "groundingChunkIndices": [0]}],
-}
-
-
-def test_gemini_cli_grounding_blocks():
-    output = {"content": [{"type": "text", "text": "Paris is the capital."}]}
-    stream = _Collector()
-    gcli._apply_grounding_citations(output, _GROUNDING)
-    gcli._push_grounding_searches(output, stream, _GROUNDING)
-    assert output["content"][0]["citations"] == [
-        {"url": "https://g.example", "title": "G", "start": 0, "end": 5}]
-    assert [e["type"] for e in stream.events] == ["servertool_start", "servertool_end"]
-    block = stream.events[1]["server_tool"]
-    assert block["input"] == {"query": "capital of france"}
-    assert block["results"] == [{"url": "https://g.example", "title": "G"}]
-    assert ServerToolUse.model_validate(block).status == "completed"
-
-
 def test_google_sdk_stream_grounding(monkeypatch):
     grounding = NS(
         web_search_queries=["capital of france"],
@@ -431,7 +380,7 @@ def _history(api, provider, model_id, block):
 
 
 def test_responses_replay_raw_item_and_no_tool_output():
-    model = _model("openai-codex", "openai-codex", "gpt-5.5")
+    model = _model("openai-responses", "openai", "gpt-5.5")
     raw = {"type": "web_search_call", "id": "ws_1", "status": "completed",
            "action": {"type": "search", "query": "q", "sources": None}}
     block = ServerToolUse(id="ws_1", name="web_search", input={"query": "q"}, raw=raw)
@@ -482,7 +431,7 @@ def test_anthropic_replay_drops_foreign_or_rawless_block():
     model = _model("anthropic-messages", "anthropic", "claude-sonnet-4-5")
     foreign = ServerToolUse(id="ws_1", name="web_search", input={"query": "q"},
                             raw={"type": "web_search_call", "id": "ws_1"})
-    msgs = transform_messages(_history("openai-codex", "openai-codex", "gpt-5.5", foreign), model)
+    msgs = transform_messages(_history("openai-responses", "openai", "gpt-5.5", foreign), model)
     assert not any(isinstance(b, ServerToolUse) for m in msgs if m.role == "assistant" for b in m.content)
     rawless = ServerToolUse(id="srvtoolu_9", name="web_search", input={"query": "q"})
     msgs = transform_messages(_history(model.api, model.provider, model.id, rawless), model)

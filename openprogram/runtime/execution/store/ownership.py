@@ -23,7 +23,7 @@ _log = logging.getLogger(__name__)
 
 
 def owns_store_schema(store_path: Path) -> bool:
-    from openprogram.operations.worker.lock import held_in_this_process
+    from openprogram.host.worker.lock import held_in_this_process
 
     lock = Path(store_path).parent / "worker.lock"
     if held_in_this_process(lock):

@@ -17,8 +17,8 @@ import time
 
 from ..types import IterationMode
 from ..types import _validate_changed_path
-from openprogram.programs.tools.system.self_update import (
-    _git, _recorded_path, _validate_candidate_snapshot, _validate_registered_worktree,
+from ..candidate_source import (
+    git, recorded_path, validate_candidate_snapshot, validate_registered_worktree,
 )
 
 
@@ -119,7 +119,7 @@ finally:
 
 def _sealed_runtime_reads(python) -> list:
     """Under sealed versions the interpreter lives in the state directory a test may not read."""
-    from ..versions.layout import current_runtime
+    from openprogram.host._platform.runtime_layout import current_runtime
 
     runtime = current_runtime()
     if runtime is None:
@@ -289,10 +289,10 @@ def materialize(store, record, frozen, repair_request, output, check):
     from openprogram.state.worktree.types import Worktree
     from openprogram.state.worktree.store import save_worktree
     from openprogram.state.worktree.manager import _broadcast_worktree_status
-    source = _recorded_path(record.request.repo, "source repo")
-    original = _recorded_path(frozen["candidate_path"], "original candidate")
-    _validate_registered_worktree(source, original, record.request.candidate_sha, frozen["branch_name"])
-    _validate_candidate_snapshot(original, record.request.candidate_sha)
+    source = recorded_path(record.request.repo, "source repo")
+    original = recorded_path(frozen["candidate_path"], "original candidate")
+    validate_registered_worktree(source, original, record.request.candidate_sha, frozen["branch_name"])
+    validate_candidate_snapshot(original, record.request.candidate_sha)
     _edits(record.request, original, output["edits"])
     suffix = hashlib.sha256(repair_request["job_id"].encode()).hexdigest()[:12]
     root = store.root.parent / "worktrees"
@@ -310,7 +310,7 @@ def materialize(store, record, frozen, repair_request, output, check):
         raise ValueError("interrupted source repair requires inspection; mutations are not replayed")
     store._write_json(intent, dict(schema=1, worktree=worktree.to_dict(), output=output))
     # This path deliberately uses pinned Git and no .worktreeinclude copying.
-    _git(source, "worktree", "add", "-b", branch, str(candidate), record.request.candidate_sha)
+    git(source, "worktree", "add", "-b", branch, str(candidate), record.request.candidate_sha)
     save_worktree(worktree)
     _broadcast_worktree_status(worktree)
     files = _edits(record.request, candidate, output["edits"])
@@ -327,14 +327,14 @@ def materialize(store, record, frozen, repair_request, output, check):
             path.chmod(mode)
     check()
     paths = [path.relative_to(candidate).as_posix() for path in files]
-    _git(candidate, "add", "--", *paths)
-    _git(candidate, "-c", "user.name=OpenProgram Self Update", "-c", "user.email=self-update@localhost",
+    git(candidate, "add", "--", *paths)
+    git(candidate, "-c", "user.name=OpenProgram Self Update", "-c", "user.email=self-update@localhost",
          "-c", "commit.gpgsign=false", "commit", "-m", "Apply bounded self-update source repair")
-    sha = _git(candidate, "rev-parse", "HEAD")
-    changed = tuple(filter(None, _git(candidate, "diff", "--name-only", "-z", f"{record.request.base_sha}..{sha}").split("\0")))
-    repaired = filter(None, _git(candidate, "diff", "--name-only", "-z", f"{record.request.candidate_sha}..{sha}").split("\0"))
+    sha = git(candidate, "rev-parse", "HEAD")
+    changed = tuple(filter(None, git(candidate, "diff", "--name-only", "-z", f"{record.request.base_sha}..{sha}").split("\0")))
+    repaired = filter(None, git(candidate, "diff", "--name-only", "-z", f"{record.request.candidate_sha}..{sha}").split("\0"))
     check_repair_paths(record.request, changed, repaired)
-    _validate_candidate_snapshot(candidate, sha)
+    validate_candidate_snapshot(candidate, sha)
     manifest = dict(worktree_id=worktree.id, worktree_path=str(candidate), branch_name=branch,
                     candidate_sha=sha, base_sha=record.request.base_sha, changed_paths=list(changed), tests=[])
     store._write_json(_path(store, record, "candidate"), manifest)
@@ -346,8 +346,8 @@ def materialize(store, record, frozen, repair_request, output, check):
         code, log = _test(command, candidate, scratch, remaining, check)
         if (candidate / ".git").is_symlink() or (candidate / ".git").read_bytes() != git_file:
             raise ValueError("candidate Git binding changed during required tests")
-        _validate_registered_worktree(source, candidate, sha, branch)
-        _validate_candidate_snapshot(candidate, sha)
+        validate_registered_worktree(source, candidate, sha, branch)
+        validate_candidate_snapshot(candidate, sha)
         manifest["tests"].append(dict(command=command, candidate_sha=sha, exit_code=code,
                                       log_sha256=hashlib.sha256(log.encode()).hexdigest(), log_path=str(scratch / "test.log")))
         store._write_json(_path(store, record, "candidate"), manifest)

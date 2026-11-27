@@ -26,7 +26,7 @@
 </table>
 
 <h2>脱敏</h2>
-<p>标题、会话 id、角色标签、工具名、轮次文本、参数和结果都先经过 <code translate="no">remove_secret_values</code>（<code translate="no">openprogram/models/providers/recording/recording.py</code>），再截断。存储的对话不变。</p>
+<p>标题、会话 id、角色标签、工具名、轮次文本、参数和结果都先经过 <code translate="no">remove_secret_values</code>（<code translate="no">openprogram/state/secret_removal.py</code>），再截断。存储的对话不变。</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">匹配</th><th scope="col">替换为</th></tr></thead>
 <tbody>

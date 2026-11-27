@@ -1,479 +1,169 @@
-/* The phone app (components/phone/): a phone app's pages, bars, lists and
-   sheets in place of the desktop window on a touch phone. Its look follows
-   the system's: a 44pt navigation bar with Back on the left, a large title
-   over the list, grouped rounded lists, a page that slides in from the
-   right. Colours are the theme's. */
+/* The phone app (components/phone/): Framework7's iOS app (its App, View,
+   pages, bars, lists, sheets and popups, drawn as it draws them) in place
+   of the desktop window on a touch phone. What is here sizes the app to
+   the screen above the keyboard, gives Framework7 the system's type, and
+   lays out what the app draws itself inside Framework7's pages: the
+   transcript and the composer, the details' panels, the other routes'
+   pages. Framework7's stylesheet reaches only its own parts
+   (scripts/postcss-framework7-scope.cjs). */
 
-.phone-app {
-  /* One side margin for every page: titles, search, lists, bars, the
-     transcript and the bottom capsule all stand 16px from the edges. */
+/* The system's type: SF, and PingFang for Chinese, in its own regular,
+   medium and semibold (WebKit drew Chinese under -apple-system alone as
+   boxes in the app). */
+@font-face { font-family: "Phone CJK"; src: local("PingFangSC-Regular"), local("PingFang SC"); font-weight: 100 450; unicode-range: U+2E80-2FDF, U+3000-33FF, U+3400-4DBF, U+4E00-9FFF, U+F900-FAFF, U+FE30-FE4F, U+FF00-FFEF; }
+@font-face { font-family: "Phone CJK"; src: local("PingFangSC-Medium"), local("PingFang SC"); font-weight: 451 550; unicode-range: U+2E80-2FDF, U+3000-33FF, U+3400-4DBF, U+4E00-9FFF, U+F900-FAFF, U+FE30-FE4F, U+FF00-FFEF; }
+@font-face { font-family: "Phone CJK"; src: local("PingFangSC-Semibold"), local("PingFang SC"); font-weight: 551 900; unicode-range: U+2E80-2FDF, U+3000-33FF, U+3400-4DBF, U+4E00-9FFF, U+F900-FAFF, U+FE30-FE4F, U+FF00-FFEF; }
+
+.phone-app.framework7-root {
+  /* One side margin for the app's own pages: Framework7's lists' inset. */
   --phone-gutter: 16px;
-  --phone-card: color-mix(in srgb, var(--text-bright) 4.5%, var(--bg-primary));
-  --phone-fill: color-mix(in srgb, var(--text-bright) 7%, transparent);
-  --phone-separator: color-mix(in srgb, var(--text-bright) 10%, transparent);
-  /* Two quick taps are two taps, not a zoom into the page. */
-  touch-action: manipulation;
+  --f7-font-family: "Phone CJK", -apple-system, system-ui, "Helvetica Neue", sans-serif;
+  /* Framework7 sets its font on the body, from the variable as the page
+     root has it: the app's own root takes it again with this one. */
+  font-family: var(--f7-font-family);
+  /* The app's glass, for the composer and the menus it draws itself. */
+  --phone-glass: var(--f7-glass-bg-color);
+  --phone-glass-edge: var(--f7-glass-shadow);
+  /* Above the keyboard: the viewport the phone layout measures. */
   position: fixed;
   left: 0;
   right: 0;
   top: var(--phone-viewport-top, 0px);
   height: var(--phone-viewport-h, 100dvh);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  font-size: 16px;
-  -webkit-tap-highlight-color: transparent;
+  /* Two quick taps are two taps, not a zoom into the page. */
+  touch-action: manipulation;
   /* A long press opens a menu, as in a phone app, rather than selecting
-     the words under it; fields and the details' panels (diffs, files)
-     keep selection. */
+     the words under it; fields and the details' panels keep selection. */
   -webkit-user-select: none;
   user-select: none;
   -webkit-touch-callout: none;
 }
-.phone-app :is(input, textarea, [contenteditable="true"], .phone-app-panel, .message.is-editing) {
+.phone-app :is(input, textarea, [contenteditable="true"], .phone-details-panel, .message.is-editing) {
   -webkit-user-select: text;
   user-select: text;
   -webkit-touch-callout: default;
 }
-.phone-app button { font: inherit; color: inherit; background: none; border: 0; padding: 0; }
 .phone-app-engine { display: none; }
-
-.phone-app-page {
-  position: relative;
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  padding-top: env(safe-area-inset-top);
-}
-.phone-app-slot { display: contents; }
-
-/* A page change slides as an iOS navigation stack does
-   (components/phone/use-page-transitions.ts): going forward, the new page
-   comes in from the right over a copy of the old one, which drifts left
-   and dims; going back, the copy leaves to the right over the page that
-   returns from the left. */
-.phone-app-leaving {
-  position: absolute !important;
-  inset: 0;
-  pointer-events: none;
-}
-.phone-app[data-nav="hold"] > .phone-app-leaving { z-index: 2; }
-.phone-app[data-nav="forward"] > .phone-app-leaving { z-index: 0; animation: phone-page-under-out 360ms cubic-bezier(0.32, 0.72, 0, 1) both; }
-.phone-app[data-nav="forward"] > .phone-app-slot > .phone-app-page { z-index: 1; animation: phone-page-over-in 360ms cubic-bezier(0.32, 0.72, 0, 1) both; }
-.phone-app[data-nav="back"] > .phone-app-leaving { z-index: 1; animation: phone-page-over-out 320ms cubic-bezier(0.32, 0.72, 0, 1) both; }
-.phone-app[data-nav="back"] > .phone-app-slot > .phone-app-page { z-index: 0; animation: phone-page-under-in 320ms cubic-bezier(0.32, 0.72, 0, 1) both; }
-@keyframes phone-page-over-in { from { transform: translateX(100%); } }
-@keyframes phone-page-over-out { to { transform: translateX(100%); } }
-@keyframes phone-page-under-out { to { transform: translateX(-30%); filter: brightness(0.94); } }
-@keyframes phone-page-under-in { from { transform: translateX(-30%); filter: brightness(0.94); } }
-.phone-app[data-nav] .phone-app-page { background: var(--bg-primary); }
-.phone-app[data-nav="forward"] > .phone-app-slot > .phone-app-page,
-.phone-app[data-nav="back"] > .phone-app-leaving { box-shadow: -10px 0 30px rgb(0 0 0 / 0.1); }
-@media (prefers-reduced-motion: reduce) { .phone-app[data-nav] * { animation: none !important; } }
-
-/* --- Navigation bar --------------------------------------------------- */
-.phone-app-nav {
-  flex: none;
-  height: 44px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  align-items: center;
-  gap: 4px;
-  padding: 0 var(--phone-gutter);
-}
-.phone-app-nav-side { display: flex; align-items: center; min-width: 0; }
-.phone-app-nav-trailing { justify-content: flex-end; }
-.phone-app-back {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  height: 44px;
-  margin-left: -8px;
-  color: var(--theme-accent) !important;
-  font-size: 17px !important;
-}
-.phone-app-back svg { flex: none; }
-.phone-app-back span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.phone-app-nav-title {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  max-width: 58vw;
-  line-height: 1.2;
-  text-align: center;
-}
-.phone-app-nav-title b,
-.phone-app-nav-title span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.phone-app-nav-title b { font-size: 16px; font-weight: 600; color: var(--text-bright); }
-.phone-app-nav-title span { font-size: 12px; color: var(--text-muted); }
-.phone-app-circle {
-  width: 36px;
-  height: 36px;
-  border-radius: 18px;
-  display: grid;
-  place-items: center;
-  background: var(--phone-fill) !important;
-}
-
-/* --- Pages, lists ----------------------------------------------------- */
-.phone-app-scroll {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior-y: contain;
-  padding-bottom: calc(24px + env(safe-area-inset-bottom));
-}
-.phone-app-large-title {
-  margin: 2px var(--phone-gutter) 8px;
-  font-size: 34px;
-  line-height: 41px;
-  font-weight: 700;
-  letter-spacing: 0.2px;
-  color: var(--text-bright);
-}
-.phone-app-search {
-  margin: 0 var(--phone-gutter) 10px;
-  height: 40px;
-  border-radius: 20px;
-  background: var(--phone-fill);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 14px;
-  color: var(--text-muted);
-}
-.phone-app-search input {
-  flex: 1;
-  min-width: 0;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  font-size: 17px;
-  color: var(--text-primary);
-}
-.phone-app-search input::-webkit-search-cancel-button { -webkit-appearance: none; }
-.phone-app-section h2,
-.phone-app-section-title {
-  margin: 0;
-  padding: 16px var(--phone-gutter) 6px;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-muted);
-}
-/* Lists are plain: rows on the page itself, text at the side margin,
-   hairlines between them; no grey card behind. */
-.phone-app-list {
-  margin: 0 0 18px;
-  overflow: hidden;
-}
-.phone-app-section .phone-app-list { margin-bottom: 0; }
-.phone-app-empty { padding: 32px 24px; text-align: center; color: var(--text-muted); font-size: 15px; }
 .phone-app-fill { flex: 1; }
 
-/* A row of a grouped list: optional coloured icon, label, value, chevron. */
-.phone-app-row {
-  position: relative;
-  display: flex !important;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  min-height: 50px;
-  padding: 0 var(--phone-gutter) !important;
-  text-align: left;
-  font-size: 16.5px !important;
-}
-.phone-app-row + .phone-app-row::before,
-.phone-home-row + .phone-home-row::before {
-  content: "";
+/* The app's own areas inside a page with no page content of
+   Framework7's: under the bar, which they scroll under. */
+:is(.phone-conversation-body, .phone-details-panel, .phone-route-body) {
   position: absolute;
-  top: 0;
-  right: 0;
-  left: var(--phone-gutter);
-  height: 0.5px;
-  background: var(--phone-separator);
-}
-.phone-app-row:active,
-.phone-home-row:active { background: var(--phone-fill) !important; }
-.phone-app-row[data-danger] { color: var(--accent-red) !important; }
-.phone-app-row-icon {
-  width: 28px;
-  height: 28px;
-  flex: none;
-  border-radius: 7px;
-  display: grid;
-  place-items: center;
-  color: #fff;
-}
-.phone-app-row-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.phone-app-row-trail { color: var(--text-muted); font-size: 15px; }
-.phone-lines { font-size: 14px; font-variant-numeric: tabular-nums; }
-.phone-lines [data-add] { color: var(--accent-green); }
-.phone-lines [data-del] { color: var(--accent-red); }
-.phone-app-row-chevron { color: var(--text-muted); opacity: 0.6; flex: none; }
-
-.phone-app-segmented,
-.phone-segmented {
+  inset: 0;
   display: flex;
-  padding: 2px;
-  border-radius: 9px;
-  background: var(--phone-fill, color-mix(in srgb, var(--text-bright) 7%, transparent));
-}
-.phone-app-segmented { margin: 0 var(--phone-gutter) 18px; }
-.phone-segmented { background: var(--phone-glass-card); }
-.phone-segmented button[data-on] { background: var(--bg-input, var(--bg-primary)) !important; }
-.phone-app-segmented button,
-.phone-segmented button {
-  flex: 1;
-  height: 30px;
-  padding: 0 8px;
-  border: 0;
-  border-radius: 7px;
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: 13.5px;
-  white-space: nowrap;
-}
-.phone-app-segmented button[data-on],
-.phone-segmented button[data-on] {
+  flex-direction: column;
+  min-height: 0;
   background: var(--bg-primary);
-  color: var(--text-bright);
-  font-weight: 600;
-  box-shadow: 0 1px 3px rgb(0 0 0 / 0.14);
+  color: var(--text-primary);
+  font-family: var(--f7-font-family);
 }
+:is(.phone-details-panel, .phone-route-body) {
+  padding-top: calc(var(--f7-navbar-height) + var(--f7-safe-area-top));
+}
+:is(.phone-details-panel, .phone-route-body) > * { flex: 1; min-height: 0; }
+.phone-details-empty { padding: 32px 24px; text-align: center; color: var(--text-muted); font-size: 15px; }
 
-/* --- Chats (the list) ------------------------------------------------- */
-.phone-home .phone-app-nav { grid-template-columns: minmax(0, 1fr) auto; }
-.phone-home-computer {
-  display: flex !important;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  padding: 0 !important;
-  font-size: 14px !important;
-  color: var(--text-muted) !important;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+/* --- Rows' marks ------------------------------------------------------ */
+/* A row's icon on a colour of its own, as Settings' rows have. */
+.phone-row-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  color: #fff;
 }
-.phone-home-dot {
-  width: 8px;
-  height: 8px;
-  flex: none;
-  border-radius: 4px;
-  background: var(--accent-yellow);
-}
-.phone-home-computer[data-state="open"] .phone-home-dot { background: var(--accent-green); }
-.phone-home .phone-app-scroll { padding-bottom: calc(100px + env(safe-area-inset-bottom)); }
-.phone-home > .phone-app-nav { display: flex; justify-content: space-between; }
-.phone-home > .phone-app-nav > .phone-app-circle { flex: none; }
-.phone-home-computer-label {
-  display: inline-flex !important;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-  height: 44px;
-  font-size: 14px !important;
-  color: var(--text-muted) !important;
-  white-space: nowrap;
-}
-.phone-home-computer-label > .truncate { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.phone-home-computer-more { flex: none; opacity: 0.7; }
-.phone-home-row {
-  position: relative;
-  display: flex !important;
-  align-items: flex-start;
-  gap: 10px;
-  width: 100%;
-  padding: 11px var(--phone-gutter) !important;
-  text-align: left;
-}
-.phone-project-row { align-items: center !important; }
+/* A project's mark: its initial on its own colour. */
 .phone-project-icon {
-  width: 32px;
-  height: 32px;
-  flex: none;
-  border-radius: 8px;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
   display: grid;
   place-items: center;
   color: #fff;
-  background: #2f6fe4;
-  font-size: 15px;
-  font-weight: 600;
+  font-size: 18px;
+  font-weight: 700;
 }
-.phone-project-chevron { margin-right: -4px; }
-/* A chat's row: the row slides over its Archive button. */
-.phone-chat-row { position: relative; overflow: hidden; }
-.phone-chat-row + .phone-chat-row::before {
-  content: "";
+/* The agent's mark on a chat's card in its details. */
+.phone-details-mark { width: 56px; height: 56px; border-radius: 14px; overflow: hidden; display: grid; place-items: center; }
+.phone-details-mark img { width: 100%; height: 100%; object-fit: cover; }
+/* The actions under the card: the icon over its name. */
+/* Framework7's large button sets its own height and type size after this
+   sheet loads: the app's root comes first to outrank it. */
+.phone-app .button.phone-details-tile { flex-direction: column; gap: 2px; height: 58px; font-size: 12px; }
+.phone-app .phone-details-tile span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* The computer: a laptop with its connection as a dot (green when
+   connected), which opens the computers' popover. */
+.phone-computer-anchor { display: contents; }
+.phone-computer-button { position: relative; }
+.phone-computer-dot {
   position: absolute;
-  z-index: 1;
-  top: 0;
-  right: 0;
-  left: var(--phone-gutter);
-  height: 0.5px;
-  background: var(--phone-separator);
-}
-.phone-chat-row-track { position: relative; background: var(--bg-primary); touch-action: pan-y; }
-.phone-chat-row-archive {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: 84px;
-  display: grid !important;
-  place-items: center;
-  background: var(--accent-red) !important;
-  color: #fff !important;
-  font-size: 15px !important;
-  font-weight: 600;
-}
-.phone-chat-row:not([data-swiped]) .phone-chat-row-archive { visibility: hidden; }
-.phone-chat-row .phone-home-row { padding: 10px 14px !important; }
-.phone-home-slot {
-  flex: none;
-  min-width: 44px;
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  align-self: center;
-}
-.phone-home-pin { display: inline; margin: 0 4px 2px 0; color: var(--text-muted); vertical-align: middle; }
-.phone-home-preview b { font-weight: 500; color: var(--text-secondary); }
-.phone-home-preview b[data-state="needs_input"] { color: var(--theme-accent); }
-.phone-home-preview b[data-state="failed"] { color: var(--accent-red); }
-.phone-home-state {
-  width: 10px;
-  height: 10px;
-  flex: none;
+  right: 7px;
+  bottom: 8px;
+  width: 9px;
+  height: 9px;
   border-radius: 5px;
+  background: var(--f7-color-yellow, #ffcc00);
 }
-.phone-home-state[data-state="needs_input"] { background: var(--theme-accent); }
-.phone-home-state[data-state="working"] { background: var(--accent-blue); animation: phone-home-pulse 1.4s ease-in-out infinite; }
-.phone-home-state[data-state="failed"] { background: var(--accent-red); }
-.phone-home-state[data-state="unread"] { background: var(--accent-blue); }
-@keyframes phone-home-pulse { 50% { opacity: 0.35; } }
-.phone-home-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.phone-home-line { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
-.phone-home-title {
-  flex: 1;
-  min-width: 0;
+/* A bar button grown into its menu (ButtonMorph in
+   phone-computer-switcher.tsx): the bar's glass, at the button's place and
+   curve, widening and lengthening with iOS's spring curve. */
+.phone-morph-backdrop { position: fixed; inset: 0; z-index: 13499; }
+.phone-morph {
+  position: fixed;
+  z-index: 13500;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--text-bright);
+  background-color: var(--f7-glass-bg-color);
+  box-shadow: var(--f7-glass-shadow);
+  -webkit-backdrop-filter: saturate(180%) blur(16px);
+  backdrop-filter: saturate(180%) blur(16px);
+  transition: width 420ms cubic-bezier(0.32, 0.72, 0, 1), height 420ms cubic-bezier(0.32, 0.72, 0, 1);
 }
-.phone-home-time { flex: none; font-size: 13px; color: var(--text-muted); }
-.phone-home-badge {
-  flex: none;
-  padding: 1px 7px;
-  border-radius: 9px;
-  background: var(--theme-accent);
-  color: #fff;
-  font-size: 12px;
-  font-weight: 600;
-}
-.phone-home-preview {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 14px;
-  color: var(--text-muted);
-}
-/* The bottom capsule: the new chat's settings, its field, voice. Its ends are
-   half circles, as round as the screen's corners around it, and it rides
-   just above the home indicator; the list fades out under it. */
-.phone-home-dock {
+.phone-morph-mark {
   position: absolute;
-  z-index: 3;
+  top: 0;
   left: 0;
-  right: 0;
-  bottom: 0;
-  padding: 28px var(--phone-gutter) max(10px, calc(env(safe-area-inset-bottom) - 6px));
-  pointer-events: none;
-}
-.phone-home-capsule {
-  pointer-events: auto;
   display: flex;
   align-items: center;
-  gap: 4px;
-  height: 60px;
-  padding: 0 8px;
-  border-radius: 30px;
-  background: var(--phone-glass);
-  -webkit-backdrop-filter: var(--phone-glass-filter);
-  backdrop-filter: var(--phone-glass-filter);
-  box-shadow: var(--phone-glass-edge), 0 6px 24px rgb(0 0 0 / 0.1);
+  justify-content: center;
+  /* Closing: back as the rows have gone; the spring has most of its way
+     behind it by then, so the circle never shows empty. */
+  transition: opacity 120ms ease-out 40ms;
 }
-.phone-home-dock-button {
-  flex: none;
-  width: 44px;
-  height: 44px;
-  border-radius: 22px;
-  display: grid;
-  place-items: center;
-  background: var(--phone-fill) !important;
-  color: var(--text-primary) !important;
-}
-.phone-home-dock-button:active { background: var(--phone-separator) !important; }
-.phone-home-new {
-  flex: 1;
-  min-width: 0;
-  height: 44px;
-  padding: 0 10px !important;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--text-muted) !important;
-  font-size: 17px !important;
-  text-align: left;
-}
+/* Closing: the rows go first, before the glass has shrunk onto them. */
+.phone-morph-body { opacity: 0; transition: opacity 90ms ease-out; }
+/* Opening: the mark goes at once, the rows come as the glass opens. */
+.phone-morph[data-grown] .phone-morph-mark { opacity: 0; transition: opacity 90ms ease-out; }
+.phone-morph[data-grown] .phone-morph-body { opacity: 1; transition: opacity 160ms ease-out 120ms; }
+/* Its rows sit on the glass, as in Framework7's popover. */
+.phone-app .phone-morph .list { margin: 0; }
+.phone-app .phone-morph .list ul { background: none; }
+.phone-app .phone-morph .list ul::before,
+.phone-app .phone-morph .list ul::after { display: none; }
+.phone-computer-dot[data-online] { background: var(--f7-color-green, #34c759); }
 
 /* --- A conversation --------------------------------------------------- */
 .phone-conversation .peer-session-pane {
   flex: 1;
+  min-height: 0;
   /* The split pane's 56px side lane is the desktop's: the text runs to
      16px from the screen's edges. */
   --chat-column-gutter: 12px;
 }
+/* The transcript runs to the top of the screen and scrolls under the bar. */
 .phone-conversation .peer-session-pane .chat-messages {
-  padding: 12px 16px var(--peer-composer-h, 180px);
+  padding: calc(var(--f7-navbar-height) + var(--f7-safe-area-top) + 8px) 16px var(--peer-composer-h, 180px);
 }
-/* The bar is frosted and drawn apart from the transcript scrolling under it. */
-.phone-conversation > .phone-app-nav {
-  position: relative;
-  z-index: 2;
-  box-shadow: 0 0.5px 0 var(--phone-separator);
-}
-/* The state under the title: a dot that pulses while it runs, orange when
-   it waits for the person (Happy's header). */
-.phone-conversation[data-state] .phone-app-nav-title span::before {
-  content: "";
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  margin-right: 5px;
-  border-radius: 4px;
-  vertical-align: 1px;
-  background: var(--accent-blue);
-}
-.phone-conversation[data-state="working"] .phone-app-nav-title span::before { animation: phone-home-pulse 1.4s ease-in-out infinite; }
-.phone-conversation[data-state="needs_input"] .phone-app-nav-title span::before { background: var(--theme-accent); }
-.phone-conversation[data-state="failed"] .phone-app-nav-title span::before { background: var(--accent-red); }
-.phone-conversation[data-state="unread"] .phone-app-nav-title span::before { display: none; }
-
 /* Messages. The person's own: a light bubble whose corner by the edge is
    tucked; the reply: plain text (Paseo). No row of icons under each
    message: a long press opens them (phone-message-menu.tsx), so the text
    is not selected by the press either. */
 .phone-conversation .message.user .message-content {
-  background: color-mix(in srgb, var(--text-bright) 7%, var(--bg-primary));
+  background: color-mix(in srgb, var(--text-bright) 9%, var(--bg-primary));
   color: var(--text-bright);
-  border-radius: 18px 18px 5px 18px;
+  border-radius: 20px;
   padding: 9px 14px;
   max-width: 82%;
   margin-right: 0;
@@ -522,7 +212,6 @@
   margin-left: 6px;
 }
 .phone-conversation [data-question-card] kbd { display: none; }
-
 /* The box sits just above the home indicator, and on the keyboard when it
    is up. It stands 10px from the screen's edges with 30px corners, close
    to concentric with the screen's own (about 55pt round, less the 10px). */
@@ -547,15 +236,27 @@ html[data-phone-keyboard] .phone-conversation [data-composer-input-area] {
   box-shadow: var(--phone-glass-edge), 0 6px 24px rgb(0 0 0 / 0.1) !important;
 }
 .phone-conversation [data-phone-layout] :is([data-composer-mic], [data-composer-send]) { border-radius: 50% !important; }
-/* Send, once there is something to send: the one filled button. */
+/* Send, once there is something to send: the one solid button, in the
+   theme's colour; pressed, it gives a little. The other buttons in the
+   box are Framework7's: + an icon link, the settings a tonal button. */
 .phone-conversation [data-phone-layout] [data-composer-send][class*="sendBtn"]:not([data-empty]) {
-  background: var(--text-bright) !important;
-  color: var(--bg-primary) !important;
+  background: var(--theme-accent) !important;
+  color: #fff !important;
 }
-/* Every round button of the row on the same light fill as the chips. */
+.phone-conversation [data-phone-layout] [data-composer-send] {
+  transition: transform 0.45s var(--phone-spring-pop), background 0.2s;
+}
+.phone-conversation [data-phone-layout] [data-composer-send]:active { transform: scale(0.9); transition-duration: 0.12s; }
+/* The mic as an icon link, like +: the icon alone, in Framework7's
+   accent, dimming while pressed. */
 .phone-conversation [data-phone-layout] [data-composer-mic]:not([data-state="recording"]):not([data-state="starting"]) {
-  background: color-mix(in srgb, var(--text-bright) 6%, transparent) !important;
-  color: var(--text-primary) !important;
+  background: transparent !important;
+  color: var(--f7-theme-color) !important;
+  transition: opacity 0.3s;
+}
+.phone-conversation [data-phone-layout] [data-composer-mic]:not([data-state="recording"]):not([data-state="starting"]):active {
+  opacity: 0.5;
+  transition-duration: 0s;
 }
 
 /* The composer's phone row (composer/controls/phone-composer-bar.tsx):
@@ -581,7 +282,10 @@ html[data-phone-keyboard] .phone-conversation [data-composer-input-area] {
   width: auto;
   left: calc(var(--composer-action-inset) + var(--composer-action-size) + 12px);
 }
-[data-phone-layout] :is([data-composer-mic], [data-composer-send]) svg { width: 20px; height: 20px; }
+[data-phone-layout] [data-composer-send] svg { width: 20px; height: 20px; }
+[data-phone-layout] [data-composer-mic] svg { width: 24px; height: 24px; }
+/* One colour, as the other icons: the icon's lighter half drawn solid. */
+[data-phone-layout] [data-composer-mic] svg [opacity] { opacity: 1; }
 .phone-composer-bar {
   display: flex;
   align-items: center;
@@ -590,155 +294,147 @@ html[data-phone-keyboard] .phone-conversation [data-composer-input-area] {
   height: var(--composer-line-h);
   padding: 0 calc(var(--composer-action-size) + var(--composer-action-inset) + 8px) 0 var(--composer-action-inset);
 }
-.phone-composer-plus {
-  width: var(--composer-action-size);
-  height: var(--composer-action-size);
-  flex: none;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  border: 0;
-  color: var(--text-primary);
-  background: color-mix(in srgb, var(--text-bright) 6%, transparent);
-}
-.phone-composer-settings {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  height: var(--composer-action-size);
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--text-primary);
-  font-size: 15px;
-}
-/* Model and effort, then the permission: two chips of one button. */
-.phone-composer-chip {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  min-width: 0;
-  height: 100%;
-  padding: 0 14px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--text-bright) 6%, transparent);
-  white-space: nowrap;
-}
-.phone-composer-chip-permission {
-  flex: none;
-  width: var(--composer-action-size);
-  padding: 0;
-  justify-content: center;
-  color: var(--text-secondary);
-}
-.phone-composer-chip-permission[data-mode="bypass"] { color: var(--theme-accent); }
-.phone-composer-chip-model { flex: 0 1 auto; }
-.phone-composer-settings-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-/* The settings sheet: a title with Done, then grouped cards (model;
-   thinking; permission and agent; switches), every row's text on one
-   edge, as a system settings sheet is laid out. */
-.phone-sheet-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 2px 4px 10px 16px;
-  font-size: 17px;
-  font-weight: 600;
-  color: var(--text-bright);
-}
-/* A sheet row's leading icon: a small round tile, as Settings' rows have. */
-.phone-sheet-icon {
-  flex: none;
-  width: 30px;
-  height: 30px;
-  border-radius: 15px;
-  display: grid;
-  place-items: center;
-  background: color-mix(in srgb, currentColor 10%, transparent);
-}
-.phone-sheet-icon svg { width: 18px; height: 18px; }
-.phone-sheet-head button {
-  height: 32px;
-  padding: 0 4px;
-  color: var(--theme-accent) !important;
-  font-size: 16px;
-  font-weight: 500;
-}
-.phone-sheet-group {
-  margin-bottom: 10px;
-  border-radius: 14px;
-  overflow: hidden;
-  background: var(--phone-glass-card);
-}
-.phone-sheet-group > [role] { border-radius: 0 !important; min-height: 48px !important; }
-.phone-sheet-group > [role] + [role] { box-shadow: inset 0 0.5px 0 color-mix(in srgb, var(--text-bright) 10%, transparent); }
-.phone-sheet-label {
-  padding: 0 2px;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-muted);
-}
-.phone-model-trail { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.2; font-size: 14px; }
-.phone-model-trail small { font-size: 11px; color: var(--text-muted); opacity: 0.8; }
-.phone-effort-row {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 6px;
-  padding: 0 0 12px;
-  grid-column: 1 / -1;
-}
-.phone-effort-row .phone-sheet-label { padding: 0 12px; }
-.phone-switch {
-  position: relative;
-  width: 51px;
-  height: 31px;
-  flex: none;
-  border-radius: 16px;
-  background: color-mix(in srgb, var(--text-bright) 14%, transparent);
-  transition: background 200ms;
-}
-.phone-switch::after {
-  content: "";
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 27px;
-  height: 27px;
-  border-radius: 14px;
-  background: #fff;
-  box-shadow: 0 2px 4px rgb(0 0 0 / 0.2);
-  transition: transform 200ms cubic-bezier(0.32, 0.72, 0, 1);
-}
-.phone-switch[data-on] { background: var(--accent-green); }
-.phone-switch[data-on]::after { transform: translateX(20px); }
-
-/* --- Details ---------------------------------------------------------- */
-.phone-details-head { padding: 14px 20px 18px; }
-.phone-details-head h1 { margin: 0; font-size: 22px; line-height: 28px; font-weight: 700; color: var(--text-bright); }
-.phone-details-head p { margin: 2px 0 0; font-size: 14px; color: var(--text-muted); }
-.phone-app-panel {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: auto;
-  padding-bottom: env(safe-area-inset-bottom);
-}
-.phone-app-panel > * { flex: 1; min-height: 0; }
+/* Framework7's link and button draw these; only their size and place here. */
+.phone-composer-plus { width: var(--composer-action-size); height: var(--composer-action-size); flex: none; }
+/* One button: the model and its effort, then the permission's shield.
+   Centred between + and the mic, which take the same room each side. */
+.phone-composer-settings { gap: 6px; min-width: 0; margin-inline: auto; text-transform: none; }
+.phone-composer-settings > * { flex: none; }
+.phone-composer-settings .phone-composer-settings-text { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.phone-composer-mark, .phone-composer-permission { display: flex; }
+/* Full access, as a warning, in red. */
+.phone-composer-permission[data-mode="bypass"] { color: var(--f7-color-red, #ff3b30); }
+/* A saved chat still being read: the button keeps its place, empty, and
+   its settings fade in once known. */
+.phone-composer-settings > * { transition: opacity 0.2s ease; }
+.phone-composer-bar[data-settling] .phone-composer-settings > * { opacity: 0; }
+/* A new chat's row of where it runs (computer, channel, project, folder)
+   at its own size: zoomed like the chip row it overflowed and folded its
+   names away, leaving a row of bare icons. */
+.phone-app [data-environment-row] { zoom: 1; }
 
 /* --- Other routes (settings and the rest) ----------------------------- */
-.phone-app-route {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  display: flex;
-  flex-direction: column;
+/* The page's header under the app's bar: no second bar. The list page's
+   title is a large title, as on the app's own lists; a content page drops
+   the header (its section has its own title) and Back goes to the list
+   (lib/layout/phone-route.ts). */
+.phone-route-body .phone-header-button.phone-header-button { display: none !important; }
+/* A list page (Settings, Agents…) is grouped as the app's own lists are:
+   each run of rows between two section names is one rounded card on the
+   grouped ground. The rail draws its rows and names as siblings, so the
+   cards are drawn from where a run starts and ends. */
+.phone-route-page:has(.phone-route-body a.ui-list-item):not(:has([data-phone-route-content])) .phone-route-body { background: var(--phone-grouped); }
+.phone-route-body [class*="secondary-rail_rail"] { gap: 0 !important; border: 0 !important; background: transparent; padding-left: var(--phone-gutter) !important; padding-right: var(--phone-gutter) !important; }
+.phone-route-body [class*="secondary-rail_groupLabel"] {
+  padding: 6px var(--phone-gutter) 7px !important;
+  font-size: 13px !important;
 }
-.phone-app-route > * { flex: 1; min-height: 0; }
+.phone-route-body a.ui-list-item {
+  position: relative;
+  min-height: 52px;
+  width: 100% !important;
+  margin: 0 !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  padding: 0 var(--phone-gutter) !important;
+  border-radius: 0 !important;
+  background: var(--phone-grouped-card) !important;
+  font-size: 17px !important;
+  transition: background 0.35s ease-out;
+}
+.phone-route-body a.ui-list-item:active { background: color-mix(in srgb, var(--text-bright) 12%, var(--phone-grouped-card)) !important; transition: none; }
+.phone-route-body :not(a.ui-list-item) + a.ui-list-item,
+.phone-route-body a.ui-list-item:first-child { border-top-left-radius: 26px !important; border-top-right-radius: 26px !important; }
+.phone-route-body a.ui-list-item:not(:has(+ a.ui-list-item)) {
+  margin-bottom: 22px !important;
+  border-bottom-left-radius: 26px !important;
+  border-bottom-right-radius: 26px !important;
+}
+.phone-route-body a.ui-list-item + a.ui-list-item::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 52px;
+  height: 0.5px;
+  background: var(--phone-separator);
+}
+.phone-route-body > .main { display: flex; flex-direction: column; }
+.phone-route-body [data-settings-view] { height: auto; flex: 1; min-height: 0; background: transparent; }
+/* A list page's rows are the app's rows: the one last opened is not
+   marked, and each goes on with a chevron. */
+.phone-route-body .ui-list-item[aria-current] { background: transparent; color: var(--nav-color); }
+.phone-route-body a.ui-list-item::after {
+  content: "";
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border: solid var(--text-muted);
+  border-width: 0 1.8px 1.8px 0;
+  transform: rotate(-45deg);
+  opacity: 0.6;
+}
+.phone-route-body [data-manage-topbar] {
+  height: auto;
+  min-height: 0;
+  padding: 2px var(--phone-gutter) 8px;
+  border-bottom: 0;
+}
+.phone-route-body [data-manage-topbar] > span:first-of-type {
+  height: auto;
+  font-size: 34px;
+  line-height: 41px;
+  font-weight: 700;
+}
+.phone-route-body [data-manage-topbar]:has([data-phone-route-content]) { display: none; }
+
+/* A settings section: its name as a title, the section switch across a
+   row of its own, the actions under it, at the app's margin. */
+.phone-route-body [data-settings-head] {
+  padding: 4px var(--phone-gutter) 12px;
+  border-bottom: 0;
+}
+.phone-route-body [data-settings-head] h2 {
+  flex-basis: 100%;
+  font-size: 28px;
+  line-height: 34px;
+  font-weight: 700;
+}
+.phone-route-body [data-settings-head] h2 > span { flex-wrap: wrap; row-gap: 12px; }
+.phone-route-body [data-settings-head] h2 [data-slot="tabs"] { flex-basis: 100%; }
+.phone-route-body [data-settings-head] h2 [role="tablist"] { display: flex; width: 100%; }
+.phone-route-body [data-settings-head] h2 [role="tab"] { flex: 1; }
+.phone-route-body [data-settings-head] > div > :last-child:not(h2) { justify-content: flex-start; }
+.phone-route-body [data-settings-body] {
+  padding-left: var(--phone-gutter);
+  padding-right: var(--phone-gutter);
+}
 
 /* A step's page on the phone leaves out the bookkeeping rows (its call
    id, render and compress), which only the desktop's inspector keeps. */
 .phone-app .detail-section[data-internal] { display: none; }
+
+/* The new-chat bar is Framework7's glass toolbar: settings, the new chat
+   and voice each on a glass piece. The middle one takes the room between,
+   and a long project name in it ends in an ellipsis instead of pushing the
+   other two off the bar. */
+.phone-app .toolbar .phone-new-chat-pane {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.phone-app .toolbar .phone-new-chat {
+  min-width: 0;
+  flex-shrink: 1;
+}
+.phone-app .toolbar .phone-new-chat > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Projects and a project carry their title in the bar, not as a large
+   title, so it reads a size up from Framework7's 17px. */
+.phone-app .phone-home .navbar {
+  --f7-navbar-title-font-size: 20px;
+}

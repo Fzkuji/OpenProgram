@@ -44,7 +44,6 @@ KNOWN_TEXT_OPENS = {
     "openprogram/state/store/snapshot/checkpoint/prompt_checkpoints.py": 1,
     "openprogram/state/store/snapshot/checkpoint/store.py": 4,
     # Reads a JSON credential file.
-    "openprogram/models/providers/adapters/xai_subscription/auth_adapter.py": 1,
 }
 KNOWN_SUBPROCESS_TEXT = {
     "openprogram/state/store/project/project_store.py": 1,

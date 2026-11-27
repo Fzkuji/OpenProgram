@@ -5,6 +5,7 @@ const config = {
   plugins: {
     "@tailwindcss/postcss": {},
     [fileURLToPath(new URL("./scripts/postcss-katex-fonts.cjs", import.meta.url))]: {},
+    [fileURLToPath(new URL("./scripts/postcss-framework7-scope.cjs", import.meta.url))]: {},
   },
 };
 

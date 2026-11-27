@@ -7,7 +7,7 @@
 <table class="stack">
 <thead><tr><th scope="col"></th><th scope="col">Backend</th><th scope="col">Web</th><th scope="col">TUI and CLI</th></tr></thead>
 <tbody>
-<tr><th scope="row">Source of truth</th><td>One worker (<code translate="no">operations/worker/lock.py</code>) and one session store (<code translate="no">runtime/context/session_db.py</code>)</td><td>Same</td><td>Same</td></tr>
+<tr><th scope="row">Source of truth</th><td>One worker (<code translate="no">host/worker/lock.py</code>) and one session store (<code translate="no">runtime/context/session_db.py</code>)</td><td>Same</td><td>Same</td></tr>
 <tr><th scope="row">Events</th><td><code translate="no">EventBus</code> and <code translate="no">_broadcast</code>: one emission reaches every WebSocket client</td><td>Receives</td><td>Receives</td></tr>
 <tr><th scope="row">Running state</th><td><code translate="no">_running_tasks</code>; <code translate="no">running_task</code> and <code translate="no">running_task_clear</code> broadcasts</td><td>Sidebar indicator, composer state</td><td>Status</td></tr>
 <tr><th scope="row">Reconnect</th><td>Session load resends history and calls <code translate="no">_send_running_task_state</code>; <code translate="no">subscribe_execution_stream</code> serves a snapshot of <code translate="no">execution_stream.v1</code></td><td>Restores</td><td>Restores</td></tr>

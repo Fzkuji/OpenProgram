@@ -262,8 +262,9 @@ class DefaultContextEngine(ContextEngine):
             system_prompt = self._build_system_prompt(agent, tools=tools)
 
         # 4. Allocate budget.
-        from openprogram.programs import loaded_tools, split_tools_for_dispatch
-        provider_tools, _deferred_catalog = split_tools_for_dispatch(
+        from openprogram.models.providers.shared.tool_loads import loaded_tools
+        from openprogram.runtime import program_host
+        provider_tools, _deferred_catalog = program_host.host().split_tools_for_dispatch(
             tools or [], loaded_tools(agent_messages))
         # The history is priced as the request carries it: the rendered
         # messages, with each reply's tool calls and results. The stored

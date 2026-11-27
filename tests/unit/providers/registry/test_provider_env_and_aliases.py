@@ -6,7 +6,7 @@ import pytest
 
 from openprogram.models.auth.account.aliases import known_aliases
 from openprogram.models.auth.account.aliases import resolve
-from openprogram.models.providers.settings import env_api_keys
+from openprogram.models.auth import env_api_keys
 
 
 @pytest.fixture(autouse=True)
@@ -21,18 +21,17 @@ def _no_auth_store(monkeypatch):
 
 
 def test_resolve_maps_common_aliases_to_canonical_ids() -> None:
-    assert resolve("codex") == "openai-codex"
     assert resolve("claude") == "anthropic"
-    assert resolve("gemini") == "gemini-subscription"
-    assert resolve("copilot") == "github-copilot"
+    assert resolve("gemini") == "google"
+    assert resolve("bedrock") == "amazon-bedrock"
     assert resolve("unknown-provider") == "unknown-provider"
 
 
 def test_known_aliases_returns_copy() -> None:
     aliases = known_aliases()
-    aliases["codex"] = "mutated"
+    aliases["claude"] = "mutated"
 
-    assert resolve("codex") == "openai-codex"
+    assert resolve("claude") == "anthropic"
 
 
 def test_resolve_provider_key_ignores_env_vars(monkeypatch) -> None:
@@ -41,10 +40,8 @@ def test_resolve_provider_key_ignores_env_vars(monkeypatch) -> None:
     # must never leak into provider auth.
     monkeypatch.setenv("ANTHROPIC_API_KEY", "api-key")
     monkeypatch.setenv("ANTHROPIC_OAUTH_TOKEN", "oauth-token")
-    monkeypatch.setenv("COPILOT_GITHUB_TOKEN", "copilot-token")
 
     assert env_api_keys.resolve_provider_key("anthropic") is None
-    assert env_api_keys.resolve_provider_key("github-copilot") is None
 
 
 def test_resolve_provider_key_supports_google_vertex_adc_via_explicit_credentials(monkeypatch, tmp_path: Path) -> None:

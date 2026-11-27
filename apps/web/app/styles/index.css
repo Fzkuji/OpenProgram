@@ -14,6 +14,7 @@
 @import "./base/desktop-chrome.css";
 @import "./base/motion.css";
 @import "./base/canvas-drag.css";
+@import "./base/brand-logo.css";
 
 /* ── 聊天列（components/chat/） ─────────────────────────────── */
 @import "./chat/pane/layout.css";

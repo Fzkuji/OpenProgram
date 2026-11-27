@@ -2,6 +2,8 @@
 
 import { useLayoutEffect, type RefObject } from "react";
 
+import { isTouchPhone } from "@/lib/layout/phone";
+
 const COMPACT_HYSTERESIS = 12;
 /** 0 full · 1 long labels capped, Local icon-only · 2 git branch names hidden
  *  · 3 every label hidden and the diff badge reduced to a dot (compact). */
@@ -32,7 +34,9 @@ const MAX_LEVEL = 3;
 export function useCompactEnvironmentRow(ref: RefObject<HTMLDivElement | null>) {
   useLayoutEffect(() => {
     const row = ref.current;
-    if (!row) return;
+    // A touch phone scrolls the row sideways instead: names folding into
+    // icons as chips arrive read as the row changing under the finger.
+    if (!row || isTouchPhone()) return;
 
     let frame = 0;
     let level = 0;

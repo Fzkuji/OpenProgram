@@ -183,13 +183,13 @@ def parse_request(body: Any) -> ResponsesRequest:
     if body.get("previous_response_id"):
         raise GatewayError(400, "invalid_request",
                            "previous_response_id is not supported here; send the whole input")
-    model = cv.resolve_model(body.get("model"))
+    model, asked = cv.resolve_model_at(body.get("model"))
     system: list[str] = [body["instructions"]] if isinstance(body.get("instructions"), str) and body["instructions"] else []
     custom: set[str] = set()
     tools = _tools(body.get("tools"), custom)
     messages = _input(model, body.get("input", []), system, custom)
     reasoning = body.get("reasoning") if isinstance(body.get("reasoning"), dict) else {}
-    effort = reasoning.get("effort")
+    effort = asked or reasoning.get("effort")
     options = SimpleStreamOptions(
         max_tokens=body.get("max_output_tokens") if isinstance(body.get("max_output_tokens"), int) else None,
         temperature=body.get("temperature") if isinstance(body.get("temperature"), (int, float)) else None,

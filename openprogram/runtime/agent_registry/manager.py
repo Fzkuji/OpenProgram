@@ -69,8 +69,19 @@ _VALID_ID = re.compile(r"^[a-z][a-z0-9_-]{0,39}$")
 @dataclass
 class AgentModelRef:
     """Which LLM backs this agent."""
-    provider: str = ""          # "anthropic", "openai-codex", ...
+    provider: str = ""          # "anthropic", "deepseek", ...
     id: str = ""                # "claude-sonnet-4-6", "gpt-4o", ...
+
+
+def _model_ref(model: dict[str, Any]) -> AgentModelRef:
+    """An agent.json ``model``; one on a withdrawn provider reads as none,
+    so the Agent falls back to the last used model like one without."""
+    from openprogram.models.auth.provider_policy import is_withdrawn
+
+    provider = str(model.get("provider") or "")
+    if is_withdrawn(provider.strip()):
+        return AgentModelRef()
+    return AgentModelRef(provider=provider, id=str(model.get("id") or ""))
 
 
 @dataclass
@@ -132,6 +143,11 @@ ALWAYS_ON_WAKE_RANGE = (5, 10080)
 ALWAYS_ON_CHANNELS = ("telegram", "slack", "discord", "wechat")
 ALWAYS_ON_CHANNELS_MAX = 10
 ALWAYS_ON_DAYS = (0, 1, 2, 3, 4, 5, 6)  # Monday is 0, as datetime.weekday() counts
+#: A conversation's wake state or an Agent's always-on state changed: the
+#: always-on ticker (``conversation/always_on/ticker.py``) looks again and
+#: sleeps until the next wake. Signalled only when what is saved differs, so
+#: the ticker's own rewrites of the same state do not wake it again.
+ALWAYS_ON_WAKES_TOPIC = "always_on"
 # Report kinds and where each may reach the user beyond the conversation.
 ALWAYS_ON_REPORT_KINDS = ("finding", "approval", "done")
 ALWAYS_ON_NOTIFY_ROUTES = ("desktop", "channels")
@@ -499,10 +515,7 @@ class AgentSpec:
             isolation=_choice(raw.get("isolation"), ISOLATION_VALUES, "isolation"),
             permissions=validate_permissions(raw.get("permissions")),
             default=bool(raw.get("default") or False),
-            model=AgentModelRef(
-                provider=str(model.get("provider") or ""),
-                id=str(model.get("id") or ""),
-            ),
+            model=_model_ref(model),
             thinking_effort=str(
                 raw["thinking_effort"]
                 if raw.get("thinking_effort") is not None else "medium"
@@ -690,8 +703,7 @@ def _write_agent(spec: AgentSpec) -> None:
 def _always_on_changed(agent_id: str) -> None:
     """The always-on ticker looks again (``always_on/ticker.py``)."""
     from openprogram.host._platform import changes
-    from openprogram.runtime.conversation.always_on.store import WAKES_TOPIC
-    changes.signal(WAKES_TOPIC, "agent:" + agent_id)
+    changes.signal(ALWAYS_ON_WAKES_TOPIC, "agent:" + agent_id)
 
 
 # ---------------------------------------------------------------------------

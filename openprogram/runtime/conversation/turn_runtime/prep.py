@@ -428,9 +428,10 @@ def _interrupted_note(db, req: "TurnRequest", user_msg_id: str, parent_id: Optio
     sent again sends the same bytes); otherwise the note comes from the
     reply the message follows on its own branch, so a message on a new
     branch from a stopped reply carries it and a retry of the message
-    before it does not (``turn_context.interruption_note``).
+    before it does not (``stop_reasons.interruption_note``).
     """
     from openprogram.runtime.context.prompt_assembly import turn_context as _turn_context
+    from openprogram.runtime.execution.run_control.stop_reasons import interruption_note
 
     if not hasattr(db, "get_messages_by_id"):
         return ""
@@ -444,7 +445,7 @@ def _interrupted_note(db, req: "TurnRequest", user_msg_id: str, parent_id: Optio
         if not parent_id:
             return ""
         parent = (db.get_messages_by_id(req.session_id, [parent_id]) or [None])[0]
-        return _turn_context.interruption_note(_turn_context.reply_interruption(parent))
+        return interruption_note(_turn_context.reply_interruption(parent))
     except Exception:  # noqa: BLE001 - the turn goes out without the note
         _log.debug("interruption note not read for %s", req.session_id, exc_info=True)
         return ""

@@ -6,6 +6,7 @@ import os
 import mimetypes
 
 from openprogram.programs._host.runtime import function
+from openprogram.runtime.permissions import tool_profiles
 from openprogram.state.worktree.path_resolve import resolve_path
 import logging
 
@@ -318,6 +319,13 @@ read = function(
     toolset=["core", "research"],
     path_params={"file_path": "read"},
 )(execute)
+
+
+# Only this implementation reads without effect: a replacement under the same
+# name is not let through as an inspection (``permissions.recovery``).
+tool_profiles.register(read.name, tool_profiles.ToolProfile(
+    inspects=lambda tool: getattr(tool, "execute", None) is read.execute,
+))
 
 
 __all__ = ["execute", "read"]

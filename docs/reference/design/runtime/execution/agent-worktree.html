@@ -76,7 +76,7 @@
 <tr><th scope="row">bash</th><td>Starts at the worktree each time, in a fresh subprocess. <code translate="no">cd ..</code> can leave: a default location, not a sandbox. Hard isolation is the docker backend</td></tr>
 <tr><th scope="row">read, write, edit, list, apply_patch (<code translate="no">path_resolve.py</code>)</th><td>Relative paths resolve against the worktree. An absolute path outside gets an <code translate="no">[outside worktree]</code> warning and is not blocked</td></tr>
 <tr><th scope="row">glob, grep</th><td>No <code translate="no">path</code> searches the worktree; a relative one resolves inside it (<code translate="no">resolve_root</code>)</td></tr>
-<tr><th scope="row">Dispatch path check (<code translate="no">_host/execution.py</code>)</th><td>Read and write paths are anchored to the worktree before the sandbox check, so the check looks at the file the tool opens</td></tr>
+<tr><th scope="row">Dispatch path check (<code translate="no">runtime/agent/tool_execution.py</code>)</th><td>Read and write paths are anchored to the worktree before the sandbox check, so the check looks at the file the tool opens</td></tr>
 <tr><th scope="row">terminal_use</th><td>Its <code translate="no">workdir</code> is relative to the worktree</td></tr>
 <tr><th scope="row">Runtime subprocess (<code translate="no">--cd</code>)</th><td>Prefers the worktree over the session workdir</td></tr>
 <tr><th scope="row">System prompt (<code translate="no">environment_block</code>)</th><td>Names the worktree, its source checkout and branch, and says earlier paths name the same files by relative path and to re-read before editing</td></tr>

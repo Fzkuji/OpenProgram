@@ -34,7 +34,7 @@ continued the run as); ``parent_execution_id`` is that execution's parent,
     ``complete``.
 ``credential_switch``
     Another of the provider's credentials took over before a reply started
-    (``models/auth/selection.py``): ``to`` and ``from`` name them, ``cause``
+    (``models/providers/streaming/credential_failover.py``): ``to`` and ``from`` name them, ``cause``
     says why (``rate_limit``, ``quota``, ``auth``, ``model``), before the
     reply's blocks. A text run says it on stderr as it happens
     (:func:`credential_switch_line`).

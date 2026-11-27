@@ -19,13 +19,13 @@ from __future__ import annotations
 import logging
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from . import codex, codex_threads
 from .ledger import locked
 from .model import CODEX, ExternalSession
 from .sanitize import remove_secret_values, remove_secrets
-from .writer import node_prefix, reply_id, write_turns
+from .writer import node_prefix, reply_id, user_id, with_pictures, write_turns
 
 _log = logging.getLogger(__name__)
 
@@ -117,25 +117,203 @@ def _link(store, session_id: str, thread: codex_threads.Thread, tip: str) -> Non
     _write_records(store, session_id, thread.id, None, tip)
 
 
-def _project_of(cwd: Optional[str]) -> Optional[str]:
-    """The registered project whose folder holds ``cwd``. Unlike an import,
-    none is made: the Codex app starts a folder for every chat."""
-    if not cwd:
+def _folder_project(cwd: Optional[str]) -> Optional[str]:
+    """The project a synced conversation's folder belongs in: the registered one that holds it,
+    else a new one, as an import makes. None (the default project) for no folder, the home
+    folder, one that is gone, one an app makes for each chat (the Codex app's
+    ``~/Documents/Codex/<day>/…``, the Claude app's scratch workspaces), a temporary one, a
+    folder whose project the person removed, or one in a project that runs on another machine. Raises when the projects cannot be read or made."""
+    if not cwd or _chat_folder(cwd):
         return None
+    from openprogram.state.store.project.identity import read_marker
+    from openprogram.state.store.project.project_store import (
+        LOCAL_MACHINE_ID, folder_is_here, list_projects, resolve_project,
+    )
+    target = Path(cwd).expanduser().resolve()
+    # Projects whose folders are on this computer's disk; one that runs on another machine (a
+    # Docker one) keeps its folder's conversations out: a synced one stays in the default project.
+    registered = [p for p in list_projects() if not p.is_default and p.path]
+    projects = [p for p in registered if folder_is_here(p)]
+
+    def elsewhere(project) -> bool:
+        return project.hidden or (project.machine_id or LOCAL_MACHINE_ID) != LOCAL_MACHINE_ID
+    best, depth = None, -1
+    for project in projects:
+        root = Path(project.path).expanduser().resolve()
+        if (target == root or root in target.parents) and len(root.parts) > depth:
+            best, depth = project, len(root.parts)
+    if best is not None:
+        return None if elsewhere(best) else best.id
+    home = Path.home().resolve()
+    if target == home or not target.is_dir():
+        return None
+    # A folder in, or under, one carrying the marker of a removed project or of another
+    # machine's (the project moved since) is left to the person to open; a sync files nothing there.
+    for folder in (target, *target.parents):
+        if folder == home or folder == folder.parent:
+            break
+        marker = read_marker(folder)
+        owner = next((p for p in registered if p.directory_identity == marker), None) if marker else None
+        if owner is not None and elsewhere(owner):
+            return None
+    return resolve_project(target).id
+
+
+#: How many times a conversation whose placement failed is tried, and the first wait before another try.
+_PLACE_TRIES = 5
+_PLACE_RETRY_SECONDS = 60.0
+
+
+def _project_of(cwd: Optional[str]) -> tuple[Optional[str], bool]:
+    """A new synced conversation's project, and whether that is settled (not a failed read)."""
     try:
-        from openprogram.state.store.project.project_store import list_projects
-        target = Path(cwd).expanduser().resolve()
-        best, depth = None, -1
-        for project in list_projects():
-            if project.is_default or not project.path:
+        return _folder_project(cwd), True
+    except Exception:  # noqa: BLE001 - the default project for now; placed on a later sync
+        _log.warning("project lookup failed for %s", cwd, exc_info=True)
+        return None, False
+
+
+def _place_once(store, session_id: str, row: dict, cwd: Optional[str]) -> None:
+    """Move a conversation synced before its folder got a project into that project, once.
+    One the person put in a project stays; one with a turn running, or whose move failed,
+    is tried again on a later sync."""
+    imported = row.get("imported_from")
+    if not isinstance(imported, dict) or imported.get("placed"):
+        return
+    try:
+        if float(imported.get("place_after") or 0) > time.time():
+            return  # it failed lately: tried again after a while, not on every poll
+        from openprogram.state.execution_facts import turn_running
+        from openprogram.state.store.project import project_store as _projects
+        from openprogram.state.store.project.relocate_node import record_move
+        current = _projects.project_for_session(session_id)
+        if current is None or current.is_default:
+            project_id = _folder_project(cwd)
+            target = _projects.get_project(project_id) if project_id else None
+            if target is not None:
+                if turn_running(session_id):
+                    return  # tried again once the turn ends
+                if not store.move_session(session_id, project_id).get("moved"):
+                    raise RuntimeError(f"not moved to {project_id}")
+                record_move(store, session_id, old_project_id=current.id if current else "",
+                            new_project_id=project_id, old_name=current.name if current else "",
+                            new_name=target.name)
+        store.update_session(session_id, imported_from={**imported, "placed": True})
+    except Exception:  # noqa: BLE001 - tried again later, and given up after a few tries
+        tries = int(imported.get("place_tries") or 0) + 1
+        _log.warning("synced conversation %s not placed in its folder's project (try %d)", session_id, tries,
+                     exc_info=True)
+        try:
+            store.update_session(session_id, imported_from={
+                **imported, "place_tries": tries, "place_after": time.time() + _PLACE_RETRY_SECONDS * 2 ** (tries - 1),
+                **({"placed": True} if tries >= _PLACE_TRIES else {})})
+        except Exception:  # noqa: BLE001
+            _log.debug("placement retry not recorded for %s", session_id, exc_info=True)
+
+
+#: How many conversations synced before a sync kept them as typed (``_unwrap_once``)
+#: or kept their pictures (``_picture_once``) get that on one sync.
+REPAIRS_PER_SYNC = 20
+#: How often a conversation's repair is tried before it is left as it is.
+_REPAIR_TRIES = 3
+#: What a conversation synced since both repairs existed is marked with when made.
+REPAIRED = {"unwrapped": True, "pictured": True}
+
+
+def _repair_once(store, session_id: str, flag: str, budget: list[int], repair: Callable[[dict, dict], dict]) -> None:
+    """Run ``repair(row, imported_from)`` on a conversation once, ``flag`` marking it
+    done in ``imported_from``; a failure is tried again on a later sync, a few times.
+    ``budget`` is how many more conversations this sync may repair."""
+    row = store.get_session(session_id) or {}
+    imported = row.get("imported_from")
+    if not isinstance(imported, dict) or imported.get(flag) or budget[0] <= 0:
+        return
+    budget[0] -= 1
+    try:
+        fields = repair(row, imported)
+        done = {flag: True}
+    except Exception:  # noqa: BLE001 - tried again on a later sync
+        tries = int(imported.get(f"{flag}_tries") or 0) + 1
+        _log.warning("synced conversation %s: %s repair failed (try %d)", session_id, flag, tries, exc_info=True)
+        fields, done = {}, {f"{flag}_tries": tries, **({flag: True} if tries >= _REPAIR_TRIES else {})}
+    try:
+        # Read again: the sync may have written other fields of it (``placed``) since.
+        now = (store.get_session(session_id) or {}).get("imported_from")
+        now = now if isinstance(now, dict) else imported
+        synced = fields.pop("imported_from", {})
+        store.update_session(session_id, **fields, imported_from={**now, **synced, **done})
+    except Exception:  # noqa: BLE001
+        _log.debug("repair mark not recorded for %s", session_id, exc_info=True)
+
+
+def _unwrap_once(store, session_id: str, budget: list[int]) -> None:
+    """Show the messages OpenProgram once sent to the agent in its speaker envelope, and a
+    title named after one, as the person typed them; once per conversation."""
+    from openprogram.state.authority import unwrap_owner_input
+    from .sanitize import ENVELOPE_TITLE
+    from .timeparse import fallback_title
+
+    def repair(row: dict, imported: dict) -> dict:
+        first = None
+        for message in store.get_messages(session_id):
+            text = message.get("content")
+            if message.get("role") != "user" or not isinstance(text, str):
                 continue
-            root = Path(project.path).expanduser().resolve()
-            if (target == root or root in target.parents) and len(root.parts) > depth:
-                best, depth = project.id, len(root.parts)
-        return best
-    except Exception:  # noqa: BLE001 - the default project then
-        _log.debug("project lookup failed for %s", cwd, exc_info=True)
-        return None
+            plain = unwrap_owner_input(text)
+            first = plain if first is None else first
+            if plain != text:
+                store.merge_node(session_id, message["id"], lambda node, old=text, new=plain:
+                                 {"output": new} if node.output == old else None)
+        title = str(row.get("title") or "")
+        if not (title.lstrip().startswith(ENVELOPE_TITLE) and first):
+            return {}
+        renamed = remove_secret_values(fallback_title(first))
+        synced = {"imported_from": {"title": renamed}} if imported.get("title") == title else {}
+        return {"title": renamed, **synced}
+
+    _repair_once(store, session_id, "unwrapped", budget, repair)
+
+
+def _picture_once(store, session_id: str, entry: dict, agent: str, source_id: str,
+                  read: Callable[[], ExternalSession], budget: list[int]) -> None:
+    """Show the pictures of a conversation synced while they were left as ``[image]``,
+    once: each message this sync wrote, still as it was, gets them."""
+    def repair(_row: dict, _imported: dict) -> dict:
+        session = read()
+        prefix = node_prefix(agent, source_id)
+        offset = int(entry.get("offset") or 0)
+        for index, turn in enumerate(session.turns):
+            if not any(data for data, _mime, _place in turn.images):
+                continue
+            node_id = user_id(prefix, index + offset)
+            found = store.get_messages_by_id(session_id, [node_id])
+            if not found or found[0].get("import_fingerprint") != turn.fingerprint():
+                continue  # not the message this turn wrote
+            stored = found[0].get("content")
+            if not isinstance(stored, str) or found[0].get("media"):
+                continue  # written with its pictures already
+            # Placed in the text as it is stored (unwrapped, redacted when it was written).
+            shown, media = with_pictures(store, session_id, turn, stored)
+            if media:
+                store.merge_node(session_id, node_id, lambda node, was=stored, shown=shown, media=media:
+                                 {"output": shown, "metadata": {**(node.metadata or {}), "media": media}}
+                                 if node.output == was else None)
+        return {}
+
+    _repair_once(store, session_id, "pictured", budget, repair)
+
+
+def _chat_folder(cwd: str) -> bool:
+    """A folder an app made for one chat, or a temporary one."""
+    import tempfile
+    try:
+        target = Path(cwd).expanduser().resolve()
+        home = Path.home().resolve()
+        roots = [home / "Documents" / "Codex", home / "Library" / "Application Support" / "Claude",
+                 Path(tempfile.gettempdir()).resolve(), Path("/private/tmp"), Path("/tmp").resolve()]
+    except (OSError, RuntimeError):
+        return True
+    return any(target == root or root in target.parents for root in roots)
 
 
 def _create(store, thread: codex_threads.Thread, session: ExternalSession, agent_id: str) -> str:
@@ -145,7 +323,8 @@ def _create(store, thread: codex_threads.Thread, session: ExternalSession, agent
         "agent": CODEX, "source_id": thread.id, "path": str(thread.path),
         "cwd": session.cwd, "imported_at": time.time(),
     }}
-    project_id = _project_of(session.cwd)
+    project_id, settled = _project_of(session.cwd)
+    fields["imported_from"].update(placed=settled, **REPAIRED)  # written as typed, with its pictures
     if project_id:
         fields["project_id"] = project_id
     store.create_session(session_id, agent_id, title=session.title or "Codex", source=SOURCE,
@@ -219,12 +398,18 @@ def sync(*, home: Optional[Path] = None, store=None, ledger_root: Optional[Path]
     if not found:
         return results
     started_here: Optional[dict[str, str]] = None
+    unwraps, pictures = [REPAIRS_PER_SYNC], [REPAIRS_PER_SYNC]
     with locked(ledger_root) as ledger:
         for thread in found:
             entry = ledger.get(CODEX, thread.id) or {}
             seen_at = float(entry.get("last_message_at") or 0)
             session_id = entry.get("session_id")
-            alive = bool(session_id) and store.get_session(session_id) is not None
+            row = store.get_session(session_id) if session_id else None
+            alive = row is not None
+            if alive:
+                _place_once(store, session_id, row, thread.cwd)
+                _unwrap_once(store, session_id, unwraps)
+                _picture_once(store, session_id, entry, CODEX, thread.id, lambda thread=thread: _parse(thread), pictures)
             if entry.get("linked") and alive and thread.updated_at <= seen_at + 0.5:
                 continue
             if entry.get("empty") and thread.updated_at <= seen_at + 0.5:

@@ -9,7 +9,7 @@ import pytest
 
 from openprogram.operations.self_update import SelfUpdateStore, UpdatePhase
 from openprogram.operations.self_update.control import backend
-from openprogram.operations.self_update.versions import layout as paths
+from openprogram.host._platform import runtime_layout as paths
 from openprogram.programs.tools.system import self_update as tool
 from openprogram.runtime.agent.turn_request import TurnRequest
 from openprogram.state.worktree.context import clear_worktree

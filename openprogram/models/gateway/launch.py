@@ -8,8 +8,10 @@ so it never shows in the process list. Model refs are
 """
 from __future__ import annotations
 
-from .config_files import toml_value
-from .harness_config import PROVIDER_ID, PROVIDER_TABLE, CLOUD_SWITCHES, claude_code_env, strip_ref
+from .edit import toml_value
+from .agents.claude_code import CLOUD_SWITCHES, claude_code_env
+from .agents.codex import PROVIDER_ID, PROVIDER_TABLE
+from .agents.engine import strip_ref
 
 #: The variable a launched Codex reads the gateway key from.
 KEY_ENV = "OPENPROGRAM_GATEWAY_KEY"

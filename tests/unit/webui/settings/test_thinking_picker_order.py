@@ -1,4 +1,4 @@
-from openprogram.interfaces.server import thinking_effort
+from openprogram.runtime.harnesses import thinking_effort
 
 
 def test_picker_orders_descending_provider_levels_for_faster_to_smarter(monkeypatch):

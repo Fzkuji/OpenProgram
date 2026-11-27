@@ -24,7 +24,7 @@ from pathlib import Path
 import threading
 from typing import Any, Callable
 
-from openprogram.programs._host.execution import ToolReturn
+from openprogram.runtime.agent.tool_execution import ToolReturn
 
 from .. import errors
 from ..actions import vocabulary
@@ -209,15 +209,20 @@ def _no_scripts() -> bool:
 Judge = Callable[[str, dict, dict], str]
 
 
+def _computer_use_tool():
+    """The registered ``computer_use`` tool, which the permission decision reads."""
+    from openprogram.programs._host import runtime as registry
+    return registry.get("computer_use")
+
+
 def _unrestricted(tool_args: dict) -> bool:
     """Whether this turn is Bypass and the call may run: no grant to stay inside, whatever rule matched.
 
     ``tool_args`` is the whole call (device, type, app, args, code), as the permission decision reads it.
     """
-    from openprogram.programs import get_agent_tool
     from openprogram.runtime.agent.turn_request import get_turn_request
     from openprogram.runtime.permissions.policy import permission_decision
-    request, tool = get_turn_request(), get_agent_tool("computer_use")
+    request, tool = get_turn_request(), _computer_use_tool()
     return (request is not None and tool is not None and request.permission_mode == "bypass"
             and permission_decision(tool, request, tool_args).outcome == "allow")
 
@@ -225,10 +230,9 @@ def _unrestricted(tool_args: dict) -> bool:
 def _as_action_calls(provider: Provider) -> Judge:
     """The decision each step of an unrestricted call gets as an action call of its own, so the owner's deny
     and ask rules still hold for the subject a step names. Read on the call's thread."""
-    from openprogram.programs import get_agent_tool
     from openprogram.runtime.agent.turn_request import get_turn_request
     from openprogram.runtime.permissions.policy import permission_decision
-    request, tool = get_turn_request(), get_agent_tool("computer_use")
+    request, tool = get_turn_request(), _computer_use_tool()
 
     def judge(action: str, step_subject: dict, step: dict) -> str:
         return permission_decision(tool, request, {**provider.addressed(), "action": action,

@@ -41,7 +41,7 @@ _DESCRIPTION = (
 
 
 def _archive_agent_impl(to: str, reason: str = "") -> str:
-    from openprogram.programs.tools.agents.send_message.send_message.addressing import (
+    from openprogram.runtime.conversation.peer_agents.addressing import (
         resolve_existing_target,
     )
 

@@ -44,6 +44,7 @@ import logging
 import os
 import re
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -53,6 +54,7 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Optional
 from openprogram.host._platform.filesystem import replace_file
+from openprogram.state import host_facts
 
 
 DEFAULT_PROJECT_ID = "default"
@@ -156,19 +158,12 @@ def folder_is_here(project) -> bool:
     machine_id = str(getattr(project, "machine_id", "") or "") or LOCAL_MACHINE_ID
     if machine_id == LOCAL_MACHINE_ID:
         return True
-    from openprogram.host.machines import get_machine
-    machine = get_machine(machine_id)
+    machine = host_facts.machine(machine_id)
     return machine is not None and not machine.remote_files
 
 
 def _row_folder_is_here(row: dict) -> bool:
     return folder_is_here(Project.from_dict({"id": row.get("id") or "", **row}))
-
-
-def project_machine(project):
-    """The machine a project's conversations run on (``host.machines.resolve_for_project``)."""
-    from openprogram.host.machines import resolve_for_project
-    return resolve_for_project(project)
 
 
 # ProjectGit: the git wrapper for a project's working directory
@@ -799,15 +794,14 @@ def update_project(project_id: str, patch: dict) -> Project:
 def _normalized_folders(project: Optional[Project], folders: list) -> list[str]:
     """Absolute folders on the project's machine, each checked there, without repeats."""
     remote = project is not None and not folder_is_here(project)
-    machine = project_machine(project) if remote else None
+    machine = host_facts.project_machine(project) if remote else None
     normalized: list[str] = []
     for value in folders:
         if not isinstance(value, str) or not (value.startswith("/") or Path(value).expanduser().is_absolute()):
             raise ValueError("source folder paths must be absolute")
         if machine is not None:
-            from openprogram.host.machines.remote import resolve_folder
             try:
-                found = resolve_folder(machine, value)
+                found = host_facts.remote_folder(machine, value)
             except ConnectionError as exc:
                 raise ValueError(str(exc)) from None
             if found is None:
@@ -925,12 +919,12 @@ def resolve_project(path: str | Path | None = None, *, name: str | None = None,
         return get_default_project()
     machine_id = (machine_id or "").strip() or LOCAL_MACHINE_ID
     if machine_id != LOCAL_MACHINE_ID:
-        from openprogram.host.machines import _not_an_environment, get_machine, usable_as_environment
-        machine = get_machine(machine_id)
+        machine = host_facts.machine(machine_id)
         if machine is None:
             raise ProjectStoreError(f"unknown machine {machine_id!r}")
-        if not usable_as_environment(machine):
-            raise ProjectStoreError(_not_an_environment(machine))
+        refusal = host_facts.environment_refusal(machine)
+        if refusal:
+            raise ProjectStoreError(refusal)
         if machine.remote_files:
             return _resolve_remote_project(machine, str(path), name)
 
@@ -980,11 +974,36 @@ def resolve_project(path: str | Path | None = None, *, name: str | None = None,
     return _reopened(moved.id, name) if moved.hidden else moved
 
 
+def working_directory_project(cwd: str | os.PathLike) -> str | None:
+    """The project id a new conversation started in ``cwd`` is bound to.
+
+    The home folder is the default project's own directory, so a run started
+    there needs no binding (``None``). Any other directory is registered as
+    a project, which is what makes it the tools' working directory.
+
+    Registering writes the folder's identity marker
+    (``<cwd>/.openprogram/project.json``). A folder that cannot take it (a
+    read-only checkout, a marker of a project registered elsewhere) does
+    not stop the run: the conversation runs unbound, in the default
+    project's directory, and a warning on stderr says so.
+    """
+    folder = Path(cwd).expanduser().resolve()
+    if folder == Path.home().expanduser().resolve():
+        return None
+    try:
+        return resolve_project(folder).id
+    except (ProjectStoreError, OSError, ValueError) as exc:
+        _log.warning("working directory %s not bound: %s", folder, exc, exc_info=True)
+        print(f"[warning] {folder} could not be opened as the conversation's project "  # noqa: T201 - the CLI or ACP run's notice on its terminal
+              f"({exc}); the run works in the default project's directory instead.",
+              file=sys.stderr)
+        return None
+
+
 def _machine_label(machine_id: str) -> str:
     if machine_id == LOCAL_MACHINE_ID:
         return "this computer"
-    from openprogram.host.machines import get_machine
-    machine = get_machine(machine_id)
+    machine = host_facts.machine(machine_id)
     return f"machine “{machine.name if machine else machine_id}”"
 
 
@@ -995,9 +1014,8 @@ def _resolve_remote_project(machine, path: str, name: str | None) -> Project:
     on this computer's disk is looked at. One folder on one machine is one
     project: opening it again returns that project.
     """
-    from openprogram.host.machines.remote import resolve_folder
     try:
-        folder = resolve_folder(machine, path)
+        folder = host_facts.remote_folder(machine, path)
     except ConnectionError as exc:
         raise ProjectStoreError(str(exc)) from None
     if folder is None:
@@ -1295,7 +1313,6 @@ __all__ = [
     "DEFAULT_PROJECT_ID",
     "LOCAL_MACHINE_ID",
     "folder_is_here",
-    "project_machine",
     "projects_dir",
     "list_projects",
     "get_project",

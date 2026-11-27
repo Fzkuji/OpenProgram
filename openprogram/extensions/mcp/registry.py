@@ -184,7 +184,7 @@ async def load_mcp_servers() -> None:
     # alongside user / project / plugin commands.
     try:
         from openprogram.runtime.commands.registry import sync_mcp_prompts
-        await sync_mcp_prompts()
+        await sync_mcp_prompts(list_clients())
     except Exception:
         # Prompt sync is optional: the servers stay usable, only their
         # slash commands are missing until the next sync.
@@ -215,7 +215,7 @@ async def add_server(cfg: MCPServerConfig) -> dict[str, Any]:
     await _spawn_and_register(cfg)
     try:
         from openprogram.runtime.commands.registry import sync_mcp_prompts
-        await sync_mcp_prompts()
+        await sync_mcp_prompts(list_clients())
     except Exception:
         # Prompt sync is optional: the servers stay usable, only their
         # slash commands are missing until the next sync.
@@ -250,7 +250,7 @@ async def restart_server(name: str,
     await _spawn_and_register(cfg)
     try:
         from openprogram.runtime.commands.registry import sync_mcp_prompts
-        await sync_mcp_prompts()
+        await sync_mcp_prompts(list_clients())
     except Exception:
         # Prompt sync is optional: the servers stay usable, only their
         # slash commands are missing until the next sync.
@@ -313,12 +313,8 @@ async def _stop_and_unregister(name: str) -> None:
     tool_names = _registered_tool_names.pop(name, [])
     signal("mcp", name)
     if tool_names:
-        # Defer the import to avoid a cycle: functions._runtime imports
-        # nothing from us, but pulling it in at module load time would
-        # tie startup ordering tighter than necessary.
-        from openprogram.programs._host.runtime import _registry, mark_unavailable
+        from openprogram.runtime import program_host
         # A conversation that loaded one keeps its definition; a call of it
         # says the server is disconnected (deferred-tools.html).
-        mark_unavailable(tool_names, f"MCP server '{name}' is disconnected")
         for tname in tool_names:
-            _registry.pop(tname, None)
+            program_host.host().unregister(tname, reason=f"MCP server '{name}' is disconnected")

@@ -1,7 +1,7 @@
 """``openprogram providers status`` with no provider: every connected provider on one screen.
 
 The rows read the payload of ``GET /api/providers/status``
-(:func:`openprogram.models.usage.provider_status.build_status`): health,
+(:func:`openprogram.models.listing.provider_status.build_status`): health,
 quota (a 20-cell bar per window, as Codex's ``/status`` draws it), 30-day
 spend, tokens, cache share and default model. A company connected in more
 than one way (``family`` in the payload) is one line with its best state,
@@ -238,7 +238,7 @@ def worker_status(refresh: bool) -> Optional[dict]:
 
 
 def cmd_overview(refresh: bool, as_json: bool) -> int:
-    from openprogram.models.usage.provider_status import build_status
+    from openprogram.models.listing.provider_status import build_status
     payload = worker_status(refresh)
     try:
         if payload is None:

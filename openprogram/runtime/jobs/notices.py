@@ -289,8 +289,9 @@ def tip_reply(session_id: str, tip_id: str) -> str:
 
 def _idle_watch_job(session_id: str, entry: dict[str, Any]) -> Optional[Job]:
     """The watch as a finished Job once its target is idle, else None."""
-    from openprogram.runtime.conversation.peer_agents import inbox
+    from openprogram.runtime import conversation_link
     from openprogram.state.authority import normalize_authority
+    inbox = conversation_link.inbox()
     target = str(entry.get("target_session_id") or "")
     tip = inbox._branch_tip(target, entry.get("target_head_id"))  # noqa: SLF001
     if not target or not tip or inbox.target_busy(target, tip, session_id):
@@ -337,10 +338,11 @@ def _relayed_job(session_id: str, entry: dict[str, Any]) -> tuple[bool, Optional
     message it passed on ended and each reply was answered by a turn of the
     conversation that passed it on; the job then carries that
     conversation's latest reply. ``job`` is None when nothing is told."""
-    from openprogram.runtime.conversation.peer_agents import inbox
+    from openprogram.runtime import conversation_link
     from openprogram.runtime.jobs.store import load_job
     from openprogram.runtime.jobs.types import is_terminal
     from openprogram.state.authority import normalize_authority
+    inbox = conversation_link.inbox()
     if entry.get("job_id"):
         job = load_job(str(entry.get("job_session_id") or session_id), str(entry["job_id"]))
         if job is None:
@@ -467,12 +469,12 @@ def _busy(session_id: str, jobs: list[Job]) -> bool:
     that dispatched one of these jobs still runs and may read it itself.
     Background agents running in the same session do not count: a
     conversation waiting on three agents hears from each as it ends."""
-    from openprogram.runtime.conversation.run_control import is_worker_stopping
+    from openprogram.host.runtime_facts import worker_stopping
     from openprogram.runtime.execution import default_store
     from openprogram.runtime.jobs.store import list_jobs
     from openprogram.runtime.jobs.types import is_terminal
 
-    if is_worker_stopping():
+    if worker_stopping():
         return True
     background = {j.id for j in list_jobs(session_id) if not j.wait}
     if any(r.execution_id not in background
@@ -713,7 +715,8 @@ def _sweep_all() -> bool:
     """Deliver what can be; whether anything is still waiting."""
     sweep()
     # Messages queued for busy agents ride the same loop (agent/inbox.py).
-    from openprogram.runtime.conversation.peer_agents import inbox
+    from openprogram.runtime import conversation_link
+    inbox = conversation_link.inbox()
     inbox.sweep()
     with _lock:
         waiting = bool(_due)
@@ -741,7 +744,7 @@ async def run_job_notices(stop: asyncio.Event) -> None:
     back, an execution or a Job changed). Otherwise it looks on its own only
     every ``RESYNC_SECONDS``."""
     from openprogram.host._platform import changes
-    from openprogram.runtime.conversation.run_control.idle import subscribe_idle
+    from openprogram.runtime.conversation_link import subscribe_idle
 
     loop = asyncio.get_running_loop()
     wake = asyncio.Event()

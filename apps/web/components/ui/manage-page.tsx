@@ -25,6 +25,7 @@ import type {
 } from "@/components/animated-icons";
 
 import { cn } from "@/lib/utils";
+import { PageTitleContext } from "@/lib/layout/phone-route";
 import { Button } from "@/components/ui/button";
 import { HoverTip } from "@/components/ui/tooltip";
 import { isManageActionIcon } from "./manage-action-icon";
@@ -273,10 +274,10 @@ export function ManagePageHeader({
   });
   return (
     <>
-      <div className={cn(styles.topbar, railToggle !== undefined && styles.topbarWithToggle, sectioned && styles.topbarSectioned)}>
+      <div data-manage-topbar="" className={cn(styles.topbar, railToggle !== undefined && styles.topbarWithToggle, sectioned && styles.topbarSectioned)}>
         {/* Phone only: the sidebar drawer's button (layout/phone-shell.tsx). */}
         <PhoneDrawerButton />
-        {railToggle}
+        <PageTitleContext.Provider value={title}>{railToggle}</PageTitleContext.Provider>
         <span className={styles.title}>{title}</span>
         {(toolbar || actions.length > 0) && (
           <div className={styles.toolbar}>

@@ -74,7 +74,7 @@ def _start_redirected_state_writers(root: Path, monkeypatch: pytest.MonkeyPatch)
     state = root / "owner" / ".openprogram"
     monkeypatch.setattr(paths, "get_state_dir", lambda: state)
     monkeypatch.setattr(
-        "openprogram.operations.worker.lock.is_held_by", lambda _pid: True, raising=False,
+        "openprogram.host.worker.lock.is_held_by", lambda _pid: True, raising=False,
     )
     monkeypatch.setattr('openprogram.runtime.jobs.runner.shared._broadcast', lambda *a, **k: None)
     shutdown_runner()
@@ -204,6 +204,7 @@ def test_native_workspace_stops_redirected_state_writers_before_cleanup(tmp_path
             shutil.rmtree(root)
 
 
+@pytest.mark.slow
 def test_native_controller_imports_after_original_runtime_is_moved(native_workspace, monkeypatch):
     from openprogram.operations.self_update.delivery import controller_bundle as bundle
 

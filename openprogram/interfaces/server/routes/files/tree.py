@@ -125,8 +125,8 @@ def register(app):
         ``tools.disabled``), so the model never sees it. Toggle via
         ``POST /api/settings {key:"tools.disabled.<name>", value:<on>}``."""
         from openprogram.programs import agent_tools
-        from openprogram.programs.tools.knowledge.memory import MEMORY_TOOL_NAMES
-        from openprogram.operations.setup import read_disabled_tools
+        from openprogram.state.memory.tool_names import MEMORY_TOOL_NAMES
+        from openprogram.programs.tools.disabled import read_disabled_tools
         disabled = read_disabled_tools()
         _TOOL_GROUPS = {
             "bash": "file", "read": "file", "write": "file", "edit": "file",

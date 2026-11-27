@@ -5,7 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.programs._host.runtime import current_tool_call_id, get
+from openprogram.programs._host.runtime import get
+from openprogram.runtime.agent.call_state import current_tool_call_id
 from openprogram.programs.tools.interaction import canvas
 
 
@@ -24,7 +25,7 @@ async def _call(path: Path, action: str, block_id: str, **arguments):
         asyncio.Event(),
         None,
     )
-    assert current_tool_call_id() is None
+    assert current_tool_call_id() == ""
     return "\n".join(block.text for block in result.content)
 
 
@@ -95,7 +96,7 @@ def test_registered_canvas_explicit_failure(owned_canvas, arguments, message):
         )
         assert message in result.content[0].text
         assert result.is_error is True
-        assert current_tool_call_id() is None
+        assert current_tool_call_id() == ""
         assert not owned_canvas.exists()
         bare = canvas.execute(path=str(owned_canvas), **arguments)
         assert isinstance(bare, str) and bare == result.content[0].text

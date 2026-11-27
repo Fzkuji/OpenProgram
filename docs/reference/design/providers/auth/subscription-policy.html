@@ -1,0 +1,46 @@
+<title>Subscription policy</title>
+<meta name="description" content="A vendor is reached through its official API with a key, or through its own program as an outside agent; OpenProgram never signs in to a plan itself.">
+<meta name="covers" content="openprogram/models/auth/provider_policy.py">
+<h1>Subscription policy</h1>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Way</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">API</th><td>The vendor's official API with a key the person got from the vendor, billed to their API account</td></tr>
+<tr><th scope="row">Plan</th><td>The vendor's own program, run as an outside agent: Codex app-server, Claude Code, Gemini CLI over ACP (<a href="../../../../models/third-party-harnesses.html">Third-Party Harnesses</a>). The program signs in and talks to the vendor; OpenProgram talks to the program</td></tr>
+<tr><th scope="row">Never</th><td>A plan's sign-in used by OpenProgram itself, an official client's identity (user agent, originator, client id), or an internal endpoint</td></tr>
+</tbody>
+</table>
+
+<h2 id="why">Why</h2>
+<p>A plan's sign-in belongs to the vendor's own clients. Another client sending it while posing as an official one breaks the vendor's terms, and vendors suspend the accounts behind it (T3 Code, under <a href="#peers">Peers</a>).</p>
+<p>Anthropic is reached only through its official API with a key; a Claude subscription credential is refused (<a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/models/auth/provider_policy.py"><code translate="no">provider_policy.py</code></a>).</p>
+
+<h2 id="withdrawn">Withdrawn</h2>
+<table class="stack">
+<thead><tr><th scope="col">Provider id</th><th scope="col">Was</th><th scope="col">Instead</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">openai-codex</code></th><td>ChatGPT sign-in on the Codex backend</td><td>The Codex harness; or <code translate="no">openai</code> with an API key</td></tr>
+<tr><th scope="row"><code translate="no">github-copilot</code></th><td>GitHub sign-in on Copilot's chat API</td><td>The model vendor's API key</td></tr>
+<tr><th scope="row"><code translate="no">gemini-subscription</code>, <code translate="no">google-gemini-cli</code>, <code translate="no">gemini-cli</code></th><td>Google sign-in on Cloud Code Assist (<code translate="no">cloudcode-pa</code>)</td><td>Gemini CLI over ACP; or <code translate="no">gemini</code> with an API key</td></tr>
+<tr><th scope="row"><code translate="no">xai-subscription</code></th><td>Grok sign-in on the Grok CLI's chat proxy</td><td><code translate="no">xai</code> with an API key</td></tr>
+</tbody>
+</table>
+<p class="note">Gone with them: the Codex and Copilot quota readers (<code translate="no">wham/usage</code>, <code translate="no">copilot_internal</code>), the subscription model catalogue and its refresher, the Codex CLI login import, the <code translate="no">providers configure</code> wizard and the per-provider runtime subclasses.</p>
+
+<h2 id="saved-settings">Saved settings</h2>
+<p>An id in <code translate="no">WITHDRAWN_PROVIDERS</code> is never listed, offered or signed in. A config entry, agent or conversation that names one is skipped like any provider that is not there, and models.dev rows for it are dropped, so the model picker never shows it.</p>
+
+<h2 id="codex-quota">Codex plan quota</h2>
+<p>Only from Codex itself: its app-server's <code translate="no">account/rateLimits/read</code> when a process starts, then each <code translate="no">account/rateLimits/updated</code> merged in for the same <code translate="no">CODEX_HOME</code> (<a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/runtime/harnesses/codex/rate_limits.py"><code translate="no">rate_limits.py</code></a>), and the <code translate="no">rate_limits</code> in the <code translate="no">token_count</code> events of its own rollout files.</p>
+<p>Only the plan's <code translate="no">codex</code> limit family counts, and the newer reading wins. It is kept in <code translate="no">harnesses.db</code> and shown on the <a href="../../integrations/third-party-harnesses.html">Third-party harnesses</a> usage page. Nothing asks ChatGPT for it.</p>
+
+<h2 id="peers">Peers</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Project</th><th scope="col">Plan use</th></tr></thead>
+<tbody>
+<tr><th scope="row">Paseo</th><td>Runs the official CLIs for inference, but its usage plugins call internal endpoints: <code translate="no">wham/usage</code> with a browser user agent, <code translate="no">copilot_internal</code> with a <code translate="no">GitHubCopilotChat</code> user agent, Anthropic's <code translate="no">oauth/usage</code>, and <code translate="no">agy -p /usage</code></td></tr>
+<tr><th scope="row">T3 Code</th><td>Warned by Google for sending Antigravity's user agent to read quota from an internal API</td></tr>
+<tr><th scope="row">OpenProgram</th><td>Inference and quota only through the vendor program's own protocol</td></tr>
+</tbody>
+</table>
+<p class="next"><a href="unified-auth-storage.html">Auth storage</a></p>

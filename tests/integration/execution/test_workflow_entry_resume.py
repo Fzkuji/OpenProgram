@@ -184,6 +184,7 @@ def _run(driver, mode, folder, policy, env):
     return json.loads(done.stdout.strip().splitlines()[-1])
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("change,policy,expected", [
     (False, "keep_original", "A"),
     (True, "use_latest", "B"),

@@ -82,13 +82,11 @@ def test_sdk_connection_errors_are_retryable_transport():
 def test_error_kind_names_a_stalled_stream_whichever_layer_gave_up():
     """A stalled stream and a reset connection share the ``transport``
     reason; ``error_kind`` tells them apart, through any wrapping."""
-    from openprogram.models.providers.adapters.openai_codex.read_budget import StreamTotalTimeout
     from openprogram.models.providers.utils.failures.errors import error_kind
     from openprogram.models.providers.utils.streams.stream_idle import StreamIdleTimeout
 
     idle = StreamIdleTimeout("no response event for 120s")
     assert error_kind(idle) == "stream_idle"
-    assert error_kind(StreamTotalTimeout("deadline")) == "stream_total"
     wrapped = LLMError(message="gave up", reason=ErrorReason.TRANSPORT, cause=idle)
     assert error_kind(wrapped) == "stream_idle"
     try:

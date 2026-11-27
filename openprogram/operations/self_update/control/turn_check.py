@@ -17,7 +17,7 @@ import uuid
 
 from ..store import SelfUpdateStore
 from ..types import UpdatePhase
-from ..versions.layout import current_runtime
+from openprogram.host._platform.runtime_layout import current_runtime
 
 SOURCE = "self_update_turn_check"
 _PROMPT = "Use the read tool once on {path}, then reply with only the word DONE."

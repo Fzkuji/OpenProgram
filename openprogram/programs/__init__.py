@@ -38,6 +38,7 @@ from ._host.runtime import (
     Tier,
     as_resident,
     current_tool as _current_tool,
+    unsafe_in_for as _unsafe_in_for,
 )
 from ._host.lower_layers import register as _register_lower_layer_ports
 
@@ -54,7 +55,7 @@ _register_lower_layer_ports()
 # function lands in the shared ``_registry`` by the time this package
 # finishes loading.
 from . import tools as _tools_self_register  # noqa: F401
-from .tools.knowledge.memory import MEMORY_TOOL_NAMES
+from openprogram.state.memory.tool_names import MEMORY_TOOL_NAMES
 from ._host.registry import load_program_modules as _load_program_modules
 import logging
 
@@ -329,7 +330,7 @@ def list_available() -> list[str]:
     """
     disabled: set[str] = set()
     try:
-        from openprogram.operations.setup import read_disabled_tools
+        from openprogram.programs.tools.disabled import read_disabled_tools
         disabled = read_disabled_tools()
     except Exception:
         # tools.disabled is optional config; unreadable config hides nothing.
@@ -449,7 +450,7 @@ def agent_tools(
     # the user can switch them back on).
     if not include_disabled:
         try:
-            from openprogram.operations.setup import read_disabled_tools
+            from openprogram.programs.tools.disabled import read_disabled_tools
             disabled = read_disabled_tools()
             if disabled:
                 picked = [t for t in picked if t.name not in disabled]
@@ -515,16 +516,6 @@ def apply_tool_policy(
     if only_available:
         out = [t for t in out if _is_available_agent_tool(t)]
     return [_current_tool(t) for t in out]
-
-
-def _unsafe_in_for(tool_name: str) -> set[str]:
-    """Read the live unsafe_in metadata for a single function. Looks at
-    the in-process channel registry that ``@function(unsafe_in=[...])``
-    populates so the answer reflects whatever plugins are loaded right
-    now.
-    """
-    from openprogram.programs._host.runtime import _unsafe_in_channel
-    return _unsafe_in_channel.get(tool_name, set())
 
 
 def get_agent_tool(name: str) -> AgentTool | None:

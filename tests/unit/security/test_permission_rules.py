@@ -179,7 +179,8 @@ def _ensure_test_authority(req):
 
 def _frozen_runtime_request(**kwargs):
     """Non-interactive child keeps the admitted snapshot; live owner rereads."""
-    from openprogram.runtime.permissions.authority import local_owner_authority, runtime_authority
+    from openprogram.runtime.permissions.authority import local_owner_authority
+    from openprogram.state.authority import runtime_authority
 
     parent = TurnRequest(
         session_id=kwargs.get("session_id", "s"),
@@ -314,7 +315,7 @@ def test_acceptedits_command_still_asks():
 # ── path safety (file_safety.py) ──
 
 def test_path_safety(tmp_path):
-    from openprogram.programs.tools.files.file_safety import check_path_safety
+    from openprogram.runtime.permissions.file_safety import check_path_safety
     import os
     d = str(tmp_path)
     assert check_path_safety(os.path.join(d, "a.txt"), [d])["safe"]
@@ -874,7 +875,8 @@ def test_escalation_without_a_sandbox_runs_normally(monkeypatch):
 
 def test_bypass_keeps_configured_sandbox(monkeypatch):
     from openprogram.models.providers.types import TextContent
-    from openprogram.host.sandbox import MODE_WORKSPACE_WRITE, resolve_policy
+    from openprogram.host.sandbox import resolve_policy
+    from openprogram.state.sandbox_settings import MODE_WORKSPACE_WRITE
 
     monkeypatch.setattr(
         "openprogram.state.config.read_config",

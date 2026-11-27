@@ -59,7 +59,7 @@ class TurnResult:
     error_retryable: Optional[bool] = None
     error_retry_after_s: Optional[float] = None
     # The failure's stable category beside its reason (``errors.error_kind``:
-    # ``stream_idle``, ``stream_total``, ``memory_unavailable``, ``auth``).
+    # ``stream_idle``, ``memory_unavailable``, ``auth``).
     error_kind: Optional[str] = None
     # Which limit or refusal it was (``errors.failure_cause``): a spent quota
     # with its reset time, a rejected key, a region or plan not served, an

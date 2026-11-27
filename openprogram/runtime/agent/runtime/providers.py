@@ -281,9 +281,9 @@ class ProvidersOperations:
                 # Explicit opt-out — reasoning-only call, no tools.
                 agent_tools = None
             else:
-                from openprogram.programs import (
-                    agent_tools as _resolve_agent_tools,
-                )
+                from openprogram.runtime import program_host
+
+                _resolve_agent_tools = program_host.host().agent_tools
 
                 tools_for_session = _resolve_agent_tools(
                     toolset=preset or DEFAULT_TOOLSET,
@@ -293,7 +293,9 @@ class ProvidersOperations:
                 )
                 agent_tools = tools_for_session or None
         elif raw_tools:
-            from openprogram.programs import apply_tool_policy as _apply_policy
+            from openprogram.runtime import program_host
+
+            _apply_policy = program_host.host().apply_tool_policy
 
             adapted = _adapt_tools(raw_tools) or []
             # Caller-supplied tools (exec(tools=[...])) are self-authorized:
@@ -314,7 +316,9 @@ class ProvidersOperations:
             agent_tools = None
 
         for constraint in policy.get("allow_constraints") or []:
-            from openprogram.programs import apply_tool_policy as _apply_policy
+            from openprogram.runtime import program_host
+
+            _apply_policy = program_host.host().apply_tool_policy
 
             agent_tools = _apply_policy(agent_tools or [], allow=constraint,
                                         exposure_filter=False) or None

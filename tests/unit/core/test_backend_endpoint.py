@@ -77,7 +77,7 @@ def test_resolve_backend_endpoint_requires_a_verified_challenge(
     auth_state = _start_auth_state(tmp_path, allowed_origins=())
     try:
         monkeypatch.setattr(
-            "openprogram.operations.worker.ports.backend_accepts_owner_challenge",
+            "openprogram.host.security.backend_endpoint.backend_accepts_owner_challenge",
             lambda port, **_kwargs: False,
         )
         with pytest.raises(OwnerAuthError, match="not owned by this profile"):
@@ -90,7 +90,7 @@ def test_resolve_backend_endpoint_requires_a_verified_challenge(
             return True
 
         monkeypatch.setattr(
-            "openprogram.operations.worker.ports.backend_accepts_owner_challenge", accept
+            "openprogram.host.security.backend_endpoint.backend_accepts_owner_challenge", accept
         )
         endpoint = resolve_backend_endpoint(tmp_path)
     finally:
@@ -154,7 +154,7 @@ def test_resolve_backend_endpoint_never_transmits_the_token(
             "openprogram.host.security.safe_http.configured_safe_client", configured
         )
         monkeypatch.setattr(
-            "openprogram.operations.worker.lifecycle.current_worker_pid", lambda: 12345
+            "openprogram.host.worker.process.current_worker_pid", lambda: 12345
         )
         with pytest.raises(OwnerAuthError, match="not owned by this profile"):
             resolve_backend_endpoint(tmp_path)
@@ -277,7 +277,7 @@ def test_resolve_backend_endpoint_fails_when_state_rotates_mid_read(
     monkeypatch.setattr("openprogram.state.paths.get_state_dir", lambda: tmp_path)
     auth_state = _start_auth_state(tmp_path, allowed_origins=())
     monkeypatch.setattr(
-        "openprogram.operations.worker.ports.backend_accepts_owner_challenge",
+        "openprogram.host.security.backend_endpoint.backend_accepts_owner_challenge",
         lambda port, **_kwargs: True,
     )
     try:
@@ -381,7 +381,7 @@ def test_token_url_requires_the_target_origin_to_prove_itself(
             return False
 
         monkeypatch.setattr(
-            "openprogram.operations.worker.ports.backend_accepts_owner_challenge", refuse
+            "openprogram.host.security.backend_endpoint.backend_accepts_owner_challenge", refuse
         )
         with pytest.raises(OwnerAuthError, match="did not prove it is"):
             web_cli._active_owner_auth_url(external, EPHEMERAL_PORT)
@@ -389,7 +389,7 @@ def test_token_url_requires_the_target_origin_to_prove_itself(
         assert challenged == [external]
 
         monkeypatch.setattr(
-            "openprogram.operations.worker.ports.backend_accepts_owner_challenge",
+            "openprogram.host.security.backend_endpoint.backend_accepts_owner_challenge",
             lambda port, **_kwargs: True,
         )
         url = web_cli._active_owner_auth_url(external, EPHEMERAL_PORT)

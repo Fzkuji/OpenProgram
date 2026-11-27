@@ -23,9 +23,8 @@ from openprogram.host.backend import (
     UnavailableBackend,
     backend_for,
     container_name,
-    get_active_backend,
 )
-from openprogram.host.machines import Connection, Machine, MachineError, here, kinds
+from openprogram.host.machines import Connection, Machine, MachineError, get_active_backend, here, kinds
 
 
 @pytest.fixture(autouse=True)
@@ -705,7 +704,7 @@ def test_a_spawned_process_counts_while_it_lives():
 
 def test_a_background_command_counts_on_its_machine_while_its_supervisor_lives(monkeypatch):
     import io
-    from openprogram.host import backend, processes
+    from openprogram.host import processes
     from openprogram.host.backend import base
 
     class _Supervisor:
@@ -737,7 +736,7 @@ def test_a_background_command_counts_on_its_machine_while_its_supervisor_lives(m
     remote.spawn_spec = lambda command, cwd=None: {"args": ["docker", "exec"]}
     started = []
     monkeypatch.setattr(processes, "current_owner", lambda: ("s1", None, None))
-    monkeypatch.setattr(backend, "get_active_backend", lambda: remote)
+    monkeypatch.setattr(machines, "get_active_backend", lambda: remote)
     monkeypatch.setattr(processes, "_supervisor_command", lambda store, process_id, launch: ["supervisor"])
     monkeypatch.setattr(processes.subprocess, "Popen", lambda *a, **kw: started.append(_Supervisor()) or started[-1])
     # The follower reads the ready line and reaps; here it runs in place, and

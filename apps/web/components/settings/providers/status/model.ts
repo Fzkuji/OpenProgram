@@ -221,8 +221,8 @@ export function quotaRow(limit: QuotaLimitWire, now: number, text: Text): QuotaR
   const named = rate ?? WINDOW_LABELS[limit.label];
   const label = named ? text(named[0], named[1]) : limit.label;
   if (limit.unit !== "percent" && limit.remaining == null && limit.limit == null && limit.used == null && limit.used_fraction == null) {
-    // A limit the provider reports without a number: Codex's unlimited
-    // credits, Copilot's unlimited premium requests.
+    // A limit the provider reports without a number, such as unlimited
+    // credits.
     return {
       key: limit.limit_key, label, left: null, tone: "normal",
       value: text("Unlimited", "不限"), rest: "",
@@ -463,12 +463,12 @@ export function companyGroups(providers: ProviderStatus[]): CompanyGroup[] {
   return [...groups.values()];
 }
 
-/** A way's title on its company's card ("ChatGPT subscription"). */
+/** A way's title on its company's card ("Go · monthly subscription"). */
 export function wayTitle(p: Pick<ProviderStatus, "label" | "way_label">, text: Text): string {
   return p.way_label ? text(p.way_label.title, p.way_label.title_zh) : p.label;
 }
 
-/** A way's name in a row under its company ("ChatGPT", "Go"). */
+/** A way's name in a row under its company ("Zen", "Go"). */
 export function wayShort(p: Pick<ProviderStatus, "label" | "way_label">, text: Text): string {
   return p.way_label ? text(p.way_label.short, p.way_label.short_zh) : p.label;
 }

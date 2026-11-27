@@ -527,23 +527,26 @@ def test_idle_activity_is_tracked_per_same_session_job(
                 }
             pytest.fail(f"Job monitor metadata was not ready: {snapshot!r}")
 
+        with runner._lock:
+            active_cancel = runner._jobs[active]["event"]
         clock.advance(0.75)
         assert runner.record_job_activity(active, "provider_data")
         clock.advance(0.5)
         # Run the same monitor pass synchronously so CI scheduling load cannot
-        # delay the expiry check beyond the terminal wait timeout.
+        # delay the expiry check beyond the terminal wait timeout. A
+        # background pass woken by a commit may claim the idle expiry first;
+        # either pass stops the idle Job through its canonical owner, which
+        # is what the terminal checks below observe.
         runner._budget_tick()
-        with runner._lock:
-            idle_cancel = runner._jobs[idle]["event"]
-            active_cancel = runner._jobs[active]["event"]
-        assert idle_cancel.is_set()
         assert not active_cancel.is_set()
         assert _canonical_execution(runner, active).status.value == "running"
 
-        fake_worker[1].set()
+        # The idle Job ends while the active one is still held.
         idle_final = _await_canonical_terminal(runner, idle, timeout=10.0)
         assert idle_final.status.value == "cancelled"
         assert idle_final.reason_code == "budget.idle_exhausted"
+        assert _canonical_execution(runner, active).status.value == "running"
+        fake_worker[1].set()
         assert _await_canonical_terminal(runner, active).status.value == "completed"
     finally:
         fake_worker[1].set()

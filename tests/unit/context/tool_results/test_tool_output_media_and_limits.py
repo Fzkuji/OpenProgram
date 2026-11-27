@@ -20,6 +20,7 @@ import pytest
 
 from openprogram.models.providers.shared import media_budget
 from openprogram.models.providers.types import ImageContent, TextContent, ToolResultMessage, UserMessage
+from openprogram.runtime.context.session_dag import media_content
 from openprogram.state.store.session.files import media, tool_output_gc
 
 
@@ -114,7 +115,7 @@ def test_media_is_kept_once_and_put_back_at_its_index(tmp_path):
     again = media.records_for_blocks(tmp_path, blocks)
     assert records == again and len(list((tmp_path / media.DIRNAME).iterdir())) == 1
     assert records[0]["index"] == 1
-    content = media.with_media([TextContent(text="before"), TextContent(text="after")], records, tmp_path)
+    content = media_content.with_media([TextContent(text="before"), TextContent(text="after")], records, tmp_path)
     assert [c.type for c in content] == ["text", "image", "text"] and content[1].data == PNG
 
 
@@ -122,7 +123,7 @@ def test_a_kept_block_whose_file_is_gone_is_left_out(tmp_path):
     [record] = media.records_for_blocks(tmp_path, [ImageContent(data=PNG, mime_type="image/png")])
     Path(record["path"]).unlink()
     text = [TextContent(text="t")]
-    assert media.with_media(text, [record], tmp_path) == text
+    assert media_content.with_media(text, [record], tmp_path) == text
 
 
 def test_a_persons_images_are_numbered_after_the_text(tmp_path):

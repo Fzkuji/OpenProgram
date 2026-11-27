@@ -26,7 +26,7 @@
 <tr><th scope="row"><code translate="no">openprogram setup ui</code></th><td>Wizard: port (<code translate="no">1–65535</code>) and auto-open-browser</td></tr>
 </tbody>
 </table>
-<p class="note">The worker is the only thing that chooses: <code translate="no">claim_worker_port()</code> in <code translate="no">operations/worker/lifecycle.py</code> settles the port right after the worker takes its lock, and <code translate="no">resolve_worker_port()</code> reads it. The App reads the same files (<code translate="no">apps/desktop/main/worker/web-port.js</code>), so the two always agree.</p>
+<p class="note">The worker is the only thing that chooses: <code translate="no">claim_worker_port()</code> in <code translate="no">operations/worker/lifecycle.py</code> settles the port right after the worker takes its lock, and <code translate="no">resolve_worker_port()</code> in <code translate="no">host/worker/process.py</code> reads it. The App reads the same files (<code translate="no">apps/desktop/main/worker/web-port.js</code>), so the two always agree.</p>
 
 <h2 id="one-port-per-account">One port per account</h2>
 <p>Loopback ports belong to the whole computer. With one fixed port, a second account signed in on the same PC, or anyone with another program already on 18100, had no worker and an App that waited forever. Each account therefore owns its port:</p>
@@ -52,7 +52,7 @@
 <p class="note">Never kills the holder, and never gives a listener this account's token unless it proves it is this account's worker.</p>
 
 <table class="stack fixed">
-<thead class="sr"><tr><th scope="col">Check in operations/worker/ports.py</th><th scope="col">How</th></tr></thead>
+<thead class="sr"><tr><th scope="col">Check in host/worker/ports.py</th><th scope="col">How</th></tr></thead>
 <tbody>
 <tr><th scope="row">Liveness: <code translate="no">port_in_use(port)</code></th><td>Bare TCP connect</td></tr>
 <tr><th scope="row">Free to listen: <code translate="no">port_bindable(port)</code></th><td>A trial bind. On Windows with <code translate="no">SO_EXCLUSIVEADDRUSE</code>: <code translate="no">SO_REUSEADDR</code> there would bind over a live listener and call a held port free</td></tr>

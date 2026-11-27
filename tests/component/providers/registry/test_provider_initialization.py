@@ -284,14 +284,14 @@ def test_failed_initialization_does_not_retain_original_exception(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from openprogram.models.providers.catalog import initialization
-    from openprogram.models.providers.recording import recording
+    from openprogram.state import secret_removal
 
     monkeypatch.setattr(
         initialization,
         "_register_builtins",
         lambda: (_ for _ in ()).throw(ValueError("SECRET-PROBE")),
     )
-    monkeypatch.setattr(recording, "remove_secret_values", lambda _message: "[redacted]")
+    monkeypatch.setattr(secret_removal, "remove_secret_values", lambda _message: "[redacted]")
 
     with pytest.raises(initialization.ProviderRuntimeInitializationError) as captured:
         initialization.initialize_provider_runtime()
@@ -483,8 +483,7 @@ def test_builtin_registration_can_retry_after_loading_failure(
     ("provider", "model", "expected"),
     [
         ("anthropic", "claude-sonnet-4-6", "anthropic:claude-sonnet-4-6"),
-        ("openai-codex", "gpt-5.5", "openai-codex:gpt-5.5"),
-        ("gemini-cli", "gemini-2.5-flash", "gemini-subscription:gemini-2.5-flash"),
+        ("openai", "gpt-5.5", "openai:gpt-5.5"),
     ],
 )
 def test_replay_runtime_factory_never_constructs_credentials_runtime(
@@ -502,8 +501,7 @@ def test_replay_runtime_factory_never_constructs_credentials_runtime(
     namespace, model_id = expected.split(":", 1)
     api = {
         "anthropic": "anthropic-messages",
-        "openai-codex": "openai-codex",
-        "gemini-subscription": "gemini-subscription",
+        "openai": "openai-responses",
     }[namespace]
     wire_model = Model(
         id=model_id,

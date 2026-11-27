@@ -73,6 +73,52 @@ def _blocks(turn: Turn) -> tuple[list[dict], list[dict]]:
     return blocks, calls
 
 
+def with_pictures(store, session_id: str, turn: Turn, text: Optional[str] = None) -> tuple[str, list[dict]]:
+    """``text`` (``turn``'s own by default) with each picture's placeholder made an
+    attachment marker of its bytes, kept in the conversation's ``media/`` as a picture
+    sent here is, and the message's ``metadata.media`` (so a turn here sends the
+    pictures again). A picture with no placeholder of its own follows the one before
+    it; one whose bytes the transcript lacks, or that cannot be kept, stays as it was."""
+    text = turn.user_text if text is None else text
+    if not any(data for data, _mime, _place in turn.images):
+        return text, []
+    from pathlib import Path
+    from openprogram.state.attachment_markers import format_marker
+    from openprogram.state.store.session.files import media as _media
+    try:
+        session_dir = store._session_dir(session_id)  # noqa: SLF001 - the conversation's own folder
+    except Exception:  # noqa: BLE001
+        return text, []
+    kept: list[dict] = []
+    cursor = 0  # where the picture before ended in ``text``
+    for data, mime, place in turn.images:
+        at = text.find(place, cursor) if place else -1
+        record = _media.save(session_dir, data, mime) if data else None
+        size = None
+        if record is not None:
+            try:
+                size = Path(record["path"]).stat().st_size
+            except OSError:
+                record = None
+        if record is None:
+            cursor = at + len(place) if at >= 0 else cursor
+            continue
+        kept.append(record)
+        name = f"image-{len(kept)}{_media.kept_path(record, session_dir).suffix}"
+        marker = format_marker(name, record["path"], size or 0, mime)
+        if at >= 0:
+            text = text[:at] + marker + text[at + len(place):]
+            cursor = at + len(marker)
+        else:
+            before = "\n\n" if cursor else ""
+            after = "\n\n" if not cursor and text else ""
+            text = text[:cursor] + before + marker + after + text[cursor:]
+            cursor += len(before) + len(marker)
+    # The model reads the text first, then the pictures (as a turn sent here does).
+    first = 1 if text.strip() else 0
+    return text, [{**record, "index": first + n} for n, record in enumerate(kept)]
+
+
 def _put(store, writer, session_id: str, node: Call) -> None:
     """Append ``node``, or refresh it when an earlier import wrote it."""
     if store.message_exists(session_id, node.id):
@@ -116,11 +162,12 @@ def write_turns(
         turn = session.turns[index]
         started = turn.timestamp or time.time()
         uid, rid = user_id(prefix, index + offset), reply_id(prefix, index + offset)
+        shown, media = with_pictures(store, session_id, turn)
         _put(store, writer, session_id, Call(
-            id=uid, created_at=started, role=ROLE_USER, output=turn.user_text,
+            id=uid, created_at=started, role=ROLE_USER, output=shown,
             caller=_ROOT_ID, predecessor=previous,
             metadata={"source": "import", "imported_from": stamp,
-                      "import_fingerprint": turn.fingerprint()},
+                      "import_fingerprint": turn.fingerprint(), **({"media": media} if media else {})},
         ))
         blocks, calls = _blocks(turn)
         reply_meta: dict[str, Any] = {

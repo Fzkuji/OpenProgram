@@ -51,10 +51,10 @@ def target(project_id: object) -> Optional[Remote]:
     project = projects.get_project(project_id)
     if project is None or not project.path or projects.folder_is_here(project):
         return None
-    from openprogram.host.machines import MachineError
+    from openprogram.host.machines import MachineError, resolve_for_project
     from openprogram.host.machines.remote import RefusedFS, RemoteFS
     try:
-        fs = RemoteFS(projects.project_machine(project))
+        fs = RemoteFS(resolve_for_project(project))
     except MachineError as exc:
         fs = RefusedFS(str(exc))
     return Remote(project, fs)

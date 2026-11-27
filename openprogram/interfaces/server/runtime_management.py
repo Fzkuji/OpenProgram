@@ -20,8 +20,6 @@ logger = logging.getLogger(__name__)
 # Globals — live here so server.py doesn't own provider state directly.
 # ---------------------------------------------------------------------------
 
-_CLI_PROVIDERS = {"openai-codex", "gemini-cli"}
-
 _runtime_lock = threading.Lock()
 
 _chat_provider: Optional[str] = None
@@ -184,8 +182,7 @@ def _create_runtime_for_visualizer(provider: str, model: str | None = None):
     Two shapes:
       - Provider listed in ``registry.PROVIDERS``: route through
         ``create_runtime`` so their
-        per-provider conventions (Codex search=True, key resolution with
-        guidance, ...) apply.
+        per-provider conventions (key resolution with guidance, ...) apply.
       - Any other provider id present in the HTTP model registry (openrouter,
         groq, cerebras, minimax, mistral, ...): build a plain ``Runtime`` with
         ``model="<provider>:<id>"``. These go through AgentSession end-to-end.
@@ -193,12 +190,12 @@ def _create_runtime_for_visualizer(provider: str, model: str | None = None):
     from openprogram.runtime.agent.runtime.factory import create_runtime
     from openprogram.models.providers.catalog.registry import PROVIDERS
 
-    # Persisted session meta stores ``runtime.model`` verbatim, which for
-    # CLI/OAuth runtimes is the PREFIXED id (``openai-codex:gpt-5.5``). The
-    # restore path (server.py) feeds that back as ``model=`` here. Strip a
-    # leading ``<provider>:`` so it's treated as the bare id it names, not a
-    # new model — otherwise it misses the registry and dynamic registration
-    # mints a ghost row (id ``openai-codex:gpt-5.5`` → "GPT-openai Codex:5.5").
+    # Persisted session meta stores ``runtime.model`` verbatim, which can be
+    # the PREFIXED id (``anthropic:claude-sonnet-4-6``). The restore path
+    # (server.py) feeds that back as ``model=`` here. Strip a leading
+    # ``<provider>:`` so it's treated as the bare id it names, not a new
+    # model — otherwise it misses the registry and dynamic registration
+    # mints a ghost row.
     while isinstance(model, str) and model.startswith(f"{provider}:"):
         model = model.split(":", 1)[1]
 
@@ -212,8 +209,6 @@ def _create_runtime_for_visualizer(provider: str, model: str | None = None):
 
     if provider in PROVIDERS:
         kwargs = {"provider": provider}
-        if provider == "openai-codex":
-            kwargs["search"] = True
         if model:
             kwargs["model"] = model
         return create_runtime(**kwargs)
@@ -255,8 +250,7 @@ def _create_runtime_for_visualizer(provider: str, model: str | None = None):
     return Runtime(model=f"{provider}:{model}")
 
 
-_PROVIDER_PRIORITY = ("openai-codex", "gemini-cli", "anthropic", "gemini", "openai")
-_CLI_BINS = {"openai-codex": "codex", "gemini-cli": "gemini"}
+_PROVIDER_PRIORITY = ("anthropic", "gemini", "openai")
 
 
 def _build_model_caps(provider_name: str, model_ids: list[str]) -> dict[str, dict]:
@@ -325,10 +319,6 @@ def _probe_one_provider(p_name: str):
             # The owner turned none of its models on: not a candidate, and
             # nothing went wrong, so nothing is logged.
             return None
-        if p_name in _CLI_PROVIDERS:
-            import shutil as _shutil
-            if not _shutil.which(_CLI_BINS.get(p_name, p_name)):
-                raise RuntimeError(f"{p_name} not installed")
         rt = _create_runtime_for_visualizer(p_name)
         models = rt.list_models() if hasattr(rt, "list_models") else []
         if rt.model and rt.model not in models:
@@ -473,10 +463,7 @@ def _init_providers():
             _log(f"[detect] {provider_name} OK")
         else:
             # Auto-detect failed, but an agent may still have a pinned
-            # provider that bypasses ``_is_configured`` (e.g.
-            # ``_is_configured("openai-codex")`` returns False under
-            # some config-file layouts even when an OAuth token is in
-            # CredentialProvider). Suppress the user-visible "no provider"
+            # provider that bypasses ``_is_configured``. Suppress the user-visible "no provider"
             # warning when any agent has a pinned model.provider —
             # ``cli.repl.setup._get_chat_runtime`` will try it next
             # and the banner will say so.
@@ -525,7 +512,7 @@ def _get_session_runtime(session_id: str, msg_id: str = None):
     if not provider:
         raise RuntimeError(
             "No model available. Enable a model in Settings → Model Services "
-            "(or install a CLI such as codex/claude/gemini, or set an API key)."
+            "(or set an API key)."
         )
 
     rt = _create_runtime_for_visualizer(provider, model=model)
@@ -569,7 +556,8 @@ def _resolve_session_provider_model(conv: dict | None, *, snapshot: bool = False
         if provider:
             return provider, model
     if conv:
-        if conv.get("provider_override"):
+        from openprogram.models.auth.provider_policy import is_withdrawn
+        if conv.get("provider_override") and not is_withdrawn(conv["provider_override"]):
             return conv["provider_override"], conv.get("model_override")
 
         agent_id = conv.get("agent_id")
@@ -696,7 +684,7 @@ def _provider_info_from_snapshot(row: dict) -> dict:
     provider, model = _resolve_session_provider_model(row, snapshot=True)
     return {
         "provider": provider, "model": model,
-        "type": ("CLI" if provider in _CLI_PROVIDERS else "API") if provider else None,
+        "type": "API" if provider else None,
         "runtime": None, "session_id": None,
     }
 
@@ -718,20 +706,18 @@ def _get_provider_info(session_id: str = None) -> dict:
             runtime = conv.get("runtime")
             if runtime is not None:
                 provider_name = conv.get("provider_name") or _default_provider
-                provider_type = "CLI" if provider_name in _CLI_PROVIDERS else "API"
                 return {
                     "provider": provider_name,
-                    "type": provider_type,
+                    "type": "API",
                     "model": runtime.model,
                     "runtime": getattr(runtime, "provider_id", None),
                     "session_id": getattr(runtime, "_session_id", None),
                 }
             provider_name, model = _resolve_session_provider_model(conv)
             if provider_name:
-                provider_type = "CLI" if provider_name in _CLI_PROVIDERS else "API"
                 return {
                     "provider": provider_name,
-                    "type": provider_type,
+                    "type": "API",
                     "model": model,
                     "runtime": None,
                     "session_id": None,
@@ -743,10 +729,9 @@ def _get_provider_info(session_id: str = None) -> dict:
     if not provider_name:
         return {"provider": None, "type": None, "model": None,
                 "runtime": None, "session_id": None}
-    provider_type = "CLI" if provider_name in _CLI_PROVIDERS else "API"
     return {
         "provider": provider_name,
-        "type": provider_type,
+        "type": "API",
         "model": model,
         "runtime": None,
         "session_id": None,

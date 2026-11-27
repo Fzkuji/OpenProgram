@@ -49,7 +49,9 @@ def claude(tmp_path, monkeypatch):
     harness = SimpleNamespace(log=lines, sessions=sessions, pool=pool, workdir=workdir, tmp=tmp_path)
     harness.script = lambda turns: scenario.write_text(json.dumps(turns))
     harness.inputs = lambda: [row["in"] for row in lines() if "in" in row]
-    harness.launches = lambda: [row for row in lines() if "argv" in row]
+    # A turn's process names its session; ``--version`` and the sign-in probe do not.
+    harness.launches = lambda: [row for row in lines() if "argv" in row
+                                and ({"--session-id", "--resume"} & set(row["argv"]))]
     try:
         yield harness
     finally:
@@ -143,7 +145,23 @@ def test_a_turn_streams_thinking_cards_and_text(claude):
     assert record["own_turns"] == [sent["uuid"], "u1", "u2", "u3"]
 
 
-def test_the_next_turn_goes_into_the_same_process_with_new_settings(claude):
+def test_the_next_turn_starts_a_process_that_resumes_the_session(claude):
+    """A conversation's process closes when its turn ends: a running claude holds the session."""
+    claude.script([[_assistant("a", "m", [{"type": "text", "text": "one"}])],
+                   [_assistant("b", "n", [{"type": "text", "text": "two"}])]])
+    _run(_request())
+    assert claude.pool._entries == {}
+    history = [{"id": "m1", "role": "user", "content": "hello"},
+               {"id": "m1_reply", "role": "assistant", "content": "one"}]
+    (text, _, _), _, _ = _run(_request("again", msg="m2"), history=history)
+    assert text == "two"
+    first, second = claude.launches()
+    session = first["argv"][first["argv"].index("--session-id") + 1]
+    assert second["argv"][second["argv"].index("--resume") + 1] == session
+
+
+def test_a_kept_process_takes_the_next_turn_with_new_settings(claude):
+    claude.pool.idle_seconds = 60  # the pool can still keep a process between turns
     claude.script([[_assistant("a", "m", [{"type": "text", "text": "one"}])],
                    [_assistant("b", "n", [{"type": "text", "text": "two"}])]])
     _run(_request())
@@ -201,6 +219,7 @@ def test_a_permission_prompt_waits_for_the_person(claude, monkeypatch, outcome, 
 
 
 def test_stop_interrupts_and_keeps_the_process(claude):
+    claude.pool.idle_seconds = 60
     cancel = threading.Event()
     claude.script([[_start("m"), _delta("text_delta", "partial"), {"wait_interrupt": True}]])
     threading.Timer(0.5, cancel.set).start()

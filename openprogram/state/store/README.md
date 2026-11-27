@@ -18,7 +18,7 @@ The files are split into three sub-packages by concern. Each sub-package
 re-exports its public names; the top-level `store/__init__.py` re-exports
 only the classes and the per-turn ContextVars (`SessionStore`,
 `default_store`, `SessionNodeWriter`, …). Modules are imported from their
-own sub-package: `from openprogram.state.store.project import project_commit`.
+own sub-package: `from openprogram.state.store.project import project_store`.
 
 ```
 store/
@@ -55,13 +55,11 @@ store/
 │    rewind_recovery.py     replays an interrupted rewind's journal when a
 │                           session is opened
 │
-├─ project/   ─ ② PROJECT ENTITY LAYER + AUTO-COMMIT — user's working dir as git
+├─ project/   ─ ② PROJECT ENTITY LAYER — user's working dir as git
 │    project_store.py       Project + ProjectGit. A project = a real working
 │                           directory. ProjectGit does safe auto-init,
 │                           agent-attributed commits (Strategy A), and the
 │                           reset/revert-of-a-commit primitive.
-│    project_commit.py      wires the agent's per-turn edits into the project
-│                           repo at turn end (rules A/B, default-on)
 │
 └─ snapshot/  ─ ③ SNAPSHOT / REVERT HELPERS — undo + concurrency safety
      read_tracking.py       read-before-edit freshness gate: refuse to write
@@ -123,7 +121,8 @@ closed without it), and `state/event_sink.py` for publishing events.
 
 A **Project** is a long-lived working unit bound to a real filesystem
 directory (the default project is a pure label with no repo). When the
-agent edits files in a bound, git-backed folder, `project_commit` records
+agent edits files in a bound, git-backed folder, `state/project_commit.py`
+(outside the store: it also asks the worktrees) records
 them as an agent-attributed commit at turn end — so the user gets a
 `git log` / `git diff` / `git revert`-able history.
 

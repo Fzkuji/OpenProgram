@@ -15,7 +15,7 @@ import time
 
 import pytest
 
-from openprogram.programs._host.execution import ToolReturn
+from openprogram.runtime.agent.tool_execution import ToolReturn
 from openprogram.programs.tools.computer_use.computer_use.code_mode import calls as code_mode
 from openprogram.programs.tools.computer_use.computer_use.routing import locks
 from openprogram.programs.tools.computer_use.computer_use import tool
@@ -243,11 +243,10 @@ def test_in_bypass_each_step_is_judged_as_the_action_call_it_is(monkeypatch, int
 def test_a_step_is_judged_with_the_whole_action_call_it_would_be(monkeypatch):
     from openprogram.runtime.agent import turn_request
     from openprogram.runtime.permissions import policy
-    import openprogram.programs as programs
 
     asked = []
     monkeypatch.setattr(turn_request, "get_turn_request", lambda: "request")
-    monkeypatch.setattr(programs, "get_agent_tool", lambda name: "tool")
+    monkeypatch.setattr(code_mode, "_computer_use_tool", lambda: "tool")
     monkeypatch.setattr(policy, "permission_decision",
                         lambda tool, request, args: asked.append((tool, request, args)) or SimpleNamespace(
                             outcome="deny"))

@@ -32,10 +32,11 @@ def safe_call(name: str, args) -> bool:
     """A call that only reads: an allowlisted tool, or a single entry's read action."""
     if name in SAFE_AUTO_ALLOWLIST:
         return True
-    if name == "self_update":
-        from openprogram.programs.tools.system.self_update import action_of
-        return action_of(args) in ("status", "versions")
-    return False
+    # A tool whose arguments decide whether it only reads says so in its
+    # profile (``self_update`` reads in its status and versions actions).
+    from openprogram.runtime.permissions import tool_profiles
+    found = tool_profiles.profile(name)
+    return bool(found is not None and found.reads_only is not None and found.reads_only(args))
 
 @dataclass(frozen=True)
 class ReviewResult:

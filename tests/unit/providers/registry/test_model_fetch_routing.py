@@ -16,12 +16,10 @@ No network: httpx + storage resolvers are stubbed.
 """
 from __future__ import annotations
 
-import json
-
 import pytest
 
 from openprogram.models.listing import fetchers as F
-import openprogram.models.providers.settings.env_api_keys as ek
+import openprogram.models.auth.env_api_keys as ek
 from openprogram.models.providers.catalog import metadata as P
 from openprogram.models.providers.settings import storage as st
 from openprogram.models.providers.adapters.anthropic import list_models as A
@@ -164,13 +162,10 @@ def test_claude_code_browse_borrows_anthropic_with_empty_registry(monkeypatch):
     monkeypatch.setattr(mg, "ENABLED_MODELS", {})  # empty registry
     listing._reset_browse_cache()
     monkeypatch.setattr(st, "_read_providers_cfg", lambda: {})  # no ambient config
-    # No credential → browse borrows anthropic's models.dev rows (the
-    # _SUBSCRIPTION_BORROW map), NOT the registry.
+    # No credential → browse borrows anthropic's models.dev rows, NOT the registry.
     monkeypatch.setattr(cat, "is_configured", lambda pid: False)
     borrowed = {"claude-opus-4-8": {"name": "Claude Opus 4.8"},
                 "claude-haiku-4-5": {"name": "Claude Haiku 4.5"}}
-    # _models_dev_for already borrows anthropic for claude-code; assert it does.
-    assert "claude-code" not in pm._SUBSCRIPTION_BORROW
     monkeypatch.setattr(pm, "_models_dev_for",
                         lambda pid: borrowed if pid == "claude-code" else {})
 
@@ -184,122 +179,6 @@ def test_unsupported_provider_fetch_does_not_contact_api(monkeypatch):
         pytest.fail("Unsupported provider contacted API")
     monkeypatch.setattr(A, "fetch", unexpected)
     assert "error" in F.fetch_and_normalize("claude-code", timeout=5.0)
-
-
-def _stub_codex_endpoint(monkeypatch, payload):
-    """Point the codex fetcher at a fake account/models endpoint response."""
-    from openprogram.models.providers.adapters.openai_codex import oauth as _oauth
-    from openprogram.models.auth import resolver as _resolver
-    from openprogram.models.providers.adapters.openai_codex import list_models as C
-
-    monkeypatch.setattr(_resolver, "resolve_api_key_sync", lambda *_: "tok")
-    monkeypatch.setattr(_oauth, "_get_account_id_from_jwt", lambda *_: "acct")
-
-    class _Resp:
-        def raise_for_status(self): return None
-        def json(self): return payload
-
-    seen = {}
-    from openprogram.host.security import safe_http
-
-    class Client:
-        def get(self, url, **kw):
-            seen.update(url=url, headers=kw.get("headers"))
-            return _Resp()
-
-    def fixed(consumer):
-        assert consumer == "provider.fixed_api"
-        return _ClientContext(Client())
-
-    monkeypatch.setattr(safe_http, "safe_client", fixed)
-    return C, seen
-
-
-def test_codex_browse_does_not_grow_registry(monkeypatch):
-    # Browse/Fetch is a READ path: it must NOT write ENABLED_MODELS (post-
-    # migration the registry means "enabled"; bulk-registering every
-    # browsable id floods the chat picker — live server showed openai-codex=14
-    # when the user enabled 1). Dispatchability comes from enable-time config
-    # rows + the runtime's on-miss single-model register.
-    import openprogram.models.providers.catalog.enabled_models as mg
-
-    C, seen = _stub_codex_endpoint(monkeypatch, {"models": [
-        {"slug": "gpt-5.6-luna", "display_name": "GPT-5.6-Luna",
-         "context_window": 372000, "visibility": "list",
-         "service_tiers": [{"id": "priority"}],
-         "supported_reasoning_levels": [{"effort": "low"}, {"effort": "high"}]},
-        {"slug": "gpt-5.4-mini", "display_name": "GPT-5.4-Mini",
-         "context_window": 272000, "visibility": "list",
-         "service_tiers": [],
-         "supported_reasoning_levels": [{"effort": "low"}, {"effort": "medium"}]},
-        {"slug": "codex-auto-review", "visibility": "hide"},
-    ]})
-
-    reg = {"openai-codex/gpt-5.5": object()}  # a pre-existing enabled codex row
-    monkeypatch.setattr(mg, "ENABLED_MODELS", reg)
-    before = dict(reg)
-
-    out = C.fetch("openai-codex", timeout=5.0)
-
-    # Hidden helper models dropped; the account's real ids surface.
-    assert {r["id"] for r in out} == {"gpt-5.6-luna", "gpt-5.4-mini"}
-    # Fast + thinking come straight from the endpoint, no id-family guessing.
-    by_id = {r["id"]: r for r in out}
-    assert by_id["gpt-5.6-luna"]["fast"] is True
-    assert by_id["gpt-5.4-mini"]["fast"] is False  # empty service_tiers
-    assert by_id["gpt-5.6-luna"]["thinking_levels"] == ["low", "high"]
-    # We present the real CLI identity so listing and dispatch agree.
-    assert seen["headers"]["originator"] == "codex_cli_rs"
-    assert reg == before, "browse must not register browsed ids into ENABLED_MODELS"
-
-
-def test_codex_fetch_drops_ultra_and_needs_token(monkeypatch):
-    # ``ultra`` isn't a wire-valid effort here → filtered out. And with no
-    # token the fetch errors (keeps the saved list) instead of blanking.
-    C, _ = _stub_codex_endpoint(monkeypatch, {"models": [
-        {"slug": "gpt-5.6-sol", "display_name": "GPT-5.6-Sol",
-         "visibility": "list", "service_tiers": [{"id": "priority"}],
-         "supported_reasoning_levels": [
-             {"effort": "high"}, {"effort": "max"}, {"effort": "ultra"}]},
-    ]})
-    out = C.fetch("openai-codex", timeout=5.0)
-    assert out[0]["thinking_levels"] == ["high", "max"]  # ultra dropped
-
-    from openprogram.models.auth import resolver as _resolver
-    monkeypatch.setattr(_resolver, "resolve_api_key_sync", lambda *_: None)
-    err = C.fetch("openai-codex", timeout=5.0)
-    assert isinstance(err, dict) and "error" in err
-
-
-def test_codex_fetch_falls_back_to_cli_cache(monkeypatch, tmp_path):
-    C, _ = _stub_codex_endpoint(monkeypatch, {"models": []})
-    cache = {"models": [{
-        "slug": "gpt-6-astra", "display_name": "GPT-6-Astra",
-        "visibility": "list", "context_window": 272000,
-        "supported_reasoning_levels": [{"effort": "low"}, {"effort": "max"}],
-    }]}
-    (tmp_path / "models_cache.json").write_text(json.dumps(cache))
-    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
-
-    out = C.fetch("openai-codex", timeout=5.0)
-
-    assert "error" in out
-    assert [row["id"] for row in out["models"]] == ["gpt-6-astra"]
-    assert out["models"][0]["source"] == "codex-cli-cache"
-
-
-def test_codex_client_version_prefers_official_cli_cache(monkeypatch, tmp_path):
-    from openprogram.models.providers.adapters.openai_codex import catalog
-
-    (tmp_path / "models_cache.json").write_text(json.dumps({
-        "client_version": "9.8.7", "models": [],
-    }))
-    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
-    catalog.codex_client_version.cache_clear()
-    try:
-        assert catalog.codex_client_version() == "9.8.7"
-    finally:
-        catalog.codex_client_version.cache_clear()
 
 
 def test_anthropic_fetcher_native_still_uses_anthropic_host(monkeypatch):

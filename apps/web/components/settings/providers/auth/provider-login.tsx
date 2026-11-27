@@ -107,7 +107,6 @@ interface LoginPollReply {
   prompt?: Prompt | null;
   done?: boolean;
   ok?: boolean;
-  error_code?: string;
   error?: unknown;
 }
 
@@ -284,15 +283,7 @@ export function ProviderLogin({
           setValue("");
           setFailed(!d.ok);
           setBusy(false);
-          const errors: Record<string, string> = {
-            forbidden: text("OpenAI refused token exchange (403). Check the app's network/proxy and account access. The status alone does not identify the cause.", "OpenAI 拒绝兑换登录凭据（403）。请检查 App 使用的网络、代理及账号访问权限；仅凭 403 无法确定具体原因。"),
-            invalid_grant: text("Authorization expired or was already used. Start a new sign-in.", "授权码已过期或已使用，请重新登录。"),
-            access_denied: text("OpenAI denied authorization. Check account or workspace access.", "OpenAI 拒绝授权，请检查账号或工作区访问权限。"),
-            unsupported_country_region_territory: text("OpenAI does not support sign-in from this region.", "OpenAI 不支持从当前地区登录。"),
-            rate_limited: text("Too many attempts. Wait before retrying.", "登录请求过多，请稍后重试。"),
-            unavailable: text("OpenAI authentication is temporarily unavailable.", "OpenAI 登录服务暂时不可用，请稍后重试。"),
-          };
-          setMsg(d.ok ? text("Signed in.", "登录成功。") : ((d.error_code && errors[d.error_code]) || errorDetailText(d.error, text("Login failed.", "登录失败。"))));
+          setMsg(d.ok ? text("Signed in.", "登录成功。") : errorDetailText(d.error, text("Login failed.", "登录失败。")));
           if (d.ok) onChanged?.();
           return;
         }

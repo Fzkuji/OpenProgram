@@ -4,7 +4,7 @@
 string, base URL and headers a request carries: an imported login is read
 from the other tool's file, a helper command is run, an environment
 variable's key is read from the environment. Model requests get their
-credential through :func:`openprogram.models.auth.selection.with_credential`;
+credential through :func:`openprogram.models.providers.streaming.credential_failover.with_credential`;
 the two ``resolve_*_sync`` helpers serve the callers outside a model request
 (probes, tools, model listing), choosing the same way without counting a use.
 
@@ -101,7 +101,7 @@ def resolve_api_key_sync(provider_id: str) -> Optional[str]:
     token = _token(provider_id, keys_only=False)
     if token:
         return token
-    from openprogram.models.providers.settings.env_api_keys import resolve_provider_key
+    from openprogram.models.auth.env_api_keys import resolve_provider_key
     return resolve_provider_key(provider_id) or None
 
 

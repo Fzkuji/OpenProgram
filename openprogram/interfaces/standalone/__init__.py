@@ -1,6 +1,6 @@
 """One application package run as software of its own, outside the App.
 
-``openprogram programs export`` (:mod:`.export`) writes an application
+``openprogram programs export`` (:mod:`openprogram.programs._host.ui.export`) writes an application
 package, a launcher and, when it can, the Python runtime into a folder or
 a macOS ``.app``. Launching it runs :mod:`.server`: the same application
 runtime the App's worker runs (catalog, runners, state, recordings, host

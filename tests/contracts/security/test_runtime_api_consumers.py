@@ -480,7 +480,7 @@ def test_image_api_4xx_body_hides_credentials_and_signed_url(
         openai, "API_URL", origin + "/echo-error/TOKEN-PATH?sig=QUERY-SECRET"
     )
     monkeypatch.setattr(
-        "openprogram.models.providers.settings.env_api_keys.resolve_provider_key",
+        "openprogram.models.auth.env_api_keys.resolve_provider_key",
         lambda _provider: "HEADER-SECRET",
     )
 
@@ -493,28 +493,6 @@ def test_image_api_4xx_body_hides_credentials_and_signed_url(
     assert "TOKEN-PATH" not in rendered
     assert "QUERY-SECRET" not in rendered
     assert "HEADER-SECRET" not in rendered
-
-
-def test_codex_probe_hides_4xx_peer_body(monkeypatch, server):
-    test_provider = importlib.import_module(
-        "openprogram.models.listing.test_provider"
-    )
-    base = f"http://127.0.0.1:{server.port}/echo-error"
-    monkeypatch.setattr(
-        "openprogram.models.providers.settings.env_api_keys.resolve_api_key_with_auth_store",
-        lambda _provider: "HEADER-SECRET",
-    )
-    monkeypatch.setattr(
-        "openprogram.models.providers.settings.storage._resolve_base_url", lambda _provider: base
-    )
-
-    result = test_provider._codex_ping("openai-codex", "gpt-test", 1)
-
-    assert result["ok"] is False
-    assert "HTTP 401" in result["error"]
-    assert "HEADER-SECRET" not in result["error"]
-    assert "QUERY-SECRET" not in result["error"]
-    assert "TOKEN-PATH" not in result["error"]
 
 
 def test_models_dev_public_loader_real_managed_success(
@@ -721,7 +699,7 @@ def test_image_api_adapters_use_fixed_registry_client(
     monkeypatch.setenv("FAL_KEY", "secret")
     monkeypatch.setenv("OPENAI_API_KEY", "secret")
     monkeypatch.setattr(
-        "openprogram.models.providers.settings.env_api_keys.resolve_provider_key",
+        "openprogram.models.auth.env_api_keys.resolve_provider_key",
         lambda _provider: "secret",
     )
     monkeypatch.setattr("time.sleep", lambda _seconds: None)
@@ -863,7 +841,7 @@ def test_each_image_adapter_reaches_real_managed_transport(
     monkeypatch.setattr(module, constant, origin + "/api")
     monkeypatch.setattr(provider, "_resolve_key", lambda: "secret", raising=False)
     monkeypatch.setattr(
-        "openprogram.models.providers.settings.env_api_keys.resolve_provider_key",
+        "openprogram.models.auth.env_api_keys.resolve_provider_key",
         lambda _provider: "secret",
     )
     registry = dict(safe_http.CONSUMER_REGISTRY)

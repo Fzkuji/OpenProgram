@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import sys
 
-from openprogram.host.backend import get_active_backend
+from openprogram.host.machines import get_active_backend
 from openprogram.programs._host.runtime import function
 from openprogram.state.worktree.context import current_worktree_path
 

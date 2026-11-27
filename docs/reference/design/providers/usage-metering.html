@@ -29,7 +29,7 @@
 <p class="note">Under <code translate="no">models/</code>, which sits below Programs and the runtime, so everything can depend on it without a cycle.</p>
 
 <h2>Collection point</h2>
-<p><code translate="no">models/providers/streaming/stream.py</code> wraps <code translate="no">stream()</code> and <code translate="no">stream_simple()</code>; <code translate="no">complete_simple()</code> runs through them. Going through it and being accounted for mean the same thing. Memory, compaction summaries, <code translate="no">mixture_of_agents</code> and Agent-method subprocesses use the same point with their own <code translate="no">usage_scope</code>.</p>
+<p><code translate="no">models/providers/streaming/stream.py</code> wraps <code translate="no">stream()</code> and <code translate="no">stream_simple()</code>; <code translate="no">complete_simple()</code> runs through them. Going through it and being accounted for mean the same thing. Usage metering sits above the providers, so <code translate="no">stream.py</code> reaches the recorder through <code translate="no">models/providers/usage_port.py</code>, which the models layer fills when it loads. Memory, compaction summaries, <code translate="no">mixture_of_agents</code> and Agent-method subprocesses use the same point with their own <code translate="no">usage_scope</code>.</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Rule</th><th scope="col">Why</th></tr></thead>
 <tbody>

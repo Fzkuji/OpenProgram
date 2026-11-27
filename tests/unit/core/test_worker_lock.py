@@ -7,8 +7,8 @@ import pytest
 
 @pytest.mark.skipif(os.name != "nt", reason="covers Windows msvcrt lock semantics")
 def test_same_process_lock_probe_reports_the_holder(tmp_path, monkeypatch) -> None:
-    from openprogram.operations.worker import paths
-    from openprogram.operations.worker.lock import WorkerLock, is_held_by
+    from openprogram.host.worker import paths
+    from openprogram.host.worker.lock import WorkerLock, is_held_by
 
     monkeypatch.setattr(paths, "state_dir", lambda: tmp_path)
     lock = WorkerLock()
@@ -27,7 +27,7 @@ def test_same_process_lock_probe_reports_the_holder(tmp_path, monkeypatch) -> No
 def test_asking_who_holds_the_lock_does_not_touch_the_log_writer(tmp_path, monkeypatch) -> None:
     """A probe of a free lock once took and gave back the main-log claim, so
     a process that asked wrote its next lines to a file of its own."""
-    from openprogram.operations.worker import lock as worker_lock
+    from openprogram.host.worker import lock as worker_lock
     from openprogram.state.store.session.files import session_log
 
     monkeypatch.setattr(worker_lock, "lock_path", lambda: tmp_path / "worker.lock")

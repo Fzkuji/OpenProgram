@@ -86,7 +86,7 @@ _RUNTIME_ENTRYPOINT_PREFIXES = (
             ("production_driver", "openprogram.runtime.conversation.production_driver"),
             ("continuation", "openprogram.runtime.conversation.checkpoint"),
             ("run_control", "openprogram.runtime.conversation.run_control"),
-            ("management.gating", "openprogram.extensions.gating"),
+            ("management.gating", "openprogram.runtime.agent_registry.gating"),
             ("management", "openprogram.runtime.agent_registry"),
             ("job", "openprogram.runtime.jobs"),
             ("resource_governance", "openprogram.runtime.jobs.resource_governance"),

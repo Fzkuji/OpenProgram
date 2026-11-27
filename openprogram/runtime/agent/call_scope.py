@@ -86,7 +86,7 @@ class CallScope:
             if isinstance(writer, SessionNodeWriter) and self.expose != 'hidden':
                 writer.update(self.id, metadata={'task_id': task_id})
             if occurrence or tool_id:
-                from openprogram.programs._host.runtime import (
+                from openprogram.runtime.agent.call_state import (
                     _current_tool_call_occurrence_id, _tool_call_identity_consumed)
                 token = _tool_call_identity_consumed.set(True)
                 self._stack.callback(_tool_call_identity_consumed.reset, token)

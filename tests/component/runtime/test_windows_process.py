@@ -9,7 +9,6 @@ from openprogram.host._platform import asyncio as platform_asyncio
 from openprogram.host._platform import filesystem
 from openprogram.host._platform import process_ownership
 from openprogram.host._platform import processes
-from openprogram.host._platform import terminal
 
 
 def test_process_command_line_uses_cim(monkeypatch) -> None:
@@ -21,7 +20,7 @@ def test_process_command_line_uses_cim(monkeypatch) -> None:
         scripts.append(script)
         return "  python.exe -m openprogram worker run  "
 
-    monkeypatch.setattr(terminal, "_windows_powershell", fake)
+    monkeypatch.setattr(processes, "_windows_powershell", fake)
 
     assert processes.process_command_line(42) == (
         "python.exe -m openprogram worker run"
@@ -40,14 +39,14 @@ def test_process_command_line_reads_the_kernel_before_cim(monkeypatch) -> None:
     def no_powershell(script: str, *, timeout: float = 5.0) -> str:
         raise AssertionError("CIM must not run when the kernel answered")
 
-    monkeypatch.setattr(terminal, "_windows_powershell", no_powershell)
+    monkeypatch.setattr(processes, "_windows_powershell", no_powershell)
     assert processes.process_command_line(42) == "python.exe -m openprogram worker run"
 
 
 def test_process_command_line_falls_back_to_cim(monkeypatch) -> None:
     monkeypatch.setattr(sys, "platform", "win32")
     monkeypatch.setattr(processes, "_windows_command_line", lambda pid: None)
-    monkeypatch.setattr(terminal, "_windows_powershell",
+    monkeypatch.setattr(processes, "_windows_powershell",
                         lambda script, *, timeout=5.0: "python.exe x")
     assert processes.process_command_line(42) == "python.exe x"
 

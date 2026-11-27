@@ -298,7 +298,7 @@ def _probe_disk_state_dir() -> Finding:
 def _probe_proxy_env() -> Finding:
     """Outbound proxy: report what will be used; fail on socks w/o socksio."""
     try:
-        from openprogram.models.providers.utils.http_transport.http_proxy import get_proxy_mounts
+        from openprogram.host.security.http_proxy import get_proxy_mounts
         mounts = get_proxy_mounts()
     except Exception as e:  # noqa: BLE001
         return Finding("WARN", "Outbound proxy", f"resolution failed: {e}")

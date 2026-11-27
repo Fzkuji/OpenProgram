@@ -17,19 +17,22 @@ def _tracked_paths() -> tuple[str, ...]:
     return tuple(raw.decode() for raw in result.stdout.split(b"\0") if raw)
 
 
-def test_mcp_server_lives_inside_the_mcp_domain() -> None:
+def test_mcp_server_is_an_interface() -> None:
+    """Outside programs talk to OpenProgram through the MCP server, so it is
+    an interface; ``extensions/mcp`` is the client that reaches outside servers."""
     tracked = set(_tracked_paths())
 
     assert {
-        "openprogram/extensions/mcp/server/__init__.py",
-        "openprogram/extensions/mcp/server/contracts.py",
-        "openprogram/extensions/mcp/server/server.py",
-        "openprogram/extensions/mcp/server/service.py",
+        "openprogram/interfaces/mcp_server/__init__.py",
+        "openprogram/interfaces/mcp_server/contracts.py",
+        "openprogram/interfaces/mcp_server/server.py",
+        "openprogram/interfaces/mcp_server/service.py",
     } <= tracked
-    assert not any(path.startswith("openprogram/mcp_server/") for path in tracked)
+    assert not any(path.startswith(("openprogram/mcp_server/", "openprogram/extensions/mcp/server/"))
+                   for path in tracked)
 
 
-def test_repository_does_not_import_the_removed_mcp_server_package() -> None:
+def test_repository_does_not_import_the_removed_mcp_server_packages() -> None:
     stale_imports = []
     for relative in _tracked_paths():
         if relative == "tests/contracts/repository/test_mcp_package_layout.py":
@@ -42,7 +45,10 @@ def test_repository_does_not_import_the_removed_mcp_server_package() -> None:
         if path.suffix not in {".py", ".md", ".html", ".disabled"}:
             continue
         text = path.read_text(encoding="utf-8")
-        if "openprogram.mcp_server" in text or "mcp_server/" in text:
+        if any(stale in text for stale in (
+            "openprogram.mcp_server", "openprogram/mcp_server/",
+            "openprogram.extensions.mcp.server", "openprogram/extensions/mcp/server/",
+        )):
             stale_imports.append(relative)
 
     assert stale_imports == []

@@ -39,6 +39,10 @@
     "file": "claude-color.svg",
     "mono": false
   },
+  "antigravity": {
+    "file": "antigravity-color.svg",
+    "mono": false
+  },
   "arcee": {
     "file": "arcee-color.svg",
     "mono": false
@@ -46,6 +50,10 @@
   "atlascloud": {
     "file": "atlascloud.svg",
     "mono": true
+  },
+  "atomcode": {
+    "file": "atomcode.png",
+    "mono": false
   },
   "azure": {
     "file": "azure-color.svg",
@@ -85,15 +93,24 @@
   },
   "codex": {
     "file": "codex-color.svg",
+    "dark": "codex-color-dark.svg",
     "mono": false
   },
   "cohere": {
     "file": "cohere-color.svg",
     "mono": false
   },
+  "crush": {
+    "file": "crush.png",
+    "mono": false
+  },
   "crusoe": {
     "file": "crusoe-color.svg",
     "mono": false
+  },
+  "cursor": {
+    "file": "cursor.svg",
+    "mono": true
   },
   "deepinfra": {
     "file": "deepinfra-color.svg",
@@ -102,6 +119,10 @@
   "deepseek": {
     "file": "deepseek-color.svg",
     "mono": false
+  },
+  "devin": {
+    "file": "devin.svg",
+    "mono": true
   },
   "digitalocean": {
     "file": "digitalocean.svg",
@@ -115,13 +136,9 @@
     "file": "friendli.svg",
     "mono": true
   },
-  "gemini-subscription": {
-    "file": "gemini-color.svg",
+  "geminicli": {
+    "file": "geminicli-color.svg",
     "mono": false
-  },
-  "github-copilot": {
-    "file": "githubcopilot.svg",
-    "mono": true
   },
   "gmicloud": {
     "file": "gmicloud.svg",
@@ -131,12 +148,16 @@
     "file": "gemini-color.svg",
     "mono": false
   },
-  "google-gemini-cli": {
-    "file": "gemini-color.svg",
-    "mono": false
+  "goose": {
+    "file": "goose.svg",
+    "mono": true
   },
   "groq": {
     "file": "groq.svg",
+    "mono": true
+  },
+  "hermes": {
+    "file": "hermes.svg",
     "mono": true
   },
   "huggingface": {
@@ -157,6 +178,14 @@
   },
   "io-net": {
     "file": "ionet.svg",
+    "mono": true
+  },
+  "jcode": {
+    "file": "jcode.svg",
+    "mono": true
+  },
+  "kigi": {
+    "file": "kigi.svg",
     "mono": true
   },
   "kimi-code-plan-cn": {
@@ -204,6 +233,10 @@
   },
   "minimax-coding-plan": {
     "file": "minimax-color.svg",
+    "mono": false
+  },
+  "mistermorph": {
+    "file": "mistermorph-color.svg",
     "mono": false
   },
   "mistral": {
@@ -256,10 +289,6 @@
     "file": "openai.svg",
     "mono": true
   },
-  "openai-codex": {
-    "file": "openai.svg",
-    "mono": true
-  },
   "opencode": {
     "file": "opencode.svg",
     "mono": true
@@ -268,8 +297,16 @@
     "file": "opencode.svg",
     "mono": true
   },
+  "openmausbot": {
+    "file": "openmausbot-color.svg",
+    "mono": false
+  },
   "openrouter": {
     "file": "openrouter-color.svg",
+    "mono": false
+  },
+  "penguin": {
+    "file": "penguin-color.svg",
     "mono": false
   },
   "perplexity": {
@@ -290,6 +327,14 @@
   },
   "qiniu-ai": {
     "file": "qiniu-color.svg",
+    "mono": false
+  },
+  "raycast": {
+    "file": "raycast.svg",
+    "mono": true
+  },
+  "reasonix": {
+    "file": "reasonix-color.svg",
     "mono": false
   },
   "sakana": {
@@ -319,6 +364,10 @@
   "submodel": {
     "file": "submodel-color.svg",
     "mono": false
+  },
+  "t3code": {
+    "file": "t3code.svg",
+    "mono": true
   },
   "tencent-coding-plan": {
     "file": "tencent-color.svg",
@@ -372,10 +421,6 @@
     "file": "grok.svg",
     "mono": true
   },
-  "xai-subscription": {
-    "file": "grok.svg",
-    "mono": true
-  },
   "xiaomi": {
     "file": "xiaomimimo.svg",
     "mono": true
@@ -400,6 +445,10 @@
     "file": "zai.svg",
     "mono": true
   },
+  "zcode": {
+    "file": "zcode.png",
+    "mono": false
+  },
   "zenmux": {
     "file": "zenmux.svg",
     "mono": true
@@ -410,6 +459,202 @@
   },
   "zhipuai-coding-plan": {
     "file": "zhipu-color.svg",
+    "mono": false
+  },
+  "qwen-color": {
+    "file": "qwen-color.svg",
+    "mono": false
+  },
+  "githubcopilot": {
+    "file": "githubcopilot.svg",
+    "mono": true
+  },
+  "commandcode": {
+    "file": "commandcode.svg",
+    "mono": true
+  },
+  "fx": {
+    "file": "fx.svg",
+    "mono": true
+  },
+  "empryo-color": {
+    "file": "empryo-color.svg",
+    "mono": false
+  },
+  "nanobot-color": {
+    "file": "nanobot-color.svg",
+    "mono": false
+  },
+  "paimon": {
+    "file": "paimon.svg",
+    "mono": true
+  },
+  "cline": {
+    "file": "cline.svg",
+    "mono": true
+  },
+  "qoder": {
+    "file": "qoder.svg",
+    "mono": true
+  },
+  "open-code-review": {
+    "file": "open-code-review.svg",
+    "mono": false
+  },
+  "snow": {
+    "file": "snow.png",
+    "mono": false
+  },
+  "tuanjie-cowork-color": {
+    "file": "tuanjie-cowork-color.svg",
+    "mono": false
+  },
+  "workbuddy-color": {
+    "file": "workbuddy-color.svg",
+    "mono": false
+  },
+  "codebuddy-color": {
+    "file": "codebuddy-color.svg",
+    "mono": false
+  },
+  "factory": {
+    "file": "factory.svg",
+    "mono": true
+  },
+  "obsidian": {
+    "file": "obsidian.svg",
+    "mono": true
+  },
+  "astrbot": {
+    "file": "astrbot.svg",
+    "mono": false
+  },
+  "openclaw": {
+    "file": "openclaw.svg",
+    "mono": true
+  },
+  "qwenpaw": {
+    "file": "qwenpaw.svg",
+    "mono": false
+  },
+  "air": {
+    "file": "air.svg",
+    "mono": true
+  },
+  "deveco-color": {
+    "file": "deveco-color.svg",
+    "mono": false
+  },
+  "mimocode": {
+    "file": "mimocode.svg",
+    "mono": true
+  },
+  "openbot": {
+    "file": "openbot.png",
+    "mono": false
+  },
+  "openchamber": {
+    "file": "openchamber.svg",
+    "mono": true
+  },
+  "aside": {
+    "file": "aside.svg",
+    "mono": true
+  },
+  "craft-agents": {
+    "file": "craft-agents-color.svg",
+    "mono": false
+  },
+  "liveagent": {
+    "file": "liveagent-color.svg",
+    "mono": false
+  },
+  "mothx": {
+    "file": "mothx.png",
+    "mono": false
+  },
+  "mu": {
+    "file": "mu.svg",
+    "mono": true
+  },
+  "omo": {
+    "file": "omo.svg",
+    "mono": true
+  },
+  "omp": {
+    "file": "omp.svg",
+    "mono": true
+  },
+  "pi": {
+    "file": "pi.svg",
+    "mono": true
+  },
+  "prime-agent": {
+    "file": "prime-agent.svg",
+    "mono": true
+  },
+  "vscode": {
+    "file": "vscode.svg",
+    "mono": true
+  },
+  "zoo-code": {
+    "file": "zoo-code.png",
+    "mono": false
+  },
+  "zed": {
+    "file": "zed.svg",
+    "mono": true
+  },
+  "antigravity-color": {
+    "file": "antigravity-color.svg",
+    "mono": false
+  },
+  "dim-color": {
+    "file": "dim-color.svg",
+    "mono": false
+  },
+  "kun": {
+    "file": "kun.png",
+    "mono": false
+  },
+  "nowledge-mem": {
+    "file": "nowledge-mem.png",
+    "mono": false
+  },
+  "hanako": {
+    "file": "hanako.png",
+    "mono": false
+  },
+  "alma": {
+    "file": "alma.png",
+    "mono": false
+  },
+  "shelley-color": {
+    "file": "shelley-color.svg",
+    "mono": false
+  },
+  "miniq-color": {
+    "file": "miniq-color.svg",
+    "mono": false
+  },
+  "avibe": {
+    "file": "avibe.png",
+    "mono": false
+  },
+  "cindy": {
+    "file": "cindy.png",
+    "mono": false
+  },
+  "aionui": {
+    "file": "aionui.svg",
+    "mono": true
+  },
+  "cherrystudio-color": {
+    "file": "cherrystudio-color.svg",
+    "mono": false
+  },
+  "lody": {
+    "file": "lody.png",
     "mono": false
   }
 }

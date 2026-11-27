@@ -159,7 +159,7 @@ def memory_override(mode: str) -> dict | None:
 
 
 def _write_rooms(platform: str, account_id: str, rooms: dict) -> None:
-    from openprogram.models.auth.credentials import _private_atomic_write
+    from openprogram.state.private_files import _private_atomic_write
     from openprogram.state.paths import get_state_dir
 
     payload = json.dumps(rooms, indent=2, sort_keys=True).encode("utf-8")
@@ -173,7 +173,7 @@ def _write_rooms(platform: str, account_id: str, rooms: dict) -> None:
 @contextmanager
 def _rooms_file_lock(platform: str, account_id: str):
     """Held across a read-modify-write: the CLI and the worker both write rooms.json."""
-    from openprogram.models.auth.credentials import _private_file_lock
+    from openprogram.state.private_files import _private_file_lock
     from openprogram.state.paths import get_state_dir
 
     with _private_file_lock(_rooms_path(platform, account_id), root=get_state_dir(), timeout=10):
@@ -304,7 +304,7 @@ def render_pending(entries: list[PendingEntry]) -> str:
     text are escaped), so a message cannot start a line that reads like
     another speaker.
     """
-    from openprogram.host.security.identity_header import normalize_identity_header_part as _clean
+    from openprogram.state.identity_header import normalize_identity_header_part as _clean
 
     lines = [PENDING_HEADER]
     for entry in entries:

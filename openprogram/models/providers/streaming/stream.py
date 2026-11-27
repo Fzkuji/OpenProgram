@@ -16,8 +16,7 @@ from ..utils.failures import request_repair
 from .first_token import FirstToken
 from .resend import Resend, reached_provider
 from ..utils.streams.stream_idle import bounds_own_stream_idle, event_idle_timeout_s, idle_bounded
-from openprogram.models.usage.prefix_fingerprint import check_request, settle_check
-from openprogram.models.usage.request import RequestReceipt
+from ..usage_port import begin_request, check_request, settle_check
 from ..recording.capture import RequestSlot, bind_slot
 from ..types import (
     AssistantMessage,
@@ -116,7 +115,7 @@ async def stream_simple_with_provider(
     budget = BudgetedRequest.begin(model, context, opts, provider)
     receipt = None
     try:
-        receipt = RequestReceipt.begin(model, opts, provider_context=context, provider=provider, budget=budget)
+        receipt = begin_request(model, opts, provider_context=context, provider=provider, budget=budget)
         if budget is not None:
             opts = budget.clamp(opts, model)
         if receipt is not None:
@@ -188,7 +187,7 @@ async def _stream_on(model: Model, context: Context, options: StreamOptions | No
         budget = BudgetedRequest.begin(model, context, opts, provider)
         receipt = None
         try:
-            receipt = RequestReceipt.begin(model, opts, provider_context=context, provider=provider, budget=budget)
+            receipt = begin_request(model, opts, provider_context=context, provider=provider, budget=budget)
             if budget is not None:
                 opts = budget.clamp(opts, model)
             if receipt is not None:
@@ -316,9 +315,9 @@ def _credentialed(stream_fn):
     """``stream_fn`` sent through the provider's credentials: which key a
     request uses, and what a refusal, a limit or a spent quota does to it,
     is decided in one place for every adapter
-    (``models/auth/selection.py``). A request whose options already carry a
+    (``models/providers/streaming/credential_failover.py``). A request whose options already carry a
     key (a caller's own) is sent with that key."""
-    from openprogram.models.auth.selection import with_credential
+    from openprogram.models.providers.streaming.credential_failover import with_credential
 
     def call(model, context, opts):
         if opts.api_key:
@@ -351,7 +350,7 @@ def _fuller(held: AssistantMessage | None, partial: AssistantMessage | None) -> 
 def _read_quota_after(model: Model, exc: BaseException) -> None:
     """A 402, 429 or spent quota: read the provider's quota once, to show the new state."""
     try:
-        from openprogram.models.usage.quota_fetchers import after_failure
+        from openprogram.models.providers.usage_port import after_failure
         after_failure(getattr(model, "provider", "") or "", exc)
     except Exception:
         _log.debug("quota read after a failure not scheduled", exc_info=True)
@@ -360,7 +359,7 @@ def _read_quota_after(model: Model, exc: BaseException) -> None:
 def _record_failed(model: Model, partial, options) -> None:
     """Record a request that reached the provider and ended without a final message."""
     try:
-        from openprogram.models.usage import record_failed_request
+        from openprogram.models.providers.usage_port import record_failed_request
         record_failed_request(
             model, partial, session_id=getattr(options, "session_id", None) if options else None,
         )
@@ -424,7 +423,7 @@ def _record_usage(model: Model, final, options, prefix=None) -> None:
     if final is None:
         return
     try:
-        from openprogram.models.usage import record_message
+        from openprogram.models.providers.usage_port import record_message
         session_id = getattr(options, "session_id", None) if options else None
         record_message(model, final, session_id=session_id, prefix=prefix)
     except Exception:

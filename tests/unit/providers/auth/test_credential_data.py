@@ -27,7 +27,7 @@ def test_credential_roundtrip_api_key():
 
 def test_credential_roundtrip_oauth_data():
     cred = Credential(
-        provider_id="openai-codex", kind="oauth",
+        provider_id="qwen", kind="oauth",
         payload=CredentialData(
             kind="oauth", auth_value="at",
             data={"refresh_token": "rt", "expires_at_ms": 123,

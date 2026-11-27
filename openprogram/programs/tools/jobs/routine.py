@@ -133,10 +133,10 @@ def _wake_message(name: str) -> str:
 
 def _schedule(name: str, title: str, cron: str, task_id: str) -> tuple[dict[str, Any] | None, str | None]:
     """Create the routine's waking reminder, or move the one it has."""
-    from openprogram.programs.tools.jobs.cron import cron as cron_tool
+    from openprogram.runtime.scheduler import store as task_store
     from openprogram.runtime.scheduler import service
 
-    authority, error = cron_tool._authorize("create")
+    authority, error = task_store._authorize("create")
     if error:
         return None, error
     message = _wake_message(name)

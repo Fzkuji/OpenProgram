@@ -20,7 +20,7 @@ def runner_lifecycle(monkeypatch):
     import openprogram.runtime.jobs.runner as runner_mod
 
     runner_mod.shutdown_runner()
-    monkeypatch.setattr("openprogram.operations.worker.lock.is_held_by", lambda _pid: True)
+    monkeypatch.setattr("openprogram.host.worker.lock.is_held_by", lambda _pid: True)
     monkeypatch.setattr("openprogram.runtime.jobs.runner.shared._broadcast", lambda *a, **k: None)
     yield
     runner_mod.shutdown_runner()

@@ -400,7 +400,7 @@
 <tr><th scope="row"><code translate="no">execution/recovery/resource_saga.py</code></th><td>Takes its governor as an argument; the governor implements <code translate="no">ResourceGovernor</code></td></tr>
 </tbody>
 </table>
-<p>Goal hooks belong to conversations because a chat Goal runs as conversation turns; they import <code translate="no">openprogram.programs.tools.planning.goal</code> on first call, since that tool can load after startup recovery.</p>
+<p>Goal hooks belong to conversations because a chat Goal runs as conversation turns. Conversations never import the Goal: they call the turn moments the Goal registers when its package loads (<code translate="no">execution_terminal</code>, <code translate="no">session_owner</code>, <code translate="no">restart_pause</code> in <code translate="no">runtime/conversation/turn_hooks.py</code>), and a lookup loads the Programs first, since they can load after startup recovery.</p>
 </details>
 
 <h2 id="workflow-questions">Workflow questions</h2>

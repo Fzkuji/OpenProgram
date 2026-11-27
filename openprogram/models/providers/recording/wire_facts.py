@@ -93,7 +93,7 @@ _observer_installed = False
 
 
 def _note(request: Any) -> None:
-    from openprogram.models.usage.context import call_context
+    from openprogram.models.providers.usage_port import call_context
 
     context = call_context()
     execution_id = getattr(context, "execution_id", None)

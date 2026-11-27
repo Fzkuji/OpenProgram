@@ -307,7 +307,8 @@ def process_merge_turn(
     # branch, so the attach pointers just written are part of the
     # history the merge turn renders.
     from openprogram.runtime.conversation.session_settings.session_config import conversation_permission
-    from openprogram.runtime.permissions.authority import authority_from_message, runtime_authority
+    from openprogram.runtime.permissions.authority import authority_from_message
+    from openprogram.state.authority import runtime_authority
     _parent_authority = authority_from_message(
         target_session_id, target_head or "",
     )

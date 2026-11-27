@@ -86,7 +86,7 @@
 <tbody>
 <tr><th scope="row">已压缩的分支</th><td><code translate="no">[ROOT, S, kept tail…]</code></td></tr>
 <tr><th scope="row">被覆盖的轮次加载过延迟工具</th><td>随这些轮次一起省去。S 带上工具名（<code translate="no">carried_tool_names</code>，随 S 写入：最近加载或调用的在前，定义超过窗口 5% 处截断），所以每个请求仍会加载它们</td></tr>
-<tr><th scope="row">携带的工具，在 openai-codex 上</th><td>S 之前放一对 <code translate="no">tool_search_call</code> / <code translate="no">tool_search_output</code>，带对话最初发送的定义；tools 数组保持不变。其他 provider 在 tools 数组里提供，请求从 S 开始。有上限的后台尾部只保留被覆盖部分的 S</td></tr>
+<tr><th scope="row">携带的工具</th><td>provider 在 tools 数组里提供，请求从 S 开始。有上限的后台尾部只保留被覆盖部分的 S</td></tr>
 <tr><th scope="row">任意检出、任意时间</th><td>由数据确定；与 HEAD 曾在哪里无关</td></tr>
 <tr><th scope="row">没有链读的摘要</th><td>不省略任何内容</td></tr>
 </tbody>
@@ -315,7 +315,7 @@
 <tr><th scope="row">窗口内一轮的请求只在末尾增长；超过时只有一个检查点，不逐个总结结果</th><td><code translate="no">tests/component/context/test_request_checkpoint_only.py</code></td></tr>
 <tr><th scope="row">请求大小按最近一次单轮计数加变化；多轮之和、失败回复的计数和不合理的计数不用</th><td><code translate="no">tests/unit/context/token_accounting/test_request_measure.py</code></td></tr>
 <tr><th scope="row">超限的请求被变小后发送，历史不变；只有最新消息本身超过窗口才失败</th><td><code translate="no">tests/component/context/test_request_checkpoints.py</code></td></tr>
-<tr><th scope="row">S 带上其轮次加载的工具，按顺序并按窗口截断；在 openai-codex 上，S 前的一对让 tools 数组在压缩前后不变；其他 provider 先读 S</th><td><code translate="no">tests/unit/context/compaction/test_compaction_keeps_loaded_tools.py</code></td></tr>
+<tr><th scope="row">S 带上其轮次加载的工具，按顺序并按窗口截断；provider 在 tools 数组里提供它们并先读 S</th><td><code translate="no">tests/unit/context/compaction/test_compaction_keeps_loaded_tools.py</code></td></tr>
 <tr><th scope="row">压缩从不移动 HEAD</th><td>场景套件</td></tr>
 <tr><th scope="row"><code translate="no">covers_ids</code> 绝不指向被总结链之外的节点</th><td><code translate="no">tests/unit/dag/test_graph_builder_covers.py</code></td></tr>
 <tr><th scope="row">HEAD 经得起重启、加载会话、切换模型、保存元数据</th><td><code translate="no">tests/integration/dag/test_dag_mutation_scenarios.py</code></td></tr>

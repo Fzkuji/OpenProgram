@@ -95,7 +95,7 @@ def test_web_auth_url_command_prints_only_the_requested_bootstrap_url(
         return True
 
     monkeypatch.setattr(
-        "openprogram.operations.worker.ports.backend_accepts_owner_challenge", accept
+        "openprogram.host.security.backend_endpoint.backend_accepts_owner_challenge", accept
     )
 
     assert _cmd_web_auth_url("http://127.0.0.1:18100") == 0

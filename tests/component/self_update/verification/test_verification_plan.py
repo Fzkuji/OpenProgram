@@ -35,6 +35,7 @@ def _public_prepare(tmp_path, monkeypatch, plan, *, assertions=None):
     store = SelfUpdateStore(tmp_path / "updates")
     monkeypatch.setattr(tool, "_turn_context", lambda: (_request(), "turn-1_reply"))
     monkeypatch.setattr(tool, "get_manager", lambda: _Manager(worktree))
+    monkeypatch.setattr("openprogram.state.worktree.manager.get_manager", lambda: _Manager(worktree))
     monkeypatch.setattr(tool, "SelfUpdateStore", lambda: store)
     result = asyncio.run(tool.self_update.execute("planned-prepare", {"action": "prepare", 
         "worktree_id": worktree.id, "candidate_sha": sha,

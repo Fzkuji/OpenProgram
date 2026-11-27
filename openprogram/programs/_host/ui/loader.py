@@ -390,7 +390,7 @@ def watch_roots() -> list[Path]:
 
 def _sealed_in_a_version(root: Path) -> bool:
     """A built-in application inside a sealed version changes only by switching."""
-    from openprogram.operations.self_update.versions import layout
+    from openprogram.host._platform import runtime_layout as layout
     from openprogram.programs._host.registry import _builtin_applications_root
 
     if not layout.managed():

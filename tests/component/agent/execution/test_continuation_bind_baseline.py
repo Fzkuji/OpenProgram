@@ -24,7 +24,7 @@ def tmp_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SessionDB:
 
 
 def _bind_nonrepo_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    from openprogram.state.store.project import project_commit
+    from openprogram.state import project_commit
 
     proj_dir = tmp_path / "user-project"
     proj_dir.mkdir()

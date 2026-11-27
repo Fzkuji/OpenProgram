@@ -203,33 +203,32 @@ def test_enabled_models_reads_registry(monkeypatch):
 
 
 def test_list_providers_hides_alias_provider_row(monkeypatch):
-    # An id that's a known alias of another provider (chatgpt-subscription →
-    # openai-codex) must not surface as its own sidebar row. Even if it leaks
-    # into get_providers() (both config keys built rows), list_providers folds
-    # it away; the canonical openai-codex row stays.
+    # An id that's a known alias of another provider (claude -> anthropic)
+    # must not surface as its own sidebar row. Even if it leaks into
+    # get_providers() (both config keys built rows), list_providers folds
+    # it away; the canonical anthropic row stays.
     import openprogram.models.providers as P
     from openprogram.models.providers.types import Model
     from openprogram.models.providers.catalog import sources as S
 
     def _mk(pid):
         return Model.model_validate({
-            "id": "gpt-5.5", "name": "GPT-5.5", "provider": pid,
-            "api": "openai-codex", "base_url": "https://chatgpt.com/backend-api",
+            "id": "claude-sonnet-4-6", "name": "Claude Sonnet 4.6", "provider": pid,
+            "api": "anthropic-messages", "base_url": "https://api.anthropic.com",
         })
-    monkeypatch.setattr(P, "get_providers",
-                        lambda: ["openai-codex", "chatgpt-subscription"])
+    monkeypatch.setattr(P, "get_providers", lambda: ["anthropic", "claude"])
     monkeypatch.setattr(P, "get_models", lambda pid: [_mk(pid)])
     monkeypatch.setattr(cat, "label_for", lambda pid: pid)
     monkeypatch.setattr(cat, "is_configured", lambda pid: True)
     monkeypatch.setattr(cat, "_shipped_provider_ids", lambda: set())
     monkeypatch.setattr(S.models_dev, "list_providers", lambda: [])
     monkeypatch.setattr(st, "_read_providers_cfg", lambda: {
-        "openai-codex": {"enabled": True},
-        "chatgpt-subscription": {"enabled": True},
+        "anthropic": {"enabled": True},
+        "claude": {"enabled": True},
     })
     ids = [p["id"] for p in listing.list_providers()]
-    assert "openai-codex" in ids
-    assert "chatgpt-subscription" not in ids
+    assert "anthropic" in ids
+    assert "claude" not in ids
 
 
 # ---------------------------------------------------------------------------
@@ -343,72 +342,12 @@ def test_refresh_keeps_enabled_model_absent_upstream(monkeypatch, mem_cfg):
     assert rows["ghost"]["context_window"] == 5
 
 
-def test_subscription_refresh_auto_syncs_catalog_and_respects_disables(
-    monkeypatch, mem_cfg,
-):
-    mem_cfg["xai-subscription"] = {
-        "enabled": True,
-        "disabled_models": ["future-grok"],
-        "models": [{
-            "id": "grok-old", "name": "Old", "source": "subscription-login",
-        }],
-    }
-    monkeypatch.setattr(
-        listing, "_browse_models_with_error",
-        lambda *_a, **_k: ([
-            {"id": "grok-4.6", "name": "Grok 4.6", "context_window": 500_000},
-            {"id": "future-grok", "name": "Future Grok"},
-        ], None),
-    )
-    import openprogram.models.providers.catalog.enabled_models as mg
-    monkeypatch.setattr(mg, "reload", lambda: None)
-
-    result = F.fetch_models_remote("xai-subscription")
-
-    assert result["added"] == 1
-    rows = mem_cfg["xai-subscription"]["models"]
-    assert [row["id"] for row in rows] == ["grok-4.6"]
-    assert rows[0]["source"] == "subscription-catalog"
-
-
-def test_subscription_refresh_broadcasts_only_when_catalogue_changes(
-    monkeypatch, mem_cfg,
-):
-    mem_cfg["xai-subscription"] = {"enabled": True, "models": []}
-    monkeypatch.setattr(
-        listing, "_browse_models_with_error",
-        lambda *_a, **_k: ([{"id": "grok-4.6", "name": "Grok 4.6"}], None),
-    )
-    import openprogram.models.providers.catalog.enabled_models as mg
-    monkeypatch.setattr(mg, "reload", lambda: None)
-    frames = []
-    monkeypatch.setattr("openprogram.runtime.events.emit_ws_frame", frames.append)
-
-    F.fetch_models_remote("xai-subscription")
-    F.fetch_models_remote("xai-subscription")
-
-    assert frames == [{
-        "type": "provider_models_changed",
-        "data": {"provider": "xai-subscription"},
-    }]
-
-
-def test_empty_subscription_refresh_preserves_saved_models(monkeypatch, mem_cfg):
-    saved = {"enabled": True, "models": [{"id": "grok-old", "name": "Old"}]}
-    mem_cfg["xai-subscription"] = copy.deepcopy(saved)
+def test_empty_refresh_preserves_saved_models(monkeypatch, mem_cfg):
+    saved = {"enabled": True, "models": [{"id": "kimi-old", "name": "Old"}]}
+    mem_cfg["kimi-coding"] = copy.deepcopy(saved)
     monkeypatch.setattr(listing, "_browse_models_with_error", lambda *a, **k: ([], None))
-    F.fetch_models_remote("xai-subscription")
-    assert mem_cfg["xai-subscription"] == saved
-
-
-def test_unconfigured_subscription_fallback_does_not_retire_models(monkeypatch, mem_cfg):
-    saved = {"enabled": True, "models": [{"id": "grok-old", "name": "Old"}]}
-    mem_cfg["xai-subscription"] = copy.deepcopy(saved)
-    monkeypatch.setattr(cat, "is_configured", lambda pid: False)
-    monkeypatch.setattr(pm, "_models_dev_for", lambda pid: {"fallback": {"name": "Fallback"}})
-    monkeypatch.setattr("openprogram.models.providers.catalog.subscription_catalog.load_catalog", lambda pid: ([], None))
-    F.fetch_models_remote("xai-subscription")
-    assert mem_cfg["xai-subscription"] == saved
+    F.fetch_models_remote("kimi-coding")
+    assert mem_cfg["kimi-coding"] == saved
 
 
 def test_settings_snapshot_skips_remote_and_preserves_selection(monkeypatch, mem_cfg):

@@ -263,7 +263,7 @@ class WeChatWindow:
             or not ApplicationServices.AXIsProcessTrusted()
         ):
             raise VisualUnavailable("ACCESS_REQUIRED")
-        from openprogram.programs.tools.computer_use.computer_use.desktop.macos.processes import running_applications
+        from openprogram.programs._authoring.reports.tool_port import running_applications
 
         # NSWorkspace's own list goes stale in a worker without a run loop.
         apps = [

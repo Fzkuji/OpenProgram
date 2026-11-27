@@ -1,6 +1,6 @@
 """Google AI Studio model list — ``/v1beta/models`` (query-param key).
 
-Convention module (see ``openai_codex/list_models.py`` for the pattern): the
+Convention module (see ``anthropic/list_models.py`` for the pattern): the
 dispatcher loads ``fetch(provider_id, timeout)`` by directory name.
 
 Differs from the OpenAI-compatible shape: the api key is a query param
@@ -19,7 +19,7 @@ from typing import Any
 def fetch(provider_id: str, timeout: float) -> Any:
     import httpx
 
-    from openprogram.models.providers.settings.env_api_keys import resolve_api_key_with_auth_store
+    from openprogram.models.auth.env_api_keys import resolve_api_key_with_auth_store
 
     api_key = resolve_api_key_with_auth_store(provider_id)
     if not api_key:

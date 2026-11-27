@@ -25,6 +25,8 @@ import logging
 import time
 from typing import Optional, TYPE_CHECKING
 
+from openprogram.runtime import program_host
+
 _log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
@@ -103,6 +105,11 @@ def resolve_model(profile: dict, override: Optional[str] = None):
     except Exception:
         get_model = None  # type: ignore[assignment]
 
+    from openprogram.models.auth.provider_policy import is_withdrawn
+    if isinstance(override, str) and "/" in override and is_withdrawn(override.split("/", 1)[0]):
+        # A saved pick on a withdrawn provider is no pick: the Agent's own
+        # model, or the clear "pick a model" error.
+        override = None
     requested = override or profile.get("model")
     # agent.json stores ``model`` either as the legacy "<provider>/<id>"
     # string or as the newer {"provider": ..., "id": ...} dict
@@ -140,8 +147,7 @@ def resolve_model(profile: dict, override: Optional[str] = None):
             # provider that has this exact id. Same model, not a swap.
             model_id_only = requested
             order = ["openai", "anthropic", "google", "amazon-bedrock",
-                     "cerebras", "github-copilot",
-                     "openai-codex", "gemini-subscription", "openrouter"]
+                     "cerebras", "openrouter"]
             if provider_hint and provider_hint not in order:
                 order.insert(0, provider_hint)
             for provider in order:
@@ -217,7 +223,7 @@ def resolve_tools(
     # by the ``<server>`` prefix against the agent's ``mcp.disabled/
     # allowed`` patterns. Required servers fail before provider execution.
     def _apply_profile_gates(tool_list):
-        from openprogram.extensions.gating import match_any, check_required
+        from openprogram.runtime.agent_registry.gating import match_any, check_required
         agent_tools_config = (profile or {}).get("tools")
         if isinstance(agent_tools_config, dict) and (
             agent_tools_config.get("mode") == "none"
@@ -230,7 +236,7 @@ def resolve_tools(
             isinstance(wanted, dict) and wanted.get("web_search") is True
         ) or (isinstance(wanted, list) and "web_search" in wanted)
         if search_selected:
-            from openprogram.programs._host.runtime import as_resident
+            as_resident = program_host.host().as_resident
 
             tool_list = [as_resident(tool) if tool.name == "web_search" else tool
                          for tool in tool_list or []]
@@ -265,13 +271,13 @@ def resolve_tools(
         """``tool_list`` with ``tool_search`` in front when it holds a
         deferred tool: without the loader such a tool could never be
         called, and the catalog would name tools nothing can load."""
-        from openprogram.extensions.gating import match_any
+        from openprogram.runtime.agent_registry.gating import match_any
         tool_list = list(tool_list or [])
         if (not any(getattr(t, "_defer", False) for t in tool_list)
                 or any(t.name == "tool_search" for t in tool_list)
                 or match_any("tool_search", list(disabled))):
             return tool_list
-        from openprogram.programs import agent_tools as _agent_tools
+        _agent_tools = program_host.host().agent_tools
         return [*(_agent_tools(names=["tool_search"], source=source, only_available=True) or []),
                 *tool_list]
 
@@ -290,7 +296,7 @@ def resolve_tools(
         wanted = inherited
     if wanted is None:
         try:
-            from openprogram.programs import agent_tools as _agent_tools
+            _agent_tools = program_host.host().agent_tools
             return _apply_profile_gates(_with_loader(_agent_tools(source=source, only_available=True)))
         except RequiredMcpUnavailable:
             raise
@@ -300,8 +306,9 @@ def resolve_tools(
     if wanted == []:
         return _apply_profile_gates([])
     try:
-        from openprogram.programs import DEFAULT_TOOLS, agent_tools
-        from openprogram.extensions.gating import match_any
+        programs = program_host.host()
+        DEFAULT_TOOLS, agent_tools = programs.DEFAULT_TOOLS, programs.agent_tools
+        from openprogram.runtime.agent_registry.gating import match_any
         if isinstance(wanted, dict):
             mode = wanted.get("mode")
             if mode is None and not any(
@@ -383,14 +390,14 @@ def resolve_tools(
             # A per-turn name list pins exactly these tools; without
             # tool_search a deferred one could never be loaded, so each
             # ships with its full schema.
-            from openprogram.programs._host.runtime import as_resident
+            as_resident = program_host.host().as_resident
             named = agent_tools(names=[str(n) for n in wanted], source=source, only_available=True) or []
             if not any(t.name == "tool_search" for t in named):
                 named = [as_resident(t) for t in named]
             return _apply_profile_gates(named)
         resolved = [t for t in wanted if hasattr(t, "name")]
         if source in {"self_update_verify", "self_update_diagnose", "self_update_repair"}:
-            from openprogram.programs import apply_tool_policy
+            apply_tool_policy = program_host.host().apply_tool_policy
             resolved = apply_tool_policy(resolved, source=source, exposure_filter=False)
         return _apply_profile_gates(resolved)
     except RequiredMcpUnavailable:
@@ -426,7 +433,7 @@ def agent_web_search_choice(policy: object) -> Optional[bool]:
 
 def _access_preset_names(name: str) -> list[str]:
     """Resolve a stored Access preset to live Program names."""
-    from openprogram.programs import agent_tools
+    agent_tools = program_host.host().agent_tools
     if name == "FULL":
         return [
             tool.name for tool in agent_tools(
@@ -440,7 +447,7 @@ def _access_preset_names(name: str) -> list[str]:
             )
             if not getattr(tool, "_is_agent_method", False)
         ]
-    from openprogram.programs._host.meta_storage import load_functions_meta
+    load_functions_meta = program_host.host().load_functions_meta
     data = load_functions_meta({"profiles": {}, "active": "FULL"})
     profiles = data.get("profiles") if isinstance(data, dict) else {}
     values = profiles.get(name) if isinstance(profiles, dict) else None
@@ -460,7 +467,7 @@ def history_to_agent_messages(history: list[dict]) -> list:
         if role == "user":
             if m.get("id") == "ROOT" or not content.strip():
                 continue
-            from openprogram.runtime.permissions.authority import render_model_input_from
+            from openprogram.state.authority import render_model_input_from
             out.append(UserMessage(
                 content=[TextContent(text=render_model_input_from(m, content))],
                 timestamp=ts,

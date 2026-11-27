@@ -70,7 +70,6 @@
 <tr><th scope="row">API-key and CLI-delegated credentials (read another tool's login by reference)</th><td>Conversations, Agents, memory</td></tr>
 </tbody>
 </table>
-<p>The ChatGPT login is shared: the development instance reads the Codex CLI's <code translate="no">~/.codex/auth.json</code>, and the stable instance mirrors its login of the same account into that file. Each adopts the newer login the other wrote instead of spending a used refresh token (<a href="../providers/auth/unified-auth-storage.html#codex-shared-login">One ChatGPT login per machine</a>).</p>
 
 <h3 id="from-a-conversation">From a conversation</h3>
 <p>In the development instance (the <code translate="no">dev</code> profile, with a source repository that has a <code translate="no">dev</code> branch), <code translate="no">self_update(action="prepare")</code> uses the <code translate="no">dev_deploy</code> backend: a change is a commit on <code translate="no">dev</code>, and deploying it is the whole update. The call saves the request and starts a detached controller; the rest runs after the calling turn is saved.</p>

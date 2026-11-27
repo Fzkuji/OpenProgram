@@ -255,6 +255,7 @@ def test_empty_or_incomplete_doctor_is_not_success(live, monkeypatch, empty):
         probe_system(record)
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("scenario", ["success", "rollback", "wrong_restored", "goal_pass", "goal_fail", "forged_evidence",
                                       "resume_ready", "resume_activating", "resume_verifying", "resume_committed",
                                       "resume_expired_commit", "resume_new_worker"])

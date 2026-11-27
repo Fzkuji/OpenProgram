@@ -95,6 +95,7 @@ def stored_reads(recording: dict) -> list[dict]:
             for frame in (*replies, *recording["cold"]) if frame["type"] in READ_REPLIES]
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("name", sorted(SCENARIOS))
 def test_committed_recording_matches_the_server(name: str, tmp_path: Path) -> None:
     fresh = json.loads(dump(record(name, tmp_path)))
@@ -158,7 +159,7 @@ def test_a_recording_starts_with_the_read_a_browser_makes_when_it_opens() -> Non
 
 def test_a_stuck_run_fails_teardown_and_still_restores_the_server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from openprogram.interfaces.server import server
-    from openprogram.operations.worker import lock as worker_lock_module
+    from openprogram.host.worker import lock as worker_lock_module
 
     monkeypatch.setattr(live_server, "_WAIT_SECONDS", 0.05)
     broadcast, lock_path = server._broadcast, worker_lock_module.lock_path

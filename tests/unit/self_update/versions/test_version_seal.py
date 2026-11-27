@@ -5,9 +5,9 @@ import zipfile
 
 import pytest
 
-from openprogram.operations.self_update.versions import layout as paths
+from openprogram.host._platform import runtime_layout as paths
 from openprogram.operations.self_update.versions import store
-from openprogram.operations.self_update.versions.layout import Layout
+from openprogram.host._platform.runtime_layout import Layout
 from tests.support.sealed_versions import BASE, make_layout, make_version
 
 

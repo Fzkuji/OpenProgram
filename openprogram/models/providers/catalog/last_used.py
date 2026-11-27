@@ -29,6 +29,10 @@ def last_used_in_config(cfg: dict) -> Optional[tuple[str, str]]:
         return None
     provider = str(value.get("provider") or "").strip()
     model = str(value.get("model") or "").strip()
+    from openprogram.models.auth.provider_policy import is_withdrawn
+    if is_withdrawn(provider):
+        # A model on a withdrawn provider is no model: the user picks again.
+        return None
     return (provider, model) if provider and model else None
 
 

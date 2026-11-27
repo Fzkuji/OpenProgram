@@ -161,16 +161,27 @@ class Store:
                 )
             if batch.quota is not None:
                 observed_at, data = batch.quota
-                conn.execute(
-                    """INSERT INTO quota VALUES (?,?,?) ON CONFLICT(agent) DO UPDATE SET
-                           observed_at = excluded.observed_at, data = excluded.data
-                       WHERE excluded.observed_at >= quota.observed_at""",
-                    (batch.agent, observed_at, json.dumps(data)),
-                )
+                self._write_quota(conn, batch.agent, observed_at, data)
             conn.execute(
                 "INSERT OR REPLACE INTO files VALUES (?,?,?,?,?,?,?)",
                 (path, batch.agent, mark.size, mark.mtime_ns, mark.offset, mark.guard, json.dumps(state)),
             )
+
+    def record_quota(self, agent: str, observed_at: float, data: dict) -> None:
+        """Keep a harness's plan limits as its own program reported them
+        live; a rollout file's reading is the other source, and the newer
+        of the two stays."""
+        with self.connection() as conn, conn:
+            self._write_quota(conn, agent, observed_at, data)
+
+    @staticmethod
+    def _write_quota(conn: sqlite3.Connection, agent: str, observed_at: float, data: dict) -> None:
+        conn.execute(
+            """INSERT INTO quota VALUES (?,?,?) ON CONFLICT(agent) DO UPDATE SET
+                   observed_at = excluded.observed_at, data = excluded.data
+               WHERE excluded.observed_at >= quota.observed_at""",
+            (agent, observed_at, json.dumps(data)),
+        )
 
     def set_names(self, conn: sqlite3.Connection, agent: str, names: dict[str, str]) -> None:
         with conn:

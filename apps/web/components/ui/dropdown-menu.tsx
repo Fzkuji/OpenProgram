@@ -17,7 +17,9 @@
  * panel against the trigger's zero rect, at the window's top-left corner.
  *
  * On a touch phone every panel is a sheet from the bottom of the screen and
- * a submenu opens over its parent with a Back row (menu/phone-sheet.tsx).
+ * a submenu opens over its parent with a Back row (menu/phone-sheet.tsx);
+ * `phoneDrop` drops it from the top instead, for a menu opened from the
+ * top of the screen (the phone's computer name).
  */
 
 import * as React from "react"
@@ -32,8 +34,8 @@ const DropdownMenuTrigger = DropdownMenuPrimitive.Trigger
 
 const DropdownMenuContent = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Content>
->(({ className, align = "end", sideOffset = 4, hideWhenDetached = true, ...props }, ref) => {
+  React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Content> & { phoneDrop?: boolean }
+>(({ className, align = "end", sideOffset = 4, hideWhenDetached = true, phoneDrop, onPointerDownOutside, ...props }, ref) => {
   const sheet = usePhoneSheet()
   const swipe = usePhoneSheetSwipe(sheet)
   return (
@@ -43,8 +45,14 @@ const DropdownMenuContent = React.forwardRef<
         align={align}
         sideOffset={sideOffset}
         hideWhenDetached={hideWhenDetached && !sheet}
-        data-phone-sheet={sheet ? "" : undefined}
-        {...swipe}
+        data-phone-sheet={sheet ? (phoneDrop ? "drop" : "") : undefined}
+        {...(phoneDrop ? {} : swipe)}
+        onPointerDownOutside={(event) => {
+          // On a phone a tap outside an open menu only closes it, as on
+          // iOS: the click that follows does not reach what is under it.
+          if (sheet) swallowNextClick()
+          onPointerDownOutside?.(event)
+        }}
         className={cn(
           "z-(--z-popover) outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2",
           className
@@ -55,6 +63,14 @@ const DropdownMenuContent = React.forwardRef<
   )
 })
 DropdownMenuContent.displayName = DropdownMenuPrimitive.Content.displayName
+
+/** Drops the click that ends the press which closed a menu. */
+function swallowNextClick() {
+  const stop = (event: MouseEvent) => { event.preventDefault(); event.stopPropagation(); done() }
+  const done = () => { window.removeEventListener("click", stop, true); window.clearTimeout(timer) }
+  window.addEventListener("click", stop, true)
+  const timer = window.setTimeout(done, 700)
+}
 
 const DropdownMenuItem = DropdownMenuPrimitive.Item
 

@@ -5,14 +5,8 @@ the load records of its tool results. A summary takes the place of the
 turns it covers and of their records, so the compaction writes the names
 of the tools they had loaded into the summary node (``carried_tool_names``),
 most recently used first and cut to a share of the window. The summary
-message carries them, so every provider still loads them.
-
-On openai-codex a loaded tool stays out of the tools array: its definition
-travels in a ``tool_search_output``. One search pair in front of the summary
-loads the carried tools, with the definitions first sent, so the array is
-unchanged after a compaction (measured before: 0 cached of 9,466 when the
-tool went back into the array). Any other provider offers them in its
-tools array and reads the summary first.
+message carries them, so every provider still loads them: it offers them in
+its tools array and reads the summary first.
 """
 from __future__ import annotations
 
@@ -20,8 +14,6 @@ import json
 
 import pytest
 
-import openprogram.models.providers.adapters.openai_codex.openai_codex as cx
-from openprogram.models.providers.shared.openai_responses import convert_responses_messages
 from openprogram.models.providers.shared.tool_loads import loaded_tools
 from openprogram.models.providers.types import Context, Model, Tool
 from openprogram.runtime.context.compaction.carried_tools import (
@@ -32,7 +24,7 @@ from openprogram.runtime.context.compaction.persistence import SUMMARY_NODE_NAME
 from openprogram.runtime.context.session_dag.render import render_dag_messages
 from openprogram.state.store.session.nodes import Call, Graph, ROLE_CODE, ROLE_LLM, ROLE_USER
 
-MODEL = Model(id="gpt-5.5", name="gpt-5.5", api="openai-codex", provider="openai-codex",
+MODEL = Model(id="gpt-5.5", name="gpt-5.5", api="openai-responses", provider="openai",
               base_url="https://example.invalid")
 GEMINI = Model(id="gemini-3-pro", name="gemini-3-pro", api="google-generative-ai",
                provider="google", base_url="https://example.invalid")
@@ -95,37 +87,6 @@ def _messages(g: Graph, model=MODEL) -> list:
     return render_dag_messages(g, ids, reasoning_for=model)
 
 
-def _body(g: Graph) -> dict:
-    context = Context(system_prompt="You help.", messages=_messages(g),
-                      tools=[READ, SEARCH, SCHEDULER])
-    items = convert_responses_messages(MODEL, context, include_system_prompt=False,
-                                       native_tool_search=True)
-    return cx._build_request_body(MODEL, context, {"session_id": "s1"}, items)
-
-
-def test_compaction_leaves_the_codex_tools_array_as_it_was():
-    g, search, covered = _conversation()
-    before = _body(g)
-    summary = _compact(g, covered, ["scheduler"])
-    after = _body(g)
-
-    assert [t.get("name") or t["type"] for t in before["tools"]] == ["read", "tool_search"]
-    assert after["tools"] == before["tools"]
-    # One pair in front of the summary loads what it carries.
-    kinds = [item.get("type") or item.get("role") for item in after["input"]]
-    assert kinds[:3] == ["tool_search_call", "tool_search_output", "message"]
-    call, output = after["input"][:2]
-    assert call["call_id"] == output["call_id"] and call["call_id"].startswith("carried_")
-    # The definition the search first sent, byte for byte.
-    first_sent = next(i for i in before["input"] if i.get("type") == "tool_search_output")
-    assert output["tools"] == first_sent["tools"]
-    # The search itself is summarized with its turn.
-    ids = render_context(g, head_id=_tip(g), frame_entry_seq=-1)
-    assert ids[0] == summary.id and search.id not in ids
-    # Every request after the compaction sends the same bytes.
-    assert _body(g) == after
-
-
 def test_a_summary_written_before_names_were_recorded_carries_what_it_covers():
     g, _search, covered = _conversation()
     summary = _compact(g, covered)  # no carried_tool_names
@@ -133,22 +94,10 @@ def test_a_summary_written_before_names_were_recorded_carries_what_it_covers():
     assert loaded_tools(_messages(g)) == ["scheduler"]
 
 
-def test_a_summary_that_carries_nothing_sends_no_pair():
+def test_a_summary_that_carries_nothing_loads_nothing():
     g, _search, covered = _conversation()
     _compact(g, covered, [])
-    body = _body(g)
-    assert not [i for i in body["input"] if i.get("type", "").startswith("tool_search")]
     assert loaded_tools(_messages(g)) == []
-
-
-def test_a_second_compaction_still_sends_one_pair():
-    g, _search, covered = _conversation()
-    _compact(g, covered, ["scheduler"])
-    chain = [n.id for n in g if not n.caller and n.name != SUMMARY_NODE_NAME]
-    _compact(g, chain[:6], carried_tool_names(g.nodes.values(), chain[:6]))
-    body = _body(g)
-    assert [i.get("type") for i in body["input"]].count("tool_search_call") == 1
-    assert body["input"][2]["content"][0]["text"].startswith("[Previous conversation summary]")
 
 
 @pytest.mark.parametrize("loads", [{}, {"loads": []}])

@@ -40,7 +40,7 @@ def cross_session_store(tmp_path, monkeypatch):
     )
     monkeypatch.setattr("openprogram.state.store.default_store", lambda: store)
     monkeypatch.setattr(
-        "openprogram.operations.worker.lock.is_held_by", lambda _pid: True,
+        "openprogram.host.worker.lock.is_held_by", lambda _pid: True,
     )
 
     for session_id, user_id, assistant_id in (
@@ -844,7 +844,7 @@ def _sync_spawn(store, monkeypatch, outcome):
         return outcome(request)
 
     monkeypatch.setattr(AgentProductionDriver, "_default_turn_runner", staticmethod(run_turn))
-    monkeypatch.setattr("openprogram.programs._host.runtime.current_tool_call_id", lambda: "call-1")
+    monkeypatch.setattr("openprogram.runtime.agent.call_state.current_tool_call_id", lambda: "call-1")
     session_token = _current_session_id.set("source")
     turn_token = _current_turn_id.set("source_a")
     try:

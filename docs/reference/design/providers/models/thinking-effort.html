@@ -24,7 +24,7 @@
 
 <h2 id="data-flow">From picker to request</h2>
 <ol>
-<li><code translate="no">get_thinking_config_for_model</code> (<code translate="no">interfaces/server/thinking_effort.py</code>) builds the options from the model's <code translate="no">thinking_levels</code>.</li>
+<li><code translate="no">get_thinking_config_for_model</code> (<code translate="no">runtime/harnesses/thinking_effort.py</code>) builds the options from the model's <code translate="no">thinking_levels</code>.</li>
 <li><code translate="no">_normalize_thinking</code> (<code translate="no">runtime/conversation/session_settings/session_config.py</code>) checks the choice against <code translate="no">VALID_THINKING</code>; it is stored per conversation branch. New branches inherit once; switching restores that branch’s choice.</li>
 <li><code translate="no">reasoning_from_config</code> hands it to the turn as <code translate="no">SimpleStreamOptions.reasoning</code>, kept inside the model's levels by <code translate="no">normalize_reasoning_level</code> (below).</li>
 <li>The provider's <code translate="no">stream_simple()</code> calls <code translate="no">translate_reasoning(provider, model, level)</code> and writes the answer into its request field, for example <code translate="no">{"output_config": {"effort": "high"}}</code>.</li>
@@ -75,7 +75,6 @@
 <tbody>
 <tr><th scope="row">anthropic</th><td><code translate="no">GET /v1/models/{id}</code>, <code translate="no">capabilities.effort.{level}.supported</code></td><td>each level</td></tr>
 <tr><th scope="row">deepseek</th><td>model id: <code translate="no">v4</code> reasons with effort, <code translate="no">reasoner</code> or <code translate="no">r1</code> without</td><td>reasoning, effort</td></tr>
-<tr><th scope="row">openai_codex</th><td>OpenAI models API plus model id (o1, o3, o4, gpt-5)</td><td>reasoning</td></tr>
 <tr><th scope="row">openai_completions</th><td>model id (o1, o3, o4, gpt-5)</td><td>reasoning</td></tr>
 <tr><th scope="row">openai_responses</th><td>OpenRouter <code translate="no">supported_parameters</code> contains <code translate="no">reasoning</code></td><td>reasoning</td></tr>
 <tr><th scope="row">google</th><td>model name</td><td>reasoning</td></tr>
@@ -101,7 +100,6 @@
 <tr><th scope="row">anthropic</th><td>claude-sonnet-4-6</td><td>low, medium, high, max</td><td>override</td></tr>
 <tr><th scope="row">anthropic</th><td>claude-opus-4-5</td><td>low, medium, high</td><td>override</td></tr>
 <tr><th scope="row">deepseek</th><td>v4-flash, v4-pro</td><td>minimal, low, medium, high, max</td><td>provider map</td></tr>
-<tr><th scope="row">openai-codex</th><td>gpt-5.5</td><td>low, medium, high, xhigh, max (sent as xhigh)</td><td>override</td></tr>
 <tr><th scope="row">minimax-cn, openrouter</th><td>models with reasoning</td><td>low, medium, high</td><td>fallback</td></tr>
 </tbody>
 </table>
@@ -116,7 +114,7 @@
 <tr><th scope="row"><code translate="no">models/providers/settings/thinking_spec.py</code></th><td>Loading, <code translate="no">translate_reasoning</code>, <code translate="no">derive_thinking_levels</code>, fallback</td></tr>
 <tr><th scope="row"><code translate="no">models/providers/catalog/models.py</code></th><td>Fills thinking fields on built-in models at load</td></tr>
 <tr><th scope="row"><code translate="no">models/providers/types.py</code></th><td><code translate="no">ThinkingLevel</code>, <code translate="no">SimpleStreamOptions.reasoning</code></td></tr>
-<tr><th scope="row"><code translate="no">interfaces/server/thinking_effort.py</code></th><td>Picker, <code translate="no">apply_thinking_effort</code></td></tr>
+<tr><th scope="row"><code translate="no">runtime/harnesses/thinking_effort.py</code></th><td>Picker, <code translate="no">apply_thinking_effort</code></td></tr>
 <tr><th scope="row"><code translate="no">models/listing/listing.py</code></th><td>The one derivation entry</td></tr>
 <tr><th scope="row"><code translate="no">models/listing/fetchers/__init__.py</code></th><td>Fetch enrichment</td></tr>
 <tr><th scope="row"><code translate="no">models/providers/adapters/anthropic/list_models.py</code></th><td>Levels from capabilities</td></tr>

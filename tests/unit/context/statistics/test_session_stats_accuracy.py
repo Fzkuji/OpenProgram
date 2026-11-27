@@ -582,11 +582,11 @@ def test_a_draft_chat_counts_the_agent_prompt_against_the_model_window(monkeypat
 
 
 @pytest.mark.parametrize("ref, provider, expected", [
-    ("openai-codex/gpt-6.1-sol", None, ("openai-codex", "gpt-6.1-sol")),
-    ("openai-codex:gpt-6.1-sol", None, ("openai-codex", "gpt-6.1-sol")),
+    ("openai/gpt-6.1-sol", None, ("openai", "gpt-6.1-sol")),
+    ("openai:gpt-6.1-sol", None, ("openai", "gpt-6.1-sol")),
     ("openrouter/anthropic/claude-x", None, ("openrouter", "anthropic/claude-x")),
     ("ollama:llama3:8b", None, ("ollama", "llama3:8b")),
-    ("gpt-6.1-sol", "openai-codex", ("openai-codex", "gpt-6.1-sol")),
+    ("gpt-6.1-sol", "openai", ("openai", "gpt-6.1-sol")),
     ("", "p", ("p", None)),
 ])
 def test_one_parser_reads_every_stored_model_spelling(ref, provider, expected):

@@ -215,7 +215,7 @@ _ERROR_CODE = re.compile(r"^[A-Za-z0-9_.-]{1,40}$")
 def _is_billing(text: object, code: object = "") -> bool:
     """An error that says the balance or credit ran out (an HTTP 402, or a
     body the runtime's classifier reads as a spent balance)."""
-    from openprogram.models.providers.utils.failures.errors import is_billing_exhausted
+    from .provider_port import is_billing_exhausted
     text = str(text or "")
     if str(code or "").strip() == "402":
         return True
@@ -480,7 +480,7 @@ def _one_row_per_key(provider: str, rows: list[dict]) -> list[dict]:
 def _carry_provider(auth_dir: Path, root: Path, provider: str, pools: dict[str, dict],
                     side: dict, now_ms: int, report: CarryOverReport) -> bool:
     """Write one provider's list; ``True`` when its old files may go."""
-    from .credentials import _private_atomic_write, _private_unlink
+    from openprogram.state.private_files import _private_atomic_write, _private_unlink
     from .types import CREDENTIAL_SCHEMA_VERSION, CredentialPool, _new_id
 
     flat = _flatten(provider, pools, side, now_ms)
@@ -549,7 +549,7 @@ def carry_over(auth_dir: Path, *, state_root: Optional[Path] = None) -> CarryOve
     if not needs_carry_over(auth_dir):
         return report
     root = state_root or auth_dir.parent
-    from .credentials import _private_file_lock, _private_unlink
+    from openprogram.state.private_files import _private_file_lock, _private_unlink
 
     with _private_file_lock(auth_dir / "_carry_over", root=root, timeout=60):
         old_files = _old_pool_files(auth_dir)
@@ -604,8 +604,8 @@ def _drop_lock_only_dirs(auth_dir: Path, root: Path) -> None:
     A lock file is removed only while this process holds it (taken without
     waiting, skipped when another process has it), so a writer that holds
     it is never cut off; a writer waiting on it sees it was removed and
-    takes the new one (``credentials.io._private_file_lock``)."""
-    from .credentials.io import drop_unused_lock
+    takes the new one (``state.private_files._private_file_lock``)."""
+    from openprogram.state.private_files import drop_unused_lock
     del root
     for d in auth_dir.iterdir():
         if not _is_provider_dir(d):
@@ -683,7 +683,7 @@ def repair(auth_dir: Path, *, state_root: Optional[Path] = None) -> list[str]:
         return []
     root = state_root or auth_dir.parent
     from openprogram.state.last_good import backup_path
-    from .credentials import _private_atomic_update, _private_file_lock
+    from openprogram.state.private_files import _private_atomic_update, _private_file_lock
 
     changed: list[str] = []
     now_ms = int(time.time() * 1000)

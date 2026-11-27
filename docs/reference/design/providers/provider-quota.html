@@ -3,15 +3,15 @@
 <h1>Provider quota</h1>
 
 <p>One status per connected provider: health, quota, 30-day spend, default model and key health. Quota comes first from the replies OpenProgram already receives; an endpoint is read only on a few events, never on a timer.</p>
-<p>A provider is connected when it is enabled or holds a credential: one in OpenProgram's store, its CLI on <code translate="no">PATH</code>, the Codex CLI's auth file, or a satisfied cloud chain.</p>
-<p>A provider that signs in only through OpenProgram, such as Grok Subscription, counts once its sign-in is stored, so a fresh install lists none: the Providers page shows <strong>Connect a model provider</strong> and <code translate="no">openprogram providers status</code> prints "No connected providers".</p>
+<p>A provider is connected when it is enabled or holds a credential: one in OpenProgram's store, its CLI on <code translate="no">PATH</code>, or a satisfied cloud chain.</p>
+<p>A provider that signs in only through OpenProgram counts once its sign-in is stored, so a fresh install lists none: the Providers page shows <strong>Connect a model provider</strong> and <code translate="no">openprogram providers status</code> prints "No connected providers".</p>
 
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Part</th><th scope="col">Where</th></tr></thead>
 <tbody>
 <tr><th scope="row">Model and store</th><td><code translate="no">openprogram/models/usage/quota.py</code></td></tr>
 <tr><th scope="row">Endpoint readers</th><td><code translate="no">openprogram/models/usage/quota_fetchers/</code>, one module per source</td></tr>
-<tr><th scope="row">Status</th><td><code translate="no">openprogram/models/usage/provider_status.py</code>, wire types generated to <code translate="no">apps/web/lib/settings/provider-status.generated.ts</code></td></tr>
+<tr><th scope="row">Status</th><td><code translate="no">openprogram/models/listing/provider_status.py</code>, wire types generated to <code translate="no">apps/web/lib/settings/provider-status.generated.ts</code></td></tr>
 <tr><th scope="row">Route</th><td><code translate="no">GET /api/providers/status</code>, <code translate="no">POST /api/providers/status/refresh</code>, WebSocket frame <code translate="no">provider_quota</code></td></tr>
 <tr><th scope="row">CLI</th><td><code translate="no">openprogram providers status [--refresh] [--json]</code>: asks the running Worker for the route's payload (each key's use count and last use live in its memory), and builds it itself when none answers</td></tr>
 </tbody>
@@ -22,7 +22,7 @@
 <table class="stack fixed">
 <thead><tr><th scope="col">Kind</th><th scope="col">When</th><th scope="col">Example</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">windowed</code></th><td>A percent unit, or a window longer than a minute</td><td>Codex 5 h and weekly windows</td></tr>
+<tr><th scope="row"><code translate="no">windowed</code></th><td>A percent unit, or a window longer than a minute</td><td>OpenCode Go and MiniMax Token Plan windows</td></tr>
 <tr><th scope="row"><code translate="no">balance</code></th><td>A money limit</td><td>OpenRouter key limit</td></tr>
 <tr><th scope="row"><code translate="no">rate_limit</code></th><td>Per-minute requests or tokens</td><td>OpenAI and Anthropic API headers</td></tr>
 <tr><th scope="row"><code translate="no">none</code></th><td>Nothing observed</td><td>Mistral</td></tr>
@@ -38,12 +38,12 @@
 <table class="stack fixed">
 <thead><tr><th scope="col">Provider</th><th scope="col">Read from</th></tr></thead>
 <tbody>
-<tr><th scope="row">OpenAI Codex</th><td><code translate="no">x-codex-*</code> headers of every answer, a 429 included, every limit family; the <code translate="no">codex.rate_limits</code> WebSocket frame</td></tr>
 <tr><th scope="row">OpenAI-compatible APIs</th><td><code translate="no">x-ratelimit-*</code> headers (Chat Completions and Responses adapters)</td></tr>
 <tr><th scope="row">Anthropic</th><td><code translate="no">anthropic-ratelimit-*</code> headers, only with an API key on <code translate="no">api.anthropic.com</code></td></tr>
 </tbody>
 </table>
-<p>Values stay in memory and reach disk at most every 30 s per account. The old Codex parser's only caller looked for headers Codex does not send; it is replaced by one that follows codex-rs.</p>
+<p>Values stay in memory and reach disk at most every 30 s per account.</p>
+<p>A ChatGPT plan is used only through the Codex harness, so its limits are not read here: the Third-party harnesses usage page shows what Codex itself reports: its app-server's <code translate="no">account/rateLimits/read</code> and <code translate="no">account/rateLimits/updated</code>, and the <code translate="no">rate_limits</code> its rollout files record (the newer reading stays; <a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/runtime/harnesses/codex/rate_limits.py"><code translate="no">rate_limits.py</code></a>). No internal plan endpoint is called (<a href="auth/subscription-policy.html">Subscription policy</a>).</p>
 
 <h2 id="fetch">Reading an endpoint</h2>
 <table class="stack fixed">
@@ -67,11 +67,9 @@
 <thead><tr><th scope="col">Source</th><th scope="col">State</th><th scope="col">Shape taken from</th></tr></thead>
 <tbody>
 <tr><th scope="row">OpenRouter <code translate="no">/key</code></th><td>On; keeps the remaining amount, not a yes/no</td><td>OpenRouter docs, Hermes</td></tr>
-<tr><th scope="row">Codex usage</th><td>On; the weekly and 5h windows and the credits</td><td>Oh My Pi, codex-rs; a real response</td></tr>
 <tr><th scope="row">DeepSeek <code translate="no">/user/balance</code></th><td>On; the balance in its own currency, spent when the account cannot pay for a call</td><td>A real response</td></tr>
 <tr><th scope="row">MiniMax Token Plan, OpenCode Go</th><td>On; the plan's windows. A 401 from a plan's endpoint marks nothing on the key</td><td>Oh My Pi; a real response</td></tr>
 <tr><th scope="row">Z.ai</th><td>Off until verified</td><td>Oh My Pi, ZCode</td></tr>
-<tr><th scope="row">GitHub Copilot</th><td>Off until verified</td><td>Oh My Pi</td></tr>
 </tbody>
 </table>
 
@@ -95,7 +93,7 @@
 <tr><th scope="row">A 401 read newer than the status</th><td><code translate="no">invalid_key</code> ("quota endpoint answered 401"), until a read answers or a call with the key succeeds. For a key (not a sign-in) the same status is written on its row, so the provider's list says what its card does</td></tr>
 <tr><th scope="row">Marking the row</th><td>Only a verified endpoint, never on a <code translate="no">CreditsError</code> body</td></tr>
 <tr><th scope="row">A read that answered after a <code translate="no">quota</code> stop</th><td>Overrules the stop; that read's balance decides</td></tr>
-<tr><th scope="row">A refresh token the token endpoint refuses (<code translate="no">invalid_grant</code>, already used)</th><td><code translate="no">needs_login</code>, read as <code translate="no">signed_out</code> with the Sign in again fix; for a stored sign-in and for one delegated to the Codex CLI's file. The delegated one is not asked again until the file holds another login</td></tr>
+<tr><th scope="row">A refresh token the token endpoint refuses (<code translate="no">invalid_grant</code>, already used)</th><td><code translate="no">needs_login</code>, read as <code translate="no">signed_out</code> with the Sign in again fix</td></tr>
 </tbody>
 </table>
 <table class="stack fixed">
@@ -139,6 +137,6 @@
 <ul>
 <li>No web UI reads the status route yet; the pages that will are in <a href="provider-management.html">Provider management</a>.</li>
 <li>No reader for Kimi Coding (its payload is not settled), Moonshot balances, or OpenRouter <code translate="no">/credits</code> (no peer documents their responses). Anthropic, OpenAI, Google, Perplexity and Xiaomi API keys have no balance endpoint; a card shows their 30-day spend.</li>
-<li>The Z.ai and GitHub Copilot readers are off: no real response has been seen.</li>
+<li>The Z.ai reader is off: no real response has been seen.</li>
 <li>Not built: a REPL <code translate="no">/status</code>. A top-level <code translate="no">openprogram status</code> alias is not possible: that name is the background service's.</li>
 </ul>

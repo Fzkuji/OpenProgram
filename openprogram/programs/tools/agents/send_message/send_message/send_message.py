@@ -12,10 +12,13 @@ comes back to the sender as a notice. ``to`` names the target:
                            addressing, which this tool took over together
                            with ``agent(to=…)``).
 
-Every message is a tracked Job (``dispatch.py``) with an
-``execution_id``; a busy target queues it and is never interrupted. The
-chain limits are ``depth.py``'s: 4 hops and 20 sends per conversation per
-hour, no approval between agents.
+Every message is a tracked Job (``runtime.conversation.peer_agents
+.dispatch``) with an ``execution_id``; a busy target queues it and is never
+interrupted. The chain limits are ``jobs.chain_budgets``': 4 hops
+and 20 sends per conversation per hour, no approval between agents. How a
+message is addressed, delivered and steered belongs to the conversation
+runtime, which also drains the inbox at turn end; this tool is its
+surface for the model.
 
 Creating agents is the ``agent`` tool's job.
 
@@ -29,14 +32,14 @@ import logging
 
 from openprogram.programs._host.runtime import function
 
-from .addressing import (
+from openprogram.runtime.conversation.peer_agents.addressing import (
     AddressRefused,
     _parse_to,
     resolve_conversation,
     resolve_existing_target,
 )
-from .delivery import target_label
-from .depth import (
+from openprogram.runtime.conversation.peer_agents.delivery import target_label
+from openprogram.runtime.jobs.chain_budgets import (
     claim_send,
     closes_cycle,
     current_chain_ancestors,
@@ -199,7 +202,7 @@ def _send_message_impl(
     if not claim_send(sid):
         raise refusal.agent_budget("send_message", "sends this hour", max_sends_per_hour(),
                                    "wait, or finish the work here")
-    from .dispatch import deliver
+    from openprogram.runtime.conversation.peer_agents.dispatch import deliver
     # Who waits on the message from here on: this chain's waiters and,
     # across conversations, this one.
     ancestors = [*current_chain_ancestors()]

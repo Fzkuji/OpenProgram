@@ -1,12 +1,204 @@
-<title>Stable release automatic updates</title>
-<meta name="description" content="Which releases count as updates, and how Desktop and the managed CLI verify and apply them.">
-<h1>Stable release automatic updates</h1>
-<p>An update is a complete stable GitHub Release verified against its manifest. New commits are not updates. The update unit is the whole product: wheel, Web, Programs, OCR, Browser and models are never updated separately. The macOS App and terminal installs take a whole package; Windows and Linux Apps take a signed <a href="#official-replay">sealed version</a>.</p>
-<p>An App that can replace itself downloads and checks the release in the background, then shows <strong>New</strong> beside the sidebar wordmark; one click on <strong>Restart to update</strong> swaps it in.</p>
+<title>Automatic updates</title>
+<meta name="description" content="How OpenProgram publishes updates as content-addressed layers, and how an installed App finds, fetches, builds and switches to them.">
+<h1>Automatic updates</h1>
+<p>A person installs OpenProgram once, from the installer of the latest <code translate="no">vX.Y.0</code>. Every later update arrives inside the App: it downloads only the files that changed, builds and tries the new version, then shows <strong>New</strong> beside the sidebar wordmark; <strong>Restart to update</strong> switches to it.</p>
+<p>Only a GitHub Release reaches installed Apps; the daily sync of <code translate="no">main</code> does not.</p>
 
-<h2 id="architecture">From Release to platform</h2>
 <figure>
-<svg class="fig-wide" viewBox="0 0 680 388" role="img" aria-label="GitHub latest accepts only non-draft, non-prerelease vX.Y.Z tags. The Release gate requires unique assets. The manifest gate checks version, bytes and SHA-256. Install type and architecture then pick a route. Desktop on macOS, and on Windows or Linux when the shell must change, selects the exact installer, streams it to a resumable .part file, verifies bytes and SHA-256, on Windows also checks Authenticode for this App's line, then, on an App that can replace itself, prepares it and offers Restart to update; otherwise it opens the installer for the user to confirm. The managed CLI on macOS, Linux or Windows fetches the installer from the immutable tag, verifies archive and capability manifest, runs a version probe and isolated worker cold start, then macOS and Linux switch current and Windows replaces its launchers; the user restarts a running worker.">
+<svg class="fig-wide" viewBox="0 0 680 300" role="img" aria-label="The publisher, on the publishing computer with no GitHub Actions, runs publish-github.sh and then publish-updates.py run, which builds the code layer, writes one pack of new objects and signs the pointers. They go to the rolling updates release, which holds channel.json for announced releases and latest.json for every publish, each carrying its own signature, and pack files of objects that never change. An installed App checks 30 seconds after start and then every hour: it verifies the pointer's signature and sequence, reads the layer trees on the path to each change, fetches the missing objects as byte ranges of the packs, assembles, builds and tries the version, and holds it until Restart to update.">
+  <defs><marker id="au-l" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+  <text class="t-big" x="0" y="34">Publisher</text>
+  <text class="t-soft" x="0" y="58">this computer, no Actions</text>
+  <text class="t-note" x="0" y="104" translate="no">publish-github.sh</text>
+  <text class="t-note" x="0" y="128" translate="no">publish-updates.py run</text>
+  <text class="t-note" x="0" y="164">build the code layer</text>
+  <text class="t-note" x="0" y="188">one pack of new objects</text>
+  <text class="t-note" x="0" y="212">sign the pointers</text>
+  <line class="ln" x1="172" y1="150" x2="206" y2="150" marker-end="url(#au-l)"/>
+  <text class="t-big" x="214" y="34" translate="no">updates</text>
+  <text class="t-soft" x="214" y="58">one rolling release</text>
+  <rect class="tile" x="214" y="80" width="204" height="196" rx="8"/>
+  <text class="t-note" x="230" y="112" translate="no">channel.json</text>
+  <text class="t-soft" x="230" y="132">announced releases</text>
+  <text class="t-note" x="230" y="172" translate="no">latest.json</text>
+  <text class="t-soft" x="230" y="192">every publish</text>
+  <text class="t-note" x="230" y="232" translate="no">pack-&lt;hash&gt;.pack</text>
+  <text class="t-soft" x="230" y="252">objects, never changed</text>
+  <line class="ln-acc" x1="424" y1="120" x2="458" y2="120" marker-end="url(#au-l)"/>
+  <text class="t-big" x="466" y="34">Installed App</text>
+  <text class="t-soft" x="466" y="58">30 s after start, then hourly</text>
+  <text class="t-note" x="466" y="104">1  Verify signature, sequence</text>
+  <text class="t-note" x="466" y="128">2  Read changed layer trees</text>
+  <text class="t-note" x="466" y="152">3  Fetch missing objects</text>
+  <text class="t-note" x="484" y="172">as byte ranges</text>
+  <text class="t-note" x="466" y="200">4  Assemble, build, try</text>
+  <text class="t-note" x="466" y="224">5  Hold; Restart to update</text>
+</svg>
+<ol class="flow fig-narrow">
+  <li><strong>Publisher</strong><small>This computer, no Actions: <code translate="no">publish-github.sh</code>, then <code translate="no">publish-updates.py run</code> builds the code layer, writes one pack of new objects and signs the pointers</small></li>
+  <li><strong><code translate="no">updates</code> release</strong><small><code translate="no">channel.json</code> for announced releases, <code translate="no">latest.json</code> for every publish, each signed inside; packs of objects that never change</small></li>
+  <li class="flow-end"><strong>Installed App</strong><small>30 s after start, then hourly: verify signature and sequence; read the changed layer trees; fetch missing objects as byte ranges; assemble, build, try; hold until Restart to update</small></li>
+</ol>
+</figure>
+
+<h2 id="published">What is published</h2>
+<p>Everything sits on one rolling GitHub release of <code translate="no">Fzkuji/OpenProgram</code>, tag <code translate="no">updates</code>: a prerelease, never latest, not <code translate="no">v*</code>. Clients read it only through <code translate="no">https://github.com/Fzkuji/OpenProgram/releases/download/updates/&lt;name&gt;</code>, named in one place, <code translate="no">UPDATES_URL</code> in <code translate="no">official/channel.py</code>.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">File</th><th scope="col">Holds</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">channel.json</code></th><td>The newest announced release. What installed Apps read</td></tr>
+<tr><th scope="row"><code translate="no">latest.json</code></th><td>Every publish, daily syncs included. Read only with <code translate="no">OPENPROGRAM_UPDATE_POINTER=latest</code>: the development instance and tests</td></tr>
+<tr><th scope="row"><code translate="no">pack-&lt;12 hex&gt;.pack</code></th><td>Objects back to back, no header, named by the start of its own sha256. Never changed once published</td></tr>
+<tr><th scope="row"><code translate="no">runtime-&lt;platform&gt;-&lt;base&gt;.json</code></th><td>A runtime layer the Release workflow built and uploaded with its pack, waiting for the publish that names it</td></tr>
+<tr><th scope="row"><code translate="no">shell-&lt;platform&gt;-&lt;version&gt;.json</code></th><td>The same for an App shell layer, uploaded by the Release workflow of the vX.Y.0 it belongs to</td></tr>
+</tbody>
+</table>
+<details>
+<summary>Pointer fields</summary>
+<p>A pointer file is <code translate="no">{"signed": "&lt;pointer JSON&gt;", "signature": "&lt;hex&gt;"}</code>. The signed text holds <code translate="no">schema</code> (2), <code translate="no">pointer</code> (<code translate="no">channel</code> or <code translate="no">latest</code>, so one cannot be served as the other), <code translate="no">sequence</code>, <code translate="no">published_at</code>, <code translate="no">version</code> (three or four parts), <code translate="no">announce</code>, <code translate="no">build</code> (commit, 12 hex), <code translate="no">notes</code>, <code translate="no">commit</code>, <code translate="no">shell_compat</code>, <code translate="no">layers</code> (<code translate="no">{name: {manifest, pack, offset, length}}</code>; a shell layer adds the App <code translate="no">version</code>) and <code translate="no">packs</code> (<code translate="no">{name: {bytes, sha256}}</code>).</p>
+<p><code translate="no">channel.json</code> must have <code translate="no">announce</code> true. <code translate="no">sequence</code> only grows, across both pointers. The signature is hex Ed25519 over the signed text, with a key in <code translate="no">RELEASE_PUBLIC_KEYS</code> (<code translate="no">official/signing.py</code>; the same key in <code translate="no">update-service.js</code>).</p>
+</details>
+
+<h2 id="format">Format</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Unit</th><th scope="col">What it is</th></tr></thead>
+<tbody>
+<tr><th scope="row">Object</th><td>One file's bytes, named by their sha256, stored as an independent zstd frame (level 19)</td></tr>
+<tr><th scope="row">Pieces</th><td>A file of 1 MiB or more is published as 256 KiB pieces at fixed offsets, each piece an object. A re-signed binary changes only its header and its signature at the end, so the pieces between keep their names</td></tr>
+<tr><th scope="row">Pack</th><td>Objects one after another. A publish writes at most one pack per changed layer, its trees last; where each object is lives in the trees</td></tr>
+<tr><th scope="row">Tree</th><td>One directory, Git style, itself an object named by its sha256: <code translate="no">{"entries": [...]}</code>, each a file <code translate="no">{name, mode, size, sha256, at}</code> (a file in pieces lists <code translate="no">chunks: [[sha256, size, at], ...]</code> instead of <code translate="no">at</code>), a link <code translate="no">{name, symlink}</code> or a directory <code translate="no">{name, tree, at}</code>. <code translate="no">at</code> is <code translate="no">[pack, offset, length]</code>, with <code translate="no">""</code> for the pack the tree itself is in. Code sources also carry their Git blob id</td></tr>
+<tr><th scope="row">Layer format</th><td><code translate="no">schema</code> 3 in the root tree. A client refuses a layer in another format by name. The publisher writes the code layer whole again and refuses until the runtime and shell layers are rebuilt</td></tr>
+<tr><th scope="row">Layer manifest</th><td>The root tree, which also holds <code translate="no">schema</code>, <code translate="no">layer</code> and <code translate="no">meta</code>. A directory whose contents did not change keeps its tree, so a client reads only the trees on the path to a change</td></tr>
+</tbody>
+</table>
+<table class="stack even">
+<thead><tr><th scope="col">Layer</th><th scope="col">Contents</th><th scope="col">Meta</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">code</code></th><td>Every platform. The commit's whole tracked tree under <code translate="no">source/</code>, and the built Web, docs and terminal bundle under <code translate="no">frontend/</code></td><td>Commit, Git tree, version, base id, <code translate="no">shell_compat</code></td></tr>
+<tr><th scope="row"><code translate="no">runtime-&lt;platform&gt;</code></th><td>The base: Python and locked packages, Playwright, Node, Git, uv, and the Tailscale sidecar in <code translate="no">bin/</code></td><td>Base id, platform</td></tr>
+<tr><th scope="row"><code translate="no">shell-&lt;platform&gt;</code></th><td>macOS arm64 and x86_64, Windows x86_64, Linux x86_64 and arm64: the App exactly as built, signed and notarized: <code translate="no">OpenProgram.app</code>, the install folder, or the AppImage as one file, with modes and links</td><td>Platform, App version, executable, <code translate="no">shell_compat</code> range, Python minor, empty directories</td></tr>
+</tbody>
+</table>
+<ul>
+<li>No extended attributes: a macOS bundle's signature lives in its Mach-O files, <code translate="no">_CodeSignature</code> and the stapled ticket, all ordinary files. The client clears any attribute before checking.</li>
+<li>A deb keeps its installer: it sits under <code translate="no">/opt</code>, which only root writes.</li>
+<li>The shell changes only with a feature release, which always carries a new commit too. The client still compares the shell layer itself, so an App that took the code when it could not replace itself takes the shell later.</li>
+</ul>
+<p class="note">The base id hashes <code translate="no">uv.lock</code>, the pyproject dependencies, <code translate="no">product-runtime.json</code> and the Git tree id of <code translate="no">apps/tailnet</code>, left out when the commit has no such tree.</p>
+
+<h2 id="client">On an installed App</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Step</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Check</th><td>About 30 s after start, then every hour, a failed check included. <code translate="no">update-service.js</code> reads <code translate="no">channel.json</code>; with automatic checks on it runs <code translate="no">openprogram upgrade --prepare --json</code>, which does the rest</td></tr>
+<tr><th scope="row">Pointer</th><td>Signature over the signed text first. A sequence lower than the highest already seen (<code translate="no">&lt;runtime&gt;/channel-seen.json</code>) is refused, so a replayed old pointer cannot take the App back. A missing pointer, caught between the delete and the upload that replace it, means nothing new this check, without a message; the next hourly check finds it</td></tr>
+<tr><th scope="row">Trees</th><td>The code layer's, and this platform's runtime layer's only when its base is new here. A tree already held here is not fetched again. A tree is capped at 16 MiB A tree or file in a pack the pointer does not list is refused: a pointer lists every pack its layers' files and trees are in, reused ones in older packs too, and those are the packs garbage collection keeps</td></tr>
+<tr><th scope="row">App shell</th><td>On an App that can replace itself (not translocated, its folder writable, a Developer ID team on macOS, an AppImage rather than a deb on Linux), the shell layer for this computer is read when its version is newer than the running App's (<code translate="no">OPENPROGRAM_SHELL_VERSION</code>), also when the code is already here</td></tr>
+<tr><th scope="row">Who decides</th><td>Whether the App can replace itself is decided here alone: every<code translate="no">upgrade --json</code> report carries <code translate="no">shell_swap</code>, and the App keeps the answer, so one that cannot gets the installer at every check</td></tr>
+<tr><th scope="row">Code that needs the new shell</th><td>Runs only in the new App. A plain <code translate="no">upgrade</code> stops once the App is staged (<code translate="no">prepared</code>); only <code translate="no">upgrade --prepare</code> builds and tries it with the staged shell counted as installed, and a held update is not switched to while the installed shell cannot host it. The new App switches to it on its first start</td></tr>
+<tr><th scope="row">Nothing to do</th><td><code translate="no">up_to_date</code> when this repository already holds the published commit. <code translate="no">waiting_for_shell</code> when neither the shell nor a shell layer for this computer can host it; <code translate="no">waiting_for_runtime</code> when this platform's runtime is not published. Neither changes anything</td></tr>
+<tr><th scope="row">What is missing</th><td>Source files whose Git blob the repository lacks; frontend and runtime files not already present at the same path and size in the running version or base, which are adopted after hashing; shell files not at the same path and size in the running App</td></tr>
+<tr><th scope="row">A file in pieces</th><td>Only the pieces its earlier version here (same path, any size) lacks at the same offset are fetched. The pieces are joined in the object store, the whole file's sha256 is checked, and the pieces are dropped</td></tr>
+<tr><th scope="row">Fetch</th><td>HTTP Range requests on each pack's download URL. GitHub redirects to a CDN that honours Range; the redirect is followed once per pack, each hop host-checked. Ranges closer than 64 KiB merge, at most 32 requests per pack, 6 in parallel. An interrupted download resumes from the objects already kept in <code translate="no">&lt;runtime&gt;/objects/</code></td></tr>
+<tr><th scope="row">Limits</th><td>Each response is capped at its range's size; a server that answers with anything but 206 is not asked again, and only dropped connections, 5xx and expired CDN addresses are retried. Each object decompresses through a stream capped at the size its tree gives, whatever the frame claims, and is checked by its sha256</td></tr>
+<tr><th scope="row">Assemble</th><td>Under the update controller. The base is written from the runtime layer (a copy-on-write clone where the filesystem has one, else a copy). Missing blobs are written into Git, the tree is rebuilt with a temporary index and must equal the published tree id, then committed on <code translate="no">refs/heads/release</code> with fixed metadata; <code translate="no">refs/openprogram/official/&lt;github sha&gt;</code> maps it to GitHub's commit</td></tr>
+<tr><th scope="row">New App</th><td>Before the trial, assembled in a hidden folder beside the App, <code translate="no">.&lt;App name&gt;.update/</code>, on the App's own drive whatever drive the data is on: links recreated, files from the store or copied from the running App and hashed, the Windows uninstaller carried over</td></tr>
+<tr><th scope="row">Its check</th><td>macOS <code translate="no">codesign --verify --deep --strict</code>, the running App's team and version; Windows Authenticode from the running App's subject, or <code translate="no">NotSigned</code> on an unsigned App; Linux an executable ELF file. Then moved to <code translate="no">staged/</code> there and recorded in <code translate="no">&lt;runtime&gt;/shell/staged.json</code>; a failure changes nothing</td></tr>
+<tr><th scope="row">Links</th><td>Resolved against the tree and refused if they lead out of it, also when only part of a layer is written</td></tr>
+<tr><th scope="row">Build</th><td>The version is built from that commit with the prebuilt frontend, so no Web build runs. <code translate="no">version.json</code> records <code translate="no">official: {commit, sequence, code_layer}</code></td></tr>
+<tr><th scope="row">Finish</th><td>Replay, trial, hold or switch, rollback, below. Objects the current layers do not use are pruned after success; shell files are not kept as objects, only its trees</td></tr>
+<tr><th scope="row">Restart with a new shell</th><td>Restart to update quits the App; a detached script (<code translate="no">sh</code>, PowerShell on Windows) waits for it to exit, swaps the App with two renames on one drive, the first undone if the second fails, and opens it. Only after a swap, each in its own try, on Windows it sets the uninstall entry's <code translate="no">DisplayVersion</code> (HKCU, by <code translate="no">InstallLocation</code>). After a swap it leaves <code translate="no">shell/activate</code> with the update's key; the new App switches to the prepared version as it starts</td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">openprogram upgrade --from DIR</code> reads the same files from a local copy (<code translate="no">channel.json</code> and the packs). <code translate="no">upgrade --check --json</code> reports <code translate="no">published_days_ago</code>, for information; the text output notes a pointer older than 60 days.</p>
+
+
+<h2 id="official-replay">Replay, trial and switch</h2>
+<p>An installation on the version store carries the owner's own commits over to each new official commit.</p>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
+<tbody>
+<tr><th scope="row">Official line</th><td>One local commit per update taken, on <code translate="no">refs/heads/release</code>. It needs no GitHub history: only the new official commit and the commits on <code translate="no">local</code> it does not contain</td></tr>
+<tr><th scope="row">Replay</th><td>The owner's commits are <code translate="no">release..local</code>. Oldest first, each is cherry-picked in <code translate="no">work/official-&lt;release&gt;</code>. A conflict is saved to <code translate="no">unreplayable/&lt;release&gt;/</code> and the others continue. A commit the release already has is skipped. The candidate builds on the official version, so an untouched Web bundle is cloned</td></tr>
+<tr><th scope="row">Failure</th><td>A build or trial failure saves the newest commit and tries the rest, at most 5 retries before going straight to the unmodified official version. Lack of disk drops nothing. A failed switch does not retry</td></tr>
+<tr><th scope="row">Prepare, then restart</th><td>The App's automatic check runs <code translate="no">openprogram upgrade --prepare --json</code>. It downloads, builds and tries the candidate, then stops it in <code translate="no">ready</code> marked <code translate="no">held</code> with its target, so the App shows <strong>Restart to update</strong> and nothing switches, as VS Code and Chrome download in the background and switch on restart. No worker start, watchdog or queue moves a held update</td></tr>
+<tr><th scope="row">Held update</th><td>Preparing the same target again does nothing; a newer target cancels the held one first. The next <code translate="no">upgrade --json</code> switches to the held update (outcome <code translate="no">activated</code>) while it is still what would be installed, offline too; if <code translate="no">local</code> moved since, it is cancelled and installed the usual way. Any other update that needs the slot, including the <code translate="no">self_update</code> tool, cancels it first. <code translate="no">upgrade --check --json</code> names it under <code translate="no">prepared</code></td></tr>
+</tbody>
+</table>
+
+<h2 id="publisher">Publishing</h2>
+<p>No GitHub Actions run for code. <code translate="no">scripts/publishing/publish-github.sh</code> syncs <code translate="no">dev</code> to <code translate="no">main</code> as one squashed commit (<a href="github-publishing.html">GitHub publishing</a>), then runs <code translate="no">scripts/release/publish-updates.py run</code>.</p>
+<ol class="flow">
+  <li><strong>Read</strong><small>The live pointers, over the download URL</small></li>
+  <li><strong>Build</strong><small>The code layer, here. The frontend is built in the publisher's own version store and reused when unchanged</small></li>
+  <li><strong>Pack</strong><small>The new objects into one pack. Each platform in <code translate="no">RUNTIME_PLATFORMS</code> (macOS arm64 and x86_64, Linux x86_64 and arm64, Windows x86_64) needs a runtime layer for the code's base id: a live one, one the Release workflow uploaded, or one built here</small><p class="refused">Any platform missing: refused, nothing published. The refusal names the platforms and <code translate="no">gh workflow run release.yml -R Fzkuji/OpenProgram --ref main -f runtime_layers_only=true</code></p></li>
+  <li class="flow-end"><strong>Upload</strong><small>New packs, then each pointer in one delete and one upload. A pointer carries its signature, so a reader sees the old one, none, or the new one. A pointer the release lost is put back from the publisher's local history</small></li>
+</ol>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Command</th><th scope="col">Does</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code translate="no">publish-updates.py plan</code></th><td>Says what publishing a commit would do; exit 3 when refused. <code translate="no">publish-github.sh</code> runs it before pushing</td></tr>
+<tr><th scope="row"><code translate="no">publish-updates.py run</code></th><td>Publishes <code translate="no">latest.json</code>; with <code translate="no">--release vX.Y.Z</code> also <code translate="no">channel.json</code></td></tr>
+<tr><th scope="row"><code translate="no">publish-updates.py announce vX.Y.0</code></th><td>Announces a feature release in <code translate="no">channel.json</code>. Refused until the vX.Y.0 GitHub Release is published, every runtime layer exists, and a shell layer of that version exists for every App the Release published that replaces itself (read from its <code translate="no">release-manifest.json</code>) and hosts both the new code and the code announced before it. A platform without one, such as a failed AppImage, keeps the installer</td></tr>
+<tr><th scope="row"><code translate="no">publish-updates.py upload-runtime-layer</code></th><td>The Release workflow's step, per platform: builds a runtime layer from a base and uploads its pack and <code translate="no">runtime-&lt;platform&gt;-&lt;base&gt;.json</code>. Moves no pointer and needs no key</td></tr>
+<tr><th scope="row"><code translate="no">publish-updates.py upload-shell-layer</code></th><td>The Release workflow's step for each signed macOS App, the Windows App and each AppImage (with <code translate="no">--seed</code>, which names its Python line): builds the shell layer from the App as users install it and uploads its pack and <code translate="no">shell-&lt;platform&gt;-&lt;version&gt;.json</code>. With <code translate="no">--no-upload</code>, as in a rehearsal, it only builds</td></tr>
+<tr><th scope="row"><code translate="no">publish-updates.py build-runtime-layer</code></th><td>Turns an existing base directory into a runtime layer here, published with the next run</td></tr>
+<tr><th scope="row"><code translate="no">publish-updates.py release-page</code></th><td>Creates a code-only release's GitHub Release page in one API call</td></tr>
+<tr><th scope="row"><code translate="no">publish-updates.py gc</code></th><td>Deletes packs nothing may still read; repacks when the live packs are mostly dead. A pointer that cannot be read is fixed from history, but only a 404 counts as missing: any other failure to reach the release stops the run</td></tr>
+</tbody>
+</table>
+<p class="note">A daily publish makes about 5 GitHub calls: one read of the release and its assets, one pack upload, a delete and an upload for <code translate="no">latest.json</code>, and the deletes of dead packs.</p>
+
+<h2 id="release-rules">What notifies people</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Publish</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><th scope="row">Daily sync<span class="arg">no <code translate="no">--tag</code></span></th><td>Moves <code translate="no">latest.json</code> only. Installed Apps see nothing</td></tr>
+<tr><th scope="row">Feature release<span class="arg"><code translate="no">--tag vX.Y.0</code></span></th><td><code translate="no">publish-github.sh</code> pushes <code translate="no">main</code> and the tag and dispatches the Release workflow only (after its rehearsal and the 12 h wait). The workflow builds the installers, every runtime layer and every shell layer. Then <code translate="no">publish-updates.py announce vX.Y.0</code> announces it, so <code translate="no">channel.json</code> moves last. The only kind that may change the runtime or the shell</td></tr>
+<tr><th scope="row">Code-only release<span class="arg"><code translate="no">--tag vX.Y.Z</code>, <code translate="no">vX.Y.Z.W</code></span></th><td>No workflow. The publisher updates <code translate="no">channel.json</code>, pushes the tag, which triggers nothing, and creates the Release page with the notes, not marked latest, linking the X.Y.0 installers. Refused when runtime or shell inputs changed: <code translate="no">this needs a feature release vX.Y.0 (runtime/shell changed)</code></td></tr>
+</tbody>
+</table>
+<p class="note"><code translate="no">release.yml</code> runs only by <code translate="no">workflow_dispatch</code>. With <code translate="no">runtime_layers_only</code> it builds and uploads just the runtime layers.</p>
+
+<h2 id="gc">Garbage collection</h2>
+<p>A pack is kept while the live <code translate="no">latest.json</code>, the live <code translate="no">channel.json</code>, one of the last 3 pointers in the publisher's history, or a runtime layer waiting to be published (built here, or an uploaded <code translate="no">runtime-*.json</code>) names it; any other is deleted.</p>
+<p>When over half the live pack bytes are used by neither pointer's layers, trees included, <code translate="no">gc</code> repacks what they use into one new pack. Storage stays bounded and there are no delta chains.</p>
+
+<h2 id="measured">Measured</h2>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Case</th><th scope="col">Size</th></tr></thead>
+<tbody>
+<tr><th scope="row">Code layer, first publish</th><td>9,106 files, 170 MB raw; pack 59 MB</td></tr>
+<tr><th scope="row">A one-line Python change</th><td>New pack 9.5 KB: 5 trees, 5.8 KB with a 330 B root, and the 3.7 KB file. A client downloads about 11 KB with the pointer</td></tr>
+<tr><th scope="row">A re-signed macOS shell, same code</th><td>The signed 1.5.1 App (1,463 MB, 18,878 files) against a copy with all 305 Mach-O files and 15 bundles re-signed: 168 files differ. As whole files that is 929 MB, 291 MB compressed</td></tr>
+<tr><th scope="row">The same, in pieces</th><td>21 MB compressed (60 MB raw): 7 MB for 119 changed files under 1 MiB, 14 MB for the pieces of 49 larger ones. The Electron and Chromium frameworks drop from 73 MB to 3 MB</td></tr>
+<tr><th scope="row">The cost of pieces</th><td>A file that changed throughout compresses larger in pieces: Electron Framework 66.5 MB whole, 78.1 MB in 256 KiB pieces, 73.7 MB in 1 MiB pieces. 1 MiB pieces from 4 MiB leave 47 MB for the re-signed shell, since 29 changed files of 1 to 4 MiB stay whole</td></tr>
+</tbody>
+</table>
+<p class="note">With one flat manifest the same change cost a client about 644 KB; per-directory trees, as in Git and OSTree's dirtree objects, leave only the path to the change.</p>
+
+<details>
+<summary>Why it works this way</summary>
+<table class="stack fixed">
+<thead class="sr"><tr><th scope="col">Decision</th><th scope="col">Reason</th></tr></thead>
+<tbody>
+<tr><th scope="row">Files named by their hash</th><td>As <a href="https://ostreedev.github.io/ostree/">OSTree</a> and Steam depots do: a file any version already has is never fetched again, whichever version a client skips from</td></tr>
+<tr><th scope="row">The source tree, not a Git bundle</th><td>A bundle needs a prerequisite commit a client may lack after skipping updates. The tree with blob ids lets any client rebuild the exact published tree from the blobs it has</td></tr>
+<tr><th scope="row">No delta chains</th><td>Codex's desktop App (Sparkle) caps delta chains at 5. Content addressing plus repacking needs none</td></tr>
+<tr><th scope="row">A signed static pointer</th><td>As Claude Code's signed manifest and magpie's signed checksum list: one small file decides what is trusted, and the sequence stops a replay</td></tr>
+<tr><th scope="row">Download URL, not the API</th><td>GitHub's REST API allows 60 unauthenticated requests an hour, shared per IP. Release downloads have no such limit and honour HTTP Range</td></tr>
+<tr><th scope="row">Code built locally, runtimes in CI</th><td>GitHub activity stays at the daily push and a few uploads; a full CI release build takes about an hour, so CI runs only when a runtime changes. Each platform's runtime needs that platform to build it</td></tr>
+<tr><th scope="row">Refuse, not degrade</th><td>A new runtime or shell needs native files only a feature release carries; refusing keeps every install on something it can run</td></tr>
+<tr><th scope="row">The App as a layer, swapped on restart</th><td>The way Chrome and Sparkle's delta updates reach the same bundle: the signed App is the unit, files the running App already has are reused, and the swap is two renames while the App is closed. The signature is checked on the assembled copy, so a fault in assembly cannot reach the user</td></tr>
+</tbody>
+</table>
+</details>
+
+
+<h2 id="architecture">Installers</h2>
+<p>Installers still carry the whole product. An App or terminal install without a version store updates from the latest stable GitHub Release this way, and a version-store App that cannot replace itself (a deb, a read-only or translocated App) takes the App file from it when its update needs a newer shell.</p>
+<figure>
+<svg class="fig-wide" viewBox="0 0 680 388" role="img" aria-label="GitHub latest accepts only non-draft, non-prerelease vX.Y.Z tags. The Release gate requires unique assets. The manifest gate checks version, bytes and SHA-256. Install type and architecture then pick a route. Desktop, when the App has no version store, or cannot replace itself when the shell must change, selects the exact installer, streams it to a resumable .part file, verifies bytes and SHA-256, on Windows also checks Authenticode for this App's line, then, on an App that can replace itself, prepares it and offers Restart to update; otherwise it opens the installer for the user to confirm. The managed CLI on macOS, Linux or Windows fetches the installer from the immutable tag, verifies archive and capability manifest, runs a version probe and isolated worker cold start, then macOS and Linux switch current and Windows replaces its launchers; the user restarts a running worker.">
   <defs><marker id="au-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
   <text class="t-big" x="0" y="34">GitHub latest</text>
   <text class="t-soft" x="0" y="58">non-draft, non-prerelease</text>
@@ -22,7 +214,7 @@
   <text class="t-soft" x="330" y="104">install type + architecture</text>
   <rect class="tile" x="0" y="156" width="332" height="224" rx="8"/>
   <text class="t-big" x="16" y="190">Desktop</text>
-  <text class="t-soft" x="16" y="212">macOS · Windows, Linux when the shell changes</text>
+  <text class="t-soft" x="16" y="212">No version store · deb when the shell changes</text>
   <text class="t-note" x="16" y="244">1  Select the exact installer</text>
   <text class="t-note" x="16" y="268">2  Stream to a resumable .part file</text>
   <text class="t-note" x="16" y="292">3  Verify bytes and SHA-256</text>
@@ -42,7 +234,7 @@
   <li><strong>GitHub latest</strong><small>Non-draft, non-prerelease, <code translate="no">vX.Y.Z</code></small></li>
   <li><strong>Release gate</strong><small>Unique assets</small></li>
   <li><strong>Manifest gate</strong><small>Version, bytes, SHA-256</small></li>
-  <li><strong>Desktop</strong><small>macOS; Windows and Linux when the shell changes</small><small>Select the exact installer; stream to a resumable <code translate="no">.part</code> file; verify bytes and SHA-256; on Windows check Authenticode for this App's line; prepare it and offer Restart to update, or open the installer where the App cannot replace itself</small></li>
+  <li><strong>Desktop</strong><small>No version store; a deb, or an App that cannot replace itself, when the shell changes</small><small>Select the exact installer; stream to a resumable <code translate="no">.part</code> file; verify bytes and SHA-256; on Windows check Authenticode for this App's line; prepare it and offer Restart to update, or open the installer where the App cannot replace itself</small></li>
   <li class="flow-end"><strong>Managed CLI and server</strong><small>macOS, Linux, Windows</small><small>Fetch the installer from the immutable tag; verify archive and capability manifest; version probe and isolated worker cold start; macOS, Linux: switch <code translate="no">current</code>; Windows: replace launchers; the user restarts a running worker</small></li>
 </ol>
 </figure>
@@ -61,11 +253,11 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Platform</th><th scope="col">Asset</th></tr></thead>
 <tbody>
-<tr><th scope="row">macOS</th><td>A Developer ID App in a writable folder unpacks <code translate="no">OpenProgram-&lt;version&gt;-mac-&lt;arch&gt;.zip</code> in its data folder and keeps the copy only if <code translate="no">codesign --verify --deep --strict</code> passes, the team is its own and the version is the release's. On restart a detached shell waits for the App to exit, swaps the bundles with two renames (undoing the first if the second fails) and opens the App</td></tr>
-<tr><th scope="row">macOS, otherwise</th><td>A local build (no team), a translocated or read-only App, or a release without the <code translate="no">.zip</code>: <code translate="no">-mac-&lt;arch&gt;.dmg</code>, then <code translate="no">-unsigned.dmg</code>, saved where the user picks</td></tr>
-<tr><th scope="row">Windows</th><td>Only when the release needs a newer shell: <code translate="no">OpenProgram-&lt;version&gt;-win-&lt;arch&gt;.exe</code>, or <code translate="no">-unsigned.exe</code> on an App built unsigned. Downloaded to the App's data folder and checked; Restart to update quits and runs it with <code translate="no">/S --updated --force-run</code>, which installs silently and starts the new App</td></tr>
+<tr><th scope="row">macOS, Windows, AppImage</th><td>A version-store App that can replace itself takes a new shell from its shell layer (<a href="#client">above</a>), not from an installer</td></tr>
+<tr><th scope="row">macOS, otherwise</th><td>An App without a version store, a local build (no team), a translocated or read-only App: <code translate="no">-mac-&lt;arch&gt;.dmg</code>, then <code translate="no">-unsigned.dmg</code>, saved where the user picks</td></tr>
+<tr><th scope="row">Windows, otherwise</th><td>An App that cannot replace itself: <code translate="no">OpenProgram-&lt;version&gt;-win-&lt;arch&gt;.exe</code>, or <code translate="no">-unsigned.exe</code> on an App built unsigned, downloaded, checked and opened for the user</td></tr>
 <tr><th scope="row">Linux deb</th><td>Only when the release needs a newer shell. The App sits under <code translate="no">/opt</code>, which it cannot write, so it replaces nothing itself: the <code translate="no">.deb</code> is saved where the user picks and opened with the system's package installer, which asks for the administrator password</td></tr>
-<tr><th scope="row">Linux AppImage</th><td>Only when the release needs a newer shell. Downloaded beside the running file, verified and made executable; Restart to update renames it over the running file in one step, and the App restarts from the new one. In a folder it cannot write, the file is saved where the user picks</td></tr>
+<tr><th scope="row">Linux AppImage, otherwise</th><td>In a folder it cannot write: the <code translate="no">.AppImage</code> is saved where the user picks</td></tr>
 </tbody>
 </table>
 
@@ -90,10 +282,9 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">When</th><th scope="col">Next check</th></tr></thead>
 <tbody>
-<tr><th scope="row">App start (packaged)</th><td>30 s later, or the cached due time</td></tr>
-<tr><th scope="row">After success</th><td><code translate="no">lastSuccessAt</code> + 24 h</td></tr>
-<tr><th scope="row">After failure</th><td><code translate="no">lastAttemptAt</code> + 6 h</td></tr>
-<tr><th scope="row">Resume or settings change</th><td>Clear the old timer, check at most once, reschedule</td></tr>
+<tr><th scope="row">App start (packaged)</th><td>30 s later</td></tr>
+<tr><th scope="row">After that</th><td>Every hour, whether the last check succeeded or failed. Skipped while automatic checks are off</td></tr>
+<tr><th scope="row">Check now</th><td>Checks at once; the hourly timer is unchanged</td></tr>
 </tbody>
 </table>
 <details>
@@ -110,9 +301,10 @@
 <tr><th scope="row">Network path</th><td>Chromium's network stack, so the system proxy applies. On API 403, 429, 5xx or no answer: the <code translate="no">releases/latest</code> redirect plus <code translate="no">release-manifest.json</code>. If that fails too, an optional <code translate="no">update-source.json</code>, only with an Ed25519 signature from a built-in key</td></tr>
 <tr><th scope="row">Renderer IPC</th><td>Exposes only state, check, boolean settings, download, open release, subscribe. Accepts no URL, path, hash, repository or command. Public state strips asset name, URL and SHA-256. Closing a window aborts nothing</td></tr>
 <tr><th scope="row">Downloaded files</th><td>Random exclusive temporary files, short writes handled, deleted on any mismatch. CLI verifies in a new version directory and rejects archive path traversal. A launcher failure keeps the old <code translate="no">current</code></td></tr>
+<tr><th scope="row">New App shell</th><td>Its files are named by hash in a layer the pointer's signature covers. The assembled App must also pass the platform's own check before it is staged: on macOS <code translate="no">codesign --verify --deep --strict</code> and the running App's team, on Windows Authenticode from the running App's subject. The swap script takes a path only from <code translate="no">staged.json</code>, inside the App's own <code translate="no">.&lt;App name&gt;.update/staged/</code></td></tr>
 <tr><th scope="row">Signed Windows line</th><td>A signed App accepts only an installer with a valid Authenticode signature from its own publisher: the same certificate, or the same subject after a renewal. The publisher comes from the App's own file. If that read failed or timed out, or the App's signature is damaged, it is read again before the comparison; with no publisher known, the installer is refused</td></tr>
 <tr><th scope="row">Unsigned Windows line</th><td>An App built unsigned accepts an installer that is <code translate="no">NotSigned</code> and matches the size and SHA-256 in <code translate="no">release-manifest.json</code>. That catches a damaged, truncated or substituted download. It does not prove the publisher: the manifest is unsigned and trusted through HTTPS to the fixed hosts, so whoever can publish a release there can publish an installer. A signed App never takes this line</td></tr>
-<tr><th scope="row">What the update signature covers</th><td><code translate="no">update-manifest.json.sig</code> covers the version-store files: version, base, toolchain and <code translate="no">repo.bundle</code>. It does not cover App installers or <code translate="no">release-manifest.json</code></td></tr>
+<tr><th scope="row">What the update signature covers</th><td>The signature inside <code translate="no">channel.json</code> covers the pointer, which names every layer manifest and pack by hash, so it covers every object a version-store update takes. That includes shell layers. It does not cover App installers or <code translate="no">release-manifest.json</code></td></tr>
 <tr><th scope="row">Installer child process</th><td>Pinned repository and version. Allowed environment only: PATH, HOME, temp, locale, proxy, XDG, OpenProgram state. No provider or API credentials, no archive or checksum overrides. <code translate="no">--json</code> emits one JSON document</td></tr>
 </tbody>
 </table>
@@ -121,7 +313,7 @@
 <table class="stack fixed">
 <thead><tr><th scope="col">What happened</th><th scope="col">Result</th></tr></thead>
 <tbody>
-<tr><th scope="row">Offline, timeout, rate limit</th><td>Falls back to the web route first. Automatic: record and back off 6 h. Manual: retryable error with a plain reason. The App keeps running</td></tr>
+<tr><th scope="row">Offline, timeout, rate limit</th><td>Falls back to the web route first. Automatic: tried again at the next hourly check. Manual: retryable error with a plain reason. The App keeps running</td></tr>
 <tr><th scope="row">Invalid Release or manifest</th><td>Rejected before download. No fallback to a wheel, source archive, other architecture or older version. The last valid metadata may stay</td></tr>
 <tr><th scope="row">Stall, size, hash or Windows signature error</th><td>A dropped download retries and resumes through its <code translate="no">.part</code> file, across restarts. A size, hash or signature mismatch deletes the file and restores retry. An unverified file is never opened</td></tr>
 <tr><th scope="row">CLI archive, cold start or launcher failure</th><td>Non-zero exit before the final switch. The previous version stays selected (<code translate="no">current</code> on macOS and Linux, launchers on Windows)</td></tr>
@@ -148,7 +340,7 @@
 <thead class="sr"><tr><th scope="col">File</th><th scope="col">Holds</th></tr></thead>
 <tbody>
 <tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/desktop/main/self-update/update-service.js"><code translate="no">update-service.js</code></a></th><td>Metadata, state, cache, scheduling, asset selection, download, hash, public projection</td></tr>
-<tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/desktop/main/self-update/app-replace.js"><code translate="no">app-replace.js</code></a></th><td>Replacing the App on restart: macOS unpack, signature and swap; silent NSIS; AppImage rename</td></tr>
+<tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/desktop/main/self-update/app-replace.js"><code translate="no">app-replace.js</code></a></th><td>Replacing the App on restart: the swap of a staged App shell, the Windows uninstall entry's version</td></tr>
 <tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/desktop/main/self-update/windows-signature.js"><code translate="no">windows-signature.js</code></a></th><td>Authenticode status, subject, thumbprint</td></tr>
 <tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/desktop/main.js"><code translate="no">apps/desktop/main.js</code></a></th><td>Timer, resume, IPC, multi-window broadcast</td></tr>
 <tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/desktop/main/preload.js"><code translate="no">main/preload.js</code></a></th><td>Fixed renderer bridge</td></tr>
@@ -158,40 +350,31 @@
 <tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/operations/self_update/github_release/github.py"><code translate="no">github_release/github.py</code></a></th><td>Stable metadata, manifest, immutable installer retrieval</td></tr>
 <tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/scripts/install-release.sh"><code translate="no">scripts/install-release.sh</code></a>, <a href="https://github.com/Fzkuji/OpenProgram/blob/main/scripts/install-release.ps1"><code translate="no">.ps1</code></a></th><td>Published compatibility entry points; fetch the real installer from the same tag</td></tr>
 <tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/scripts/release/install-release.sh"><code translate="no">scripts/release/install-release.sh</code></a>, <a href="https://github.com/Fzkuji/OpenProgram/blob/main/scripts/release/install-release.ps1"><code translate="no">.ps1</code></a></th><td>Download, verify, cold start, launcher staging, atomic activation</td></tr>
-<tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/operations/self_update/official/assets.py"><code translate="no">official/assets.py</code></a></th><td>Release asset format: packing, signing, verification, unpacking</td></tr>
 <tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/operations/self_update/official/replay.py"><code translate="no">official/replay.py</code></a></th><td>Replays the owner's commits onto a verified release and drops them on failure</td></tr>
-<tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/scripts/release/create-update-assets.py"><code translate="no">create-update-assets.py</code></a></th><td>Builds one platform's assets and finalizes the signed release directory</td></tr>
+<tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/operations/self_update/official/channel.py"><code translate="no">official/channel.py</code></a></th><td>Pointers, signature and sequence checks, the download URL, byte-range transport</td></tr>
+<tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/operations/self_update/official/objects.py"><code translate="no">official/objects.py</code></a></th><td>Objects, packs, layer trees, the local object store</td></tr>
+<tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/operations/self_update/official/assemble.py"><code translate="no">official/assemble.py</code></a></th><td>What this machine lacks; base, source commit, frontend and the new App from the layers</td></tr>
+<tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/operations/self_update/official/shell.py"><code translate="no">official/shell.py</code></a></th><td>The running App, the staged App and its record, the signature checks</td></tr>
+<tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/operations/self_update/official/fetch.py"><code translate="no">official/fetch.py</code></a></th><td>What <code translate="no">openprogram upgrade</code> does on a version store: read, fetch, apply</td></tr>
+<tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/operations/self_update/official/publish.py"><code translate="no">official/publish.py</code></a></th><td>Code, runtime and shell layers, refusals, GC and repack</td></tr>
+<tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/scripts/release/publish-updates.py"><code translate="no">publish-updates.py</code></a></th><td>The publisher: signing and the GitHub calls; run by <code translate="no">publish-github.sh</code></td></tr>
 <tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/.github/workflows/release.yml"><code translate="no">release.yml</code></a></th><td>Artifact publication and the latest-endpoint gate</td></tr>
 </tbody>
 </table>
 </details>
 
-<h2 id="official-replay">Official updates on a version store</h2>
-<p>An installation on the version store updates from signed release assets and replays the owner's own commits onto the release.</p>
-<table class="stack fixed">
-<thead class="sr"><tr><th scope="col">Part</th><th scope="col">Rule</th></tr></thead>
-<tbody>
-<tr><th scope="row">Assets</th><td>Every release publishes <code translate="no">version-&lt;platform&gt;.tar.zst</code>, <code translate="no">base-&lt;platform&gt;.tar.zst</code>, <code translate="no">toolchain-&lt;platform&gt;.tar.zst</code>, <code translate="no">repo.bundle</code>, <code translate="no">SHA256SUMS</code> and <code translate="no">update-manifest.json</code> with its Ed25519 signature, so a machine that skipped releases can still update. A client downloads only what it lacks: a base it already holds is skipped, and the toolchain is fetched only for owner commits to build. The version archive leaves out the venv's links and the seal, because they name the build machine; unpacking recreates the venv with the build's own command and seals the version here</td></tr>
-<tr><th scope="row">Fetch</th><td>Bare <code translate="no">openprogram upgrade</code> resolves the latest release, verifies manifest, signature and sums in memory, then downloads this platform's files to <code translate="no">&lt;runtime&gt;/downloads/&lt;release&gt;</code>, each held to its signed size and hash, resuming on the next run. <code translate="no">--from &lt;directory&gt;</code> applies files already on the computer</td></tr>
-<tr><th scope="row">Verification</th><td>Signature before the manifest is parsed, sums against the manifest, each asset this platform uses against the sums. The bundle moves <code translate="no">refs/heads/release</code> forward only, so an older signed release cannot replace a newer one. A build with no trusted key accepts no release</td></tr>
-<tr><th scope="row">Replay</th><td>The owner's commits are <code translate="no">release..local</code>, so the squashed official line is enough. Oldest first, each is cherry-picked in <code translate="no">work/official-&lt;release&gt;</code>. A conflict is saved to <code translate="no">unreplayable/&lt;release&gt;/</code> and the others continue. A commit the release already has is skipped. The candidate builds on the release's own version, so an untouched Web bundle is cloned</td></tr>
-<tr><th scope="row">Failure</th><td>A build or trial failure saves the newest commit and tries the rest, at most 5 retries before going straight to the unmodified release. Lack of disk drops nothing. A failed switch does not retry. A release needing a <code translate="no">shell_compat</code> or Python minor outside the installed shell waits for the shell update and moves nothing</td></tr>
-</tbody>
-</table>
-
 <h2 id="implementation-evidence">Implementation status</h2>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Part</th><th scope="col">Status</th></tr></thead>
 <tbody>
-<tr><th scope="row">Desktop path</th><td>Implemented. <code translate="no">npm run check --workspace apps/desktop</code>. Windows and Linux routes are tested with stand-ins; never exercised on a published release</td></tr>
-<tr><th scope="row">Managed CLI path</th><td>Implemented. <code translate="no">pytest tests/component/config/test_formal_release_updates.py tests/component/config/test_distribution_release</code></td></tr>
-<tr><th scope="row">Security and failure paths</th><td>Verified. <code translate="no">apps/desktop/tests/self-update/check-update-service.js</code></td></tr>
-<tr><th scope="row">Release gate</th><td>Every stable release passes runtime, CLI, Desktop, manifest and checksum checks before publication. These prove what was published, not behaviour on a running client</td></tr>
-<tr><th scope="row">Installed client</th><td>Open: the background download, the macOS swap and the silent Windows install on a real install of a published release; long runs and sleep/resume, operated on a real install; Authenticode with a real certificate on an official runner; real GitHub responses, a real proxy</td></tr>
-<tr><th scope="row">Version-store assets and replay</th><td>Implemented, tested with a local directory as the release source. <code translate="no">pytest -q tests/component/self_update/official/test_replay.py</code></td></tr>
-<tr><th scope="row">Version-store release path</th><td>Implemented and passing end to end on macOS against a local server imitating GitHub (update, resume, go back, refusals). Installed copies trust the official signing key. The Release workflow has published signed update files for Linux only, in v1.1.0; its macOS and Windows asset steps failed in that run and have not run since. Linux activation needs one more run</td></tr>
+<tr><th scope="row">Layered updates</th><td>Implemented: format with per-directory trees, publisher, runtime layers from the Release workflow, client, GC and repack, the hourly <code translate="no">channel.json</code> check and the release rules. <code translate="no">pytest -q tests/unit/self_update/official/test_update_format.py tests/component/self_update/official/test_updates.py</code></td></tr>
+<tr><th scope="row">Prepare and restart</th><td>Implemented. <code translate="no">pytest -q tests/component/self_update/official/test_prepare.py</code></td></tr>
+<tr><th scope="row">Desktop and managed CLI installer routes</th><td>Implemented. <code translate="no">npm run check --workspace apps/desktop</code>; <code translate="no">pytest tests/component/config/test_formal_release_updates.py tests/component/config/test_distribution_release</code>. Windows and Linux routes are tested with stand-ins</td></tr>
+<tr><th scope="row">Phase 2: shell layer</th><td>Implemented for macOS, Windows x86_64 and the Linux AppImage; tested with stand-ins: a fake bundle and AppImage, assembly from the running App's files, a shell newer than code already here, the staging check, the swap scripts and order, announce's refusal. <code translate="no">pytest -q tests/component/self_update/official/test_updates.py</code>; <code translate="no">npm run check --workspace apps/desktop</code>. Not yet run on a real signed install, in a Release workflow run, or with the Windows registry</td></tr>
+<tr><th scope="row">Phase 3: installers from layers</th><td>Not built. Installers would be assembled from the published layers</td></tr>
+<tr><th scope="row">Installed client</th><td>Open: a real install of a published release taking updates over GitHub, long runs and sleep, a real proxy, Authenticode with a real certificate, a shell swap on a real macOS and Windows App</td></tr>
 <tr><th scope="row">Upgrading from v0.6.6 or earlier</th><td>No updater before v0.7.0: install the current DMG once by hand. CLI and server rerun the public installer once</td></tr>
 </tbody>
 </table>
 
-<p class="note">Out of scope: Windows sandboxing, PyPI product installation, replacing a running App while it runs: the swap happens only on Restart to update.</p>
+<p class="note">Out of scope: Windows sandboxing, PyPI product installation, replacing a running App while it runs: the switch happens only on Restart to update.</p>

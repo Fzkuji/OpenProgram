@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from openprogram.runtime.permissions import refusal
+from openprogram.runtime.permissions import refusal, tool_profiles
 from openprogram.runtime.permissions.refusal import Decision
 
 # High-impact tools an external turn may not run at all.
@@ -120,8 +120,10 @@ def outside_text(req) -> bool:
         return True
     if not getattr(req, "goal_trigger", False):
         return False
-    import openprogram.programs.tools.planning.goal as goals
-    goal = goals.load_goal(req.session_id)
+    from openprogram.models.usage import goal_port
+    from openprogram.runtime import program_host
+    program_host.host()  # the Goal tool registers how a Goal is read
+    goal = goal_port.load_goal(req.session_id)
     return bool(goal) and goal.get("origin") in AUTOMATIC_GOAL_ORIGINS
 
 
@@ -157,11 +159,10 @@ def page_script(name: str, args: dict | None) -> bool:
     lets a conversation click in a browser lets it run scripts there, and a
     card that asks about one shows the script untruncated. Where nobody
     attends, it does not run (see ``unattended``), as an action or from code."""
-    if name == "computer_use":
-        # The target's provider says whether a step runs code in a page.
-        from openprogram.programs.tools.computer_use.computer_use import tool as screen
-        return screen.evaluates(args)
-    return False
+    # The tool says whether a call runs code in a page (for ``computer_use``,
+    # the target's provider says whether a step does).
+    tool_profile = tool_profiles.profile(name)
+    return bool(tool_profile and tool_profile.page_script and tool_profile.page_script(args))
 
 
 def path_is_safe(tool_name: str, args: dict, req: Any) -> bool:
@@ -169,7 +170,7 @@ def path_is_safe(tool_name: str, args: dict, req: Any) -> bool:
     dangerous files and directories; the full rules are in file_safety."""
     import os
     from openprogram.runtime.permissions.rule import parse_command
-    from openprogram.programs.tools.files.file_safety import check_path_safety
+    from openprogram.runtime.permissions.file_safety import check_path_safety
     from openprogram.state.worktree.context import current_worktree_path
     path = parse_command(tool_name, args)
     if not path:
@@ -192,7 +193,7 @@ def check_in_read_refusal(tool_name: str, args: dict, req: Any) -> refusal.Refus
     """The refusal for a check-in naming a dangerous path, or ``None``."""
     if tool_name not in READ_PATH_TOOLS or not check_in(req) or not isinstance(args, dict):
         return None
-    from openprogram.programs.tools.files.file_safety import check_in_read_refusal as reason_for
+    from openprogram.runtime.permissions.file_safety import check_in_read_refusal as reason_for
     for raw in (args.get("path"), args.get("file_path")):
         reason = reason_for(raw, req) if isinstance(raw, str) and raw.strip() else None
         if reason:

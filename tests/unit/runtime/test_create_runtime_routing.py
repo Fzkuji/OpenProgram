@@ -43,10 +43,7 @@ def _enable_routed_models(monkeypatch):
 def test_providers_table_is_only_the_first_class_backends():
     # If this set grows, that's fine — but it is NOT the list of supported
     # providers, which is enabled_models + the api_registry.
-    assert set(PROVIDERS) == {
-        "openai-codex", "gemini-cli",
-        "anthropic", "openai", "gemini",
-    }
+    assert set(PROVIDERS) == {"anthropic", "openai", "gemini"}
 
 
 @pytest.mark.parametrize("provider,model,expected_prefix", [

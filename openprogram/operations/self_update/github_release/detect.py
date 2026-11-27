@@ -123,7 +123,7 @@ def managed_runtime_root() -> Optional[Path]:
 
 
 def _in_version_store() -> bool:
-    from openprogram.operations.self_update.versions.layout import managed
+    from openprogram.host._platform.runtime_layout import managed
 
     return managed()
 

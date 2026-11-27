@@ -186,37 +186,6 @@ def chosen_model(agent_id: str, model: str | None) -> str | None:
     return None
 
 
-def working_directory_project(cwd: str | os.PathLike) -> str | None:
-    """The project id a new conversation started in ``cwd`` is bound to.
-
-    The home folder is the default project's own directory, so a run started
-    there needs no binding (``None``). Any other directory is registered as
-    a project, which is what makes it the tools' working directory.
-
-    Registering writes the folder's identity marker
-    (``<cwd>/.openprogram/project.json``). A folder that cannot take it (a
-    read-only checkout, a marker of a project registered elsewhere) does
-    not stop the run: the conversation runs unbound, in the default
-    project's directory, and a warning on stderr says so.
-    """
-    folder = Path(cwd).expanduser().resolve()
-    if folder == Path.home().expanduser().resolve():
-        return None
-    from openprogram.state.store.project.project_store import (
-        ProjectStoreError,
-        resolve_project,
-    )
-
-    try:
-        return resolve_project(folder).id
-    except (ProjectStoreError, OSError, ValueError) as exc:
-        _log.warning("working directory %s not bound: %s", folder, exc, exc_info=True)
-        print(f"[warning] {folder} could not be opened as the conversation's project "
-              f"({exc}); the run works in the default project's directory instead.",
-              file=sys.stderr)
-        return None
-
-
 #: Told to the model beside the instruction (see ``runtime.conversation.turn_admission.run_note``).
 from openprogram.runtime.conversation.turn_admission.run_note import RUN_NOTE  # noqa: E402
 
@@ -241,6 +210,7 @@ def _prepare_session(session_id: str, agent_id: str, *, cwd: str | os.PathLike,
     conversation is kept in the profile). The model ``--model`` names is the
     turn's (``model_override``), never pinned here."""
     from openprogram.runtime.context.session_db import default_db
+    from openprogram.state.store.project.project_store import working_directory_project
 
     db = default_db()
     if not db.is_created(session_id):
@@ -1013,5 +983,5 @@ __all__ = [
     "transcript_from_state", "transcript_records",
     "TRANSPORT_IN_PROCESS", "TRANSPORT_WORKER",
     "usage_summary", "EFFORTS", "recording_requests", "run_header", "wire_effort", "wire_facts",
-    "working_directory_project", "write_transcript_file", "write_usage_file",
+    "write_transcript_file", "write_usage_file",
 ]

@@ -22,10 +22,10 @@ import subprocess
 import time
 from typing import Any
 
-from . import layout as paths
+from openprogram.host._platform import runtime_layout as paths
 from . import pointer as pointers
 from . import store as sealed
-from .layout import Layout
+from openprogram.host._platform.runtime_layout import Layout
 from openprogram.host._platform import filesystem
 
 NUMBERS_FILE = "version-numbers.json"

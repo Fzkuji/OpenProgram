@@ -53,17 +53,17 @@ def test_package_hash_uses_binary_bytes_and_size_bound(tmp_path: Path) -> None:
 
 
 def test_registered_worktree_accepts_git_path_spelling(tmp_path: Path, monkeypatch) -> None:
-    from openprogram.programs.tools.system import self_update
+    from openprogram.operations.self_update import candidate_source
 
     candidate = tmp_path / "candidate"
     sha = "a" * 40
     monkeypatch.setattr(
-        self_update, "_git",
+        candidate_source, "git",
         lambda *args: f"worktree {candidate.as_posix()}\0HEAD {sha}\0branch refs/heads/fix\0\0",
     )
-    self_update._validate_registered_worktree(tmp_path, candidate, sha, "fix")
-    with pytest.raises(self_update.SelfUpdateToolError):
-        self_update._validate_registered_worktree(tmp_path, candidate, "b" * 40, "fix")
+    candidate_source.validate_registered_worktree(tmp_path, candidate, sha, "fix")
+    with pytest.raises(candidate_source.SelfUpdateToolError):
+        candidate_source.validate_registered_worktree(tmp_path, candidate, "b" * 40, "fix")
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Win32 extended paths only")

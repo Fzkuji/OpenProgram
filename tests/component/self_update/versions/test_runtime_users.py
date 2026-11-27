@@ -52,7 +52,7 @@ def test_the_id_matches_what_the_uninstaller_computes():
 
 
 def test_a_running_app_registers_by_its_folder(tmp_path, monkeypatch):
-    from openprogram.operations.self_update.versions import layout
+    from openprogram.host._platform import runtime_layout as layout
 
     monkeypatch.setattr(layout, "current_runtime", lambda: layout.CurrentRuntime(layout.Layout(tmp_path), "v1"))
     monkeypatch.setenv("OPENPROGRAM_APP_PATH", r"C:\Apps\OpenProgram")

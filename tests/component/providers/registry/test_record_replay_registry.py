@@ -37,10 +37,12 @@ class WrappedProvider:
 
 @pytest.fixture(autouse=True)
 def isolated_registry(monkeypatch: pytest.MonkeyPatch):
-    # The built-ins register once, on first use: into the real registry first, so a use
-    # during this test does not spend that once on the empty one it gets.
-    from openprogram.models.providers.catalog.register import register_builtins
-    register_builtins()
+    # The provider runtime initializes once per process, on first use: registering the
+    # built-ins and activating record/replay from the config. Do it here, on the real
+    # registry and the real (off) config, so a use during this test does not spend that
+    # once on the empty registry and the record/replay config this test fakes.
+    from openprogram.models.providers.catalog.initialization import initialize_provider_runtime
+    initialize_provider_runtime()
     monkeypatch.setattr(api_registry, "_registry", {})
     monkeypatch.setattr(api_registry, "_original_registry", {})
     monkeypatch.setattr(api_registry, "_provider_transform", None)
@@ -269,7 +271,7 @@ def test_invalid_startup_config_keeps_import_alive_and_blocks_live_provider(
     assert blocked.requires_credentials is False
     stream_module = importlib.import_module("openprogram.models.providers.streaming.stream")
     monkeypatch.setattr(
-        "openprogram.models.auth.selection.with_credential",
+        "openprogram.models.providers.streaming.credential_failover.with_credential",
         lambda model, opts, attempt: pytest.fail("invalid replay config resolved credentials"),
     )
     model = Model(

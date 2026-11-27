@@ -136,7 +136,7 @@ def _session_lines(
     # their branch is renamed or, finished, retired from the tip list.
     agents: dict[str, str] = {}
     if not archived:
-        from openprogram.programs.tools.agents.send_message.send_message.addressing import (
+        from openprogram.runtime.conversation.peer_agents.addressing import (
             agent_tips,
         )
         for agent_label, tip in agent_tips(sid):

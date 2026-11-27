@@ -198,6 +198,8 @@
 <ul>
 <li>claim 需要 <code translate="no">owner_instance_id</code> 和 worker 锁，通过探测真实 advisory lock 确认。写入由 <code translate="no">lease_generation</code> 隔离。reconcile 循环在其他线程提交运行表和持久等待到期时运行，两次至少相隔 5 秒，另有 60 秒的兜底同步。</li>
 <li>lease 证明 worker 所有权，不代表外部副作用已回滚。</li>
+<li>一个 Worker 内同一时刻只运行一轮资源意图对账。写入意图后再对账的调用方（暂停或终止时的释放、单步的 claim）在返回时看到意图已被消费，即使这条意图当时由 dispatcher 或 reconciler 的那一轮持有。</li>
+<li>排队 Job 的首个单步在 dispatcher 暂停 claim 期间写入 claim 意图并占用 admission，因此由调用方激活，返回时为暂停状态。</li>
 <li>run table 是持有配置档的进程内的内存表。每个事务向会话日志追加一行，并由日志重建。<code translate="no">budget_scopes</code> 使用一份全局日志。唯一键使 admission 和预占幂等。</li>
 <li><code translate="no">jobs.json</code> 每会话一份，存于其日志中，在会话锁和 <code translate="no">flock</code> 下写入。</li>
 <li>没有集群共识或远程调度。多 worker 需要 leader 选举、时钟假设和外部运行时隔离。</li>
@@ -383,9 +385,9 @@ Job JSON, added fields: admission_id, budget_scope_id, effective_limits, reason_
 <tr><th scope="row">Run table</th><td><code translate="no">openprogram/runtime/execution/store/run_tables.py</code>、<code translate="no">_schema.py</code></td><td>重复恢复</td></tr>
 <tr><th scope="row">Token 与成本</th><td><code translate="no">openprogram/models/providers/streaming/stream.py</code>、<code translate="no">budget.py</code>；<code translate="no">reserve_provider_request</code>；<code translate="no">openprogram/models/usage/ledger.py</code></td><td>逐 Provider 覆盖、延迟结算、故障注入</td></tr>
 <tr><th scope="row">运行与空闲</th><td><code translate="no">openprogram/runtime/jobs/runner/progress.py</code>；<code translate="no">openprogram/models/providers/utils/http_transport/deadline.py</code>；<code translate="no">openprogram/programs/_host/runtime.py</code></td><td>各操作类型的停止确认</td></tr>
-<tr><th scope="row">派生与消息预算</th><td><code translate="no">openprogram/programs/tools/agents/agent/agent/agent.py</code>；<code translate="no">send_message/send_message/depth.py</code>；<code translate="no">openprogram/state/settings.py</code></td><td>显式子分配、兄弟竞争</td></tr>
+<tr><th scope="row">派生与消息预算</th><td><code translate="no">openprogram/programs/tools/agents/agent/agent/agent.py</code>；<code translate="no">jobs/chain_budgets.py</code>；<code translate="no">openprogram/state/settings.py</code></td><td>显式子分配、兄弟竞争</td></tr>
 <tr><th scope="row">界面</th><td><code translate="no">build_job_resource_view</code>；<code translate="no">interfaces/server/ws_actions/job.py</code>；<code translate="no">apps/web/lib/execution/job-resource.ts</code>；<code translate="no">apps/cli/src/commands/jobResource.ts</code>；<code translate="no">interfaces/cli/commands/conversations/jobs.py</code>；<code translate="no">tools/agents/agent/list_jobs/</code>、<code translate="no">job_output/</code></td><td>字段与原因一致、旧记录、未知成本展示、恢复状态</td></tr>
-<tr><th scope="row">Worker 锁、用量记录</th><td><code translate="no">openprogram/operations/worker/lock.py</code>、<code translate="no">paths.py</code>；<code translate="no">openprogram/models/usage/event.py</code>、<code translate="no">recorder.py</code></td><td>无专项</td></tr>
+<tr><th scope="row">Worker 锁、用量记录</th><td><code translate="no">openprogram/host/worker/lock.py</code>、<code translate="no">paths.py</code>；<code translate="no">openprogram/models/usage/event.py</code>、<code translate="no">recorder.py</code></td><td>无专项</td></tr>
 </tbody>
 </table>
 <p class="next"><a href="../../providers/usage-metering.zh.html">用量计量</a></p>

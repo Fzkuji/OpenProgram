@@ -120,8 +120,8 @@ const CLAUDE_CODE_LABELS: typeof MODE_LABELS = [
   },
 ];
 
-// DeepSeek Harness's: it either runs its tools or asks for each one.
-const DEEPSEEK_HARNESS_LABELS: typeof MODE_LABELS = [
+// DeepSeek Harness's and Gemini CLI's: each either runs its tools or asks for each one.
+const ASK_OR_RUN_LABELS: typeof MODE_LABELS = [
   {
     value: "bypass", en: "Full access", zh: "完全访问", key: "1",
     enDesc: "Runs its tools without asking",
@@ -134,16 +134,19 @@ const DEEPSEEK_HARNESS_LABELS: typeof MODE_LABELS = [
   },
 ];
 
+/** The outside agents whose only modes are running every tool or asking before each. */
+const ASK_OR_RUN = new Set(["deepseek-harness", "gemini-cli"]);
+
 /** The modes a conversation's engine offers, named for what it does with each. */
 function labelsFor(harness: string | null): typeof MODE_LABELS {
   if (harness === "claude-code") return CLAUDE_CODE_LABELS;
-  if (harness === "deepseek-harness") return DEEPSEEK_HARNESS_LABELS;
+  if (harness && ASK_OR_RUN.has(harness)) return ASK_OR_RUN_LABELS;
   return harness ? HARNESS_LABELS : MODE_LABELS;
 }
 
 /** A stored mode as the engine's own menu shows it. */
 function shownMode(harness: string | null, stored: PermissionMode): PermissionMode {
-  if (harness === "deepseek-harness") return stored === "bypass" ? "bypass" : "ask";
+  if (harness && ASK_OR_RUN.has(harness)) return stored === "bypass" ? "bypass" : "ask";
   if (harness && harness !== "claude-code" && stored === "plan") return "ask";
   return stored;
 }

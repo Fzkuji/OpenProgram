@@ -28,8 +28,8 @@ from openprogram.interfaces.cli.setup_sections.backend import run_backend_sectio
 #   are an opt-in "let external users talk to my agent" feature.
 _QUICKSTART_SECTIONS = [
     ("providers", "Connect LLM provider(s)",
-     "Import existing CLI logins (Claude Code / Codex / Gemini / GH CLI), "
-     "or add API keys. At least one provider is required.",
+     "Add API keys, or use a signed-in Claude Code / Codex / Gemini CLI as an agent. "
+     "At least one provider is required.",
      run_providers_section),
     ("model", "Pick a chat model",
      "New conversations start on the model you used last; pick the first one here.",

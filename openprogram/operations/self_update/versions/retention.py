@@ -18,7 +18,7 @@ import time
 
 from . import pointer as pointers
 from . import store
-from .layout import Layout, valid_id
+from openprogram.host._platform.runtime_layout import Layout, valid_id
 from .removal import remove_tree
 
 _log = logging.getLogger(__name__)

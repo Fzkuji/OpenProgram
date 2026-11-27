@@ -53,7 +53,7 @@ export interface Nameable {
 
 /** The name a person sees for a credential, in their language: the name
  *  they gave it, else the account's email, else one from its kind
- *  ("API key", "Environment key", "ChatGPT sign-in"). The tail and the
+ *  ("API key", "Environment key", "Qwen sign-in"). The tail and the
  *  variable are not part of it: the row says them on its second line. */
 export function credentialName(c: Nameable, text: Text): string {
   if (c.label) return c.label;

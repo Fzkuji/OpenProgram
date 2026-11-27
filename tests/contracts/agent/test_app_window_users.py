@@ -43,7 +43,7 @@ WINDOW_USERS: dict[str, tuple[str, str]] = {
                      "desktop_unavailable at once and the driver falls back"),
     "openprogram/runtime/conversation/process_runner.py":
         ("window", "bridges a Program's child process to the window its turn came from"),
-    "openprogram/programs/tools/jobs/cron/worker.py":
+    "openprogram/runtime/scheduler/worker.py":
         ("window", "names an open window to a scheduled run and bridges its child process to it; "
                    "with none open the run goes on without one"),
     "openprogram/interfaces/server/ws_actions/webtab.py":

@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import pytest
 
-from openprogram.models.usage import provider_status, provider_views, quota
+from openprogram.models.listing import provider_status, provider_views
+from openprogram.models.usage import quota
 from openprogram.models.usage.event import UsageEvent
 from openprogram.models.usage.ledger import UsageLedger
 from openprogram.models.usage.quota import QuotaLimit
@@ -96,8 +97,8 @@ def test_opening_the_picker_probes_a_local_server_again(store, monkeypatch):
 
 def test_one_way_of_a_company_carries_its_menu_name(store, monkeypatch):
     monkeypatch.setattr(provider_views, "keys_of", lambda provider: [])
-    state = provider_views.picker_state("openai-codex", configured=False, now=NOW)
-    assert state["name"] == "OpenAI · ChatGPT"
+    state = provider_views.picker_state("zai-coding-plan", configured=False, now=NOW)
+    assert state["name"] == "Z.ai · Zhipu · Z.ai Coding"
     assert provider_views.picker_state("opencode-go", configured=False, now=NOW)["name"] == "OpenCode · Go"
 
 
@@ -115,8 +116,8 @@ def test_a_provider_out_of_credit_shows_its_balance_and_the_top_up_page(store, m
 
 def test_a_quiet_provider_draws_nothing(store, monkeypatch):
     monkeypatch.setattr(provider_views, "keys_of", lambda provider: [_key()])
-    store.observe("openai-codex", "cred-1", [_window(20)], force_write=True)
-    state = provider_views.picker_state("openai-codex", configured=True, now=NOW)
+    store.observe("kimi-coding", "cred-1", [_window(20)], force_write=True)
+    state = provider_views.picker_state("kimi-coding", configured=True, now=NOW)
     assert state["state"] == "ready" and state["fix"] is None and state["attention"] is False
     assert state["quota"]["ring"] is False and state["balance"] is None
 
@@ -124,12 +125,12 @@ def test_a_quiet_provider_draws_nothing(store, monkeypatch):
 def test_a_warning_quota_leaves_the_trigger_plain_until_nearly_spent(store, monkeypatch):
     monkeypatch.setattr(provider_views, "keys_of", lambda provider: [_key()])
     # 84 % used and ahead of the window's time: the bars warn, the trigger stays plain.
-    store.observe("openai-codex", "cred-1", [_window(84, resets_in=270 * 60)], force_write=True)
-    state = provider_views.picker_state("openai-codex", configured=True, now=NOW)
+    store.observe("kimi-coding", "cred-1", [_window(84, resets_in=270 * 60)], force_write=True)
+    state = provider_views.picker_state("kimi-coding", configured=True, now=NOW)
     assert state["quota"]["tone"] == "warning" and state["quota"]["warn"] is True
     assert state["attention"] is False
-    store.observe("openai-codex", "cred-1", [_window(96)], force_write=True)
-    state = provider_views.picker_state("openai-codex", configured=True, now=NOW)
+    store.observe("kimi-coding", "cred-1", [_window(96)], force_write=True)
+    state = provider_views.picker_state("kimi-coding", configured=True, now=NOW)
     assert state["quota"]["tone"] == "danger" and state["attention"] is True
 
 
@@ -185,11 +186,11 @@ def test_the_fallback_takes_the_most_used_healthy_model_that_fits(tmp_path):
     ledger = UsageLedger(db_path=tmp_path / "usage.db")
     ledger.append_many([_event("deepseek", "flash", 1, 0.1), _event("deepseek", "flash", 1, 0.1),
                         _event("xai", "grok", 1, 0.1)])
-    enabled = [_enabled("openai-codex", "gpt"), _enabled("xai", "grok"), _enabled("deepseek", "flash"),
+    enabled = [_enabled("kimi-coding", "gpt"), _enabled("xai", "grok"), _enabled("deepseek", "flash"),
                _enabled("mistral", "small", ctx=32_000), _enabled("google", "gemini", vision=True),
                _enabled("zai", "glm")]
     got = provider_views.fallback_for(
-        "openai-codex", "gpt", context_tokens=100_000, enabled=enabled,
+        "kimi-coding", "gpt", context_tokens=100_000, enabled=enabled,
         states=_ready("xai", "deepseek", "mistral", "google", spent=("xai",)), ledger=ledger, now=NOW)
     assert got["suggestion"]["model"] == "flash" and got["suggestion"]["reason"] == "most_used"
     # Spent (xai), too small a window (mistral), other capabilities (google), unknown health (zai): left out.

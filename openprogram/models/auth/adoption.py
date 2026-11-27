@@ -1,6 +1,6 @@
 """Adopting sign-ins other tools already hold on this machine.
 
-Other CLIs' login files (Codex, Qwen, GitHub) are *sources*; adopting one
+Other CLIs' login files (Qwen, GitHub) are *sources*; adopting one
 adds its credential to the provider's list, or renews the row of the same
 account. ``openprogram providers adopt`` and ``/api/providers/adopt_all``
 use these functions. A provider's key environment variables need no
@@ -15,8 +15,8 @@ from .summary import payload_summary
 
 
 def _sources() -> list[Any]:
-    from openprogram.models.auth.sources import CodexCliSource, GhCliSource, QwenCliSource
-    return [CodexCliSource(), QwenCliSource(), GhCliSource()]
+    from openprogram.models.auth.sources import GhCliSource, QwenCliSource
+    return [QwenCliSource(), GhCliSource()]
 
 
 def run_adopt_all() -> dict[str, Any]:
@@ -53,7 +53,7 @@ def run_adopt_all() -> dict[str, Any]:
 
 
 def source_by_id(source_id: str):
-    """The adoptable source named ``source_id`` (``codex_cli``, ``qwen_cli``, ``gh_cli``), or None."""
+    """The adoptable source named ``source_id`` (``qwen_cli``, ``gh_cli``), or None."""
     return next((s for s in _sources() if s.source_id == source_id), None)
 
 

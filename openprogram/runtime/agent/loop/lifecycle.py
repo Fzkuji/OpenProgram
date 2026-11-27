@@ -59,6 +59,11 @@ def _finish_interrupted_stream(stream, exc, messages, cancel_event) -> None:
         if not stream._result_event.is_set():
             stream.fail(exc)
     else:
+        # Any other BaseException (SystemExit, KeyboardInterrupt, a test's
+        # failure) still ends the stream, so its reader sees the error instead
+        # of waiting forever on a producer that is gone.
+        if not stream._result_event.is_set():
+            stream.fail(exc)
         raise exc
 
 

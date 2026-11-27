@@ -17,7 +17,7 @@ import textwrap
 import pytest
 
 from openprogram.operations.self_update.github_release import github
-from openprogram.operations.self_update.official import assets
+from openprogram.operations.self_update.official import signing
 
 ROOT = Path(__file__).resolve().parents[4]
 UPDATE_SERVICE = ROOT / "apps/desktop/main/self-update/update-service.js"
@@ -178,17 +178,11 @@ def test_command_line_asset_names_are_spelled_the_same_everywhere(path, spelling
         assert spelling in source
 
 
-def test_update_platforms_use_the_release_matrix_words():
-    matrix = _release_matrix().release_matrices()
-    for row in matrix["runtime"]:
-        assert assets._PLATFORM.fullmatch(f"{row['platform']}-{row['arch']}")
-
-
 def test_both_updaters_trust_the_same_release_keys():
     match = re.search(r"const RELEASE_PUBLIC_KEYS = \[(.*?)\];", UPDATE_SERVICE.read_text(encoding="utf-8"), re.S)
     assert match is not None
     in_app = re.findall(r'"([0-9a-f]{64})"', match.group(1))
-    assert in_app == list(assets.RELEASE_PUBLIC_KEYS)
+    assert in_app == list(signing.RELEASE_PUBLIC_KEYS)
 
 
 def test_installers_accept_the_fixed_hosts_the_fetcher_accepts():
@@ -201,13 +195,16 @@ def test_installers_accept_the_fixed_hosts_the_fetcher_accepts():
 
 
 def test_app_accepts_an_update_source_signed_by_the_release_tool(tmp_path):
+    tool = [sys.executable, str(ROOT / "scripts/release/publish-updates.py")]
     private_key = tmp_path / "update-key.pem"
-    public_key = assets.generate_signing_key(private_key)
+    public_key = subprocess.run([*tool, "generate-key", str(private_key)],
+                                capture_output=True, text=True, check=True).stdout.strip()
     source = tmp_path / "update-source.json"
     source.write_text(json.dumps({"schema": 1, "repository": "New/Home", "hosts": ["files.example.org"]}))
-    signature = assets.sign_file(source, private_key.read_bytes())
+    subprocess.run([*tool, "sign-file", str(source), "--signing-key", str(private_key)], check=True)
+    signature = tmp_path / "update-source.json.sig"
 
-    assets.verify_signature(source.read_bytes(), signature.read_text(encoding="ascii"), [public_key])
+    signing.verify_signature(source.read_bytes(), signature.read_text(encoding="ascii"), [public_key])
     script = textwrap.dedent(f"""
         const fs = require("node:fs");
         const service = require({json.dumps(str(UPDATE_SERVICE))});

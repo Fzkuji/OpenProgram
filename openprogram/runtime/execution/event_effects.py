@@ -298,7 +298,7 @@ class ExecutionEventEffects:
             return None
         if not source.user_message_id or source.user_message_id not in graph.nodes:
             raise waiting
-        from openprogram.runtime.permissions.authority import runtime_authority
+        from openprogram.state.authority import runtime_authority
         from openprogram.state.store.session.nodes import Call, ROLE_LLM
 
         # It never ran: it starts and ends at the stop.

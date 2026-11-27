@@ -4,8 +4,8 @@ from __future__ import annotations
 import pytest
 
 from openprogram.host import sandbox
+from openprogram.state.sandbox_settings import MODE_WORKSPACE_WRITE
 from openprogram.host.sandbox import (
-    MODE_WORKSPACE_WRITE,
     resolve_policy,
     turn_policy,
 )

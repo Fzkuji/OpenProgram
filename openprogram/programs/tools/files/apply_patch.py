@@ -33,6 +33,7 @@ import os
 from typing import Any
 
 from openprogram.programs._host.runtime import function
+from openprogram.runtime.permissions import tool_profiles
 from openprogram.state.store.snapshot.checkpoint.helpers import (
     checkpoint_abort_edit,
     checkpoint_after_edit,
@@ -400,6 +401,12 @@ def execute(patch: str, **_: Any) -> str:
         else:
             results.append(_apply_delete(path))
     return "\n".join(outside + results)
+
+
+# The files a patch writes, whose state an approval of it pins.
+tool_profiles.register(NAME, tool_profiles.ToolProfile(
+    written_paths=lambda args: [path for _, path, _ in _parse_sections(str(args["patch"]))],
+))
 
 
 # Register as an AgentTool. ``execute`` stays a plain callable so any

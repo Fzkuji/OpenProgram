@@ -9,9 +9,8 @@
 <thead><tr><th scope="col">连接</th><th scope="col">能力</th><th scope="col">请求</th></tr></thead>
 <tbody>
 <tr><th scope="row">xAI API，Grok 4.6</th><td>只对 <code translate="no">https://api.x.ai/v1</code> 上的 <code translate="no">grok-4.6</code> 支持，绝不按名称前缀</td><td>Fast：<code translate="no">service_tier: priority</code>。Standard：<code translate="no">default</code>。</td></tr>
-<tr><th scope="row">Grok 订阅，Grok 4.6</th><td>CLI chat proxy 接受相同取值。其他订阅模型保持未知。</td><td>相同</td></tr>
 <tr><th scope="row">自定义网关</th><td>不凭模型名继承。连接配置可以声明支持；显式 <code translate="no">false</code> 优先。</td><td>仅在支持时使用配置的适配器映射</td></tr>
-<tr><th scope="row">Codex、Claude</th><td>沿用现有证据来源；UI 与派发用同一能力结果</td><td>沿用现有 priority 或 speed 加 beta 映射</td></tr>
+<tr><th scope="row">Claude</th><td>沿用现有证据来源；UI 与派发用同一能力结果</td><td>沿用现有 priority 或 speed 加 beta 映射</td></tr>
 </tbody>
 </table>
 <p class="note">由 <code translate="no">openprogram/models/providers/settings/fast.py</code> 的 <code translate="no">fast_capability()</code> 解析：supported、unsupported 或 unknown，并带来源。<code translate="no">chat.fast</code> 是兼容投影。优先级：官方账户数据、连接配置、静态声明、目录；网络失败不清除有效的缓存声明。</p>
@@ -58,7 +57,7 @@
 <details>
 <summary>验收</summary>
 <ul>
-<li>能力：xAI API 和 Grok 4.6 订阅与未知订阅模型分开；切换连接更新原因；目录失败保留已知支持。</li>
+<li>能力：xAI API 与未知网关分开；切换连接更新原因；目录失败保留已知支持。</li>
 <li>输入框：键盘和指针都能选择速度，重载后保留，换模型从 Standard 开始，窄布局可用。</li>
 <li>派发：只有所选的受支持连接发送 priority；排队设置稳定；推理参数不变。</li>
 <li>响应：合成的 priority、default、缺失、错误、取消响应状态准确，没有重复请求或捏造的价格。</li>

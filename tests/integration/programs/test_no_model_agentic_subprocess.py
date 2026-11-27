@@ -31,6 +31,7 @@ def _workflow(state: Path, name: str, source: str) -> Path:
     return state / "programs-cache" / name / commit
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("use_model", [False, True])
 @pytest.mark.parametrize("selection", ["missing", "without_credentials"])
 def test_no_model_workflow_reaches_child_without_default_provider(
@@ -104,6 +105,7 @@ print(json.dumps({"failed":result.is_error,"text":"".join(c.text for c in result
         assert "plain result" in outcome["text"]
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("use_model", [False, True])
 @pytest.mark.parametrize(
     "selection", ["missing", "provider_only", "model_only", "auto", "explicit"]

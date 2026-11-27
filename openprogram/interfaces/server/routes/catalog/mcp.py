@@ -47,7 +47,7 @@ from openprogram.extensions.mcp.config import (
     parse_entry,
     save_configs_revision,
 )
-from openprogram.models.auth.credentials import PrivateAtomicWriteError
+from openprogram.state.private_files import PrivateAtomicWriteError
 
 _log = logging.getLogger(__name__)
 

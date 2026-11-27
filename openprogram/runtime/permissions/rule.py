@@ -21,6 +21,8 @@ import unicodedata
 from dataclasses import dataclass
 from typing import Optional
 
+from openprogram.runtime.permissions import tool_profiles
+
 _log = logging.getLogger(__name__)
 
 
@@ -433,6 +435,12 @@ def _deny_values(value: str) -> list[str]:
     return values
 
 
+def _rule_keyed(tool_name: str):
+    """The profile of a tool that names the key its rules are written under, or ``None``."""
+    found = tool_profiles.profile(tool_name)
+    return found if found is not None and found.rule_key is not None else None
+
+
 def parse_command(tool_name: str, args: dict) -> Optional[str]:
     """把工具参数归约成一个可比字符串（per-pattern 匹配用）。
     - bash / exec / shell → normalized args["command"]
@@ -453,13 +461,14 @@ def parse_command(tool_name: str, args: dict) -> Optional[str]:
         p = args.get("path") or args.get("file_path")
         if p is not None:
             return _canon_path(p)
-    if low == "computer_use":
-        # One approval covers a screen, not one click on it. The target's
-        # provider says what the call operates and the key a rule for it is
-        # written under (``window calculator``, ``browser chrome``, ``lab screen``);
-        # a call that operates nothing the user is asked about has none.
-        from openprogram.programs.tools.computer_use.computer_use import tool as screen
-        return screen.rule_key(args)
+    keyed = _rule_keyed(low)
+    if keyed is not None:
+        # One approval covers a screen, not one click on it. The tool (for
+        # ``computer_use``, the target's provider) says what the call operates
+        # and the key a rule for it is written under (``window calculator``,
+        # ``browser chrome``, ``lab screen``); a call that operates nothing the
+        # user is asked about has none.
+        return keyed.rule_key(args)
     try:
         return json.dumps(
             _normalize_json(args), ensure_ascii=False, sort_keys=True,
@@ -475,7 +484,7 @@ def exact_rule_for_call(tool_name: str, args: dict) -> PermissionRuleValue | Non
     if value is None:
         return None
     value = _split_readings(value)[0]
-    if tool_name.lower() == "computer_use" and (any(ch in value for ch in "*?[") or value.endswith(":*")):
+    if _rule_keyed(tool_name.lower()) is not None and (any(ch in value for ch in "*?[") or value.endswith(":*")):
         # The matcher would read the name as a wildcard covering other screens; it is allowed once only.
         return None
     if tool_name.lower() in _SHELL_TOOLS and value.startswith(_COMPLEX_SHELL_PREFIX):

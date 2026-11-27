@@ -21,9 +21,9 @@ import uuid
 from ..store import SelfUpdateStore
 from ..types import UpdateRecord
 from ..verification.system_probe import SystemProbeError, doctor_baseline, probe_browser, probe_instance
-from ..versions import layout as paths
+from openprogram.host._platform import runtime_layout as paths
 from ..versions import pointer, store as version_store
-from ..versions.layout import Layout
+from openprogram.host._platform.runtime_layout import Layout
 from . import data_copy, rehearsal, sandbox, schema_guard
 from .fake_model import FINAL_ANSWER, TURN_MARKER, FakeModel
 from .instance import TrialError, TrialInstance, WINDOWS_NOTE, Workspace, workspace_for

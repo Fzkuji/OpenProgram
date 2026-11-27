@@ -34,7 +34,7 @@ Defaults:
 
 The stream idle bound (``stream_idle.py``, 300 s without an event) and the
 optional total budget are enforced by the transports; this module classifies
-the ``StreamIdleTimeout`` / ``StreamTotalTimeout`` they raise as transport
+the ``StreamIdleTimeout`` they raise as a transport
 failures and retries them, but doesn't enforce them.
 """
 from __future__ import annotations
@@ -102,7 +102,6 @@ _TRANSPORT_EXC_NAMES = frozenset({
     "WriteError",
     # SSE-layer
     "StreamIdleTimeout",
-    "StreamTotalTimeout",
     # Python builtins
     "ConnectionError",
     "ConnectionResetError",
@@ -422,7 +421,7 @@ async def retry_stream(
             ``lambda: bool(output.content)``.
         max_attempts: Total attempts including the first try. Default
             from ``OPENPROGRAM_PROVIDER_STREAM_RETRIES`` env (5).
-        label: Used in retry log line, e.g. ``"openai-codex"``.
+        label: Used in retry log line, e.g. ``"openai"``.
         provider: Stored on the final exception for downstream logs.
         on_retry: Receives a ``{"type": "retry", ...}`` event before each
             retry and while waiting for the network, for the live UI.

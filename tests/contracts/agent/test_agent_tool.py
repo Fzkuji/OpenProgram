@@ -306,10 +306,8 @@ def test_current_tool_call_id_visible_inside_tool_body():
     Covers the sync body path, which runs in an executor thread and only
     sees the value because ``_invoke`` copies the context across."""
     import asyncio
-    from openprogram.programs._host.runtime import (
-        current_tool_call_id,
-        function,
-    )
+    from openprogram.programs._host.runtime import function
+    from openprogram.runtime.agent.call_state import current_tool_call_id
 
     seen: list = []
 
@@ -327,10 +325,10 @@ def test_current_tool_call_id_visible_inside_tool_body():
     assert seen == ["tc_abc"]
 
 
-def test_current_tool_call_id_is_none_outside_a_tool_call():
-    from openprogram.programs._host.runtime import current_tool_call_id
+def test_current_tool_call_id_is_empty_outside_a_tool_call():
+    from openprogram.runtime.agent.call_state import current_tool_call_id
 
-    assert current_tool_call_id() is None
+    assert current_tool_call_id() == ""
 
 
 # --- LLM-facing schema ----------------------------------------------------
@@ -510,7 +508,7 @@ def test_fanout_slot_is_not_spent_by_a_refused_spawn(store, fake_dispatcher, mon
     """The generation guard runs first, so a chain that is out of
     generations never burns its turn's fan-out slots."""
     from openprogram.programs.tools.agents.agent.agent.agent import _fanout_used
-    from openprogram.programs.tools.agents.send_message.send_message.depth import (
+    from openprogram.runtime.jobs.chain_budgets import (
         set_chain_generations,
     )
 

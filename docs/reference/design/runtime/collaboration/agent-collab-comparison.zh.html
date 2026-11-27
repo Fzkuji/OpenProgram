@@ -195,7 +195,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">系统</th><th scope="col">位置</th></tr></thead>
 <tbody>
-<tr><th scope="row">本项目</th><td><code translate="no">programs/tools/agents/send_message/send_message/depth.py; programs/tools/agents/agent/agent/agent.py; runtime/conversation/peer_agents/inbox.py; self-delivery guard send_message.py</code></td></tr>
+<tr><th scope="row">本项目</th><td><code translate="no">runtime/jobs/chain_budgets.py; programs/tools/agents/agent/agent/agent.py; runtime/conversation/peer_agents/inbox.py; self-delivery guard send_message.py</code></td></tr>
 <tr><th scope="row">Claude Code</th><td>公开文档：<a href="https://code.claude.com/docs/en/sub-agents">子 agent</a>、<a href="https://code.claude.com/docs/en/agent-teams">Agent 团队</a>、<a href="https://code.claude.com/docs/en/cross-session-messaging">跨会话消息</a></td></tr>
 <tr><th scope="row">codex-cli</th><td><code translate="no">core/src/config/mod.rs:212-213,284; concurrency core/src/agent/control/execution.rs:68-76</code></td></tr>
 <tr><th scope="row">openclaw</th><td><code translate="no">config/agent-limits.ts:3-8; rounds agents/tools/sessions-send-helpers.ts:15-16; rate limit agents/subagent-control.ts:45,507-516; retries agents/subagent-registry-helpers.ts:35</code></td></tr>
@@ -231,7 +231,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">系统</th><th scope="col">位置</th></tr></thead>
 <tbody>
-<tr><th scope="row">本项目</th><td><code translate="no">programs/tools/agents/send_message/send_message/depth.py delegation_budget_left; can_use on programs/tools/agents/agent/agent/agent.py</code></td></tr>
+<tr><th scope="row">本项目</th><td><code translate="no">runtime/jobs/chain_budgets.py delegation_budget_left; can_use on programs/tools/agents/agent/agent/agent.py</code></td></tr>
 <tr><th scope="row">Claude Code</th><td>公开文档：<a href="https://code.claude.com/docs/en/sub-agents">子 agent</a></td></tr>
 <tr><th scope="row">codex-cli</th><td><code translate="no">core/src/tools/spec_plan.rs:561-572,1099; V1 rejection handlers/multi_agents/spawn.rs:67-71; roles core/src/agent/role.rs:37,249</code></td></tr>
 <tr><th scope="row">openclaw</th><td><code translate="no">agents/pi-tools.policy.ts:42-51,57-62,170-175; recheck agents/subagent-spawn.ts:786</code></td></tr>
@@ -263,7 +263,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">系统</th><th scope="col">位置</th></tr></thead>
 <tbody>
-<tr><th scope="row">本项目</th><td><code translate="no">programs/tools/agents/send_message/list_agents/list_agents.py; programs/tools/agents/send_message/send_message/addressing.py; runtime/conversation/turn_runtime/titles.py</code></td></tr>
+<tr><th scope="row">本项目</th><td><code translate="no">programs/tools/agents/send_message/list_agents/list_agents.py; runtime/conversation/peer_agents/addressing.py; runtime/conversation/turn_runtime/titles.py</code></td></tr>
 <tr><th scope="row">Claude Code</th><td>公开文档：<a href="https://code.claude.com/docs/en/cross-session-messaging">跨会话消息</a>、<a href="https://code.claude.com/docs/en/tools-reference">工具参考</a></td></tr>
 <tr><th scope="row">codex-cli</th><td><code translate="no">protocol/src/agent_path.rs:15-19,54-71,129-146; names core/src/agent/agent_names.txt; listing core/src/agent/control.rs:383-395,361-381</code></td></tr>
 <tr><th scope="row">openclaw</th><td><code translate="no">sessions/session-key-utils.ts:108-126; agents-list-tool.ts:37; child restriction pi-tools.policy.ts:45</code></td></tr>

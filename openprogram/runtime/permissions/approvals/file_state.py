@@ -36,11 +36,14 @@ def capture(tool: str, args: dict) -> dict[str, dict]:
         paths = [resolve_path(str(args['file_path']))[0]]
         if tool == 'write' and args.get('source_path'):
             paths.append(resolve_path(str(args['source_path']))[0])
-    elif tool == 'apply_patch':
-        from openprogram.programs.tools.files.apply_patch import _parse_sections
-        paths = [path for _, path, _ in _parse_sections(str(args['patch']))]
     else:
-        return {}
+        # A tool that writes files its arguments name in its own way (a
+        # patch) lists them in its profile.
+        from openprogram.runtime.permissions import tool_profiles
+        found = tool_profiles.profile(tool)
+        if found is None or found.written_paths is None:
+            return {}
+        paths = found.written_paths(args)
     return {os.path.abspath(path): fingerprint(path) for path in paths}
 
 

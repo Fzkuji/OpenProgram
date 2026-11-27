@@ -18,11 +18,9 @@ KnownApi = Literal[
     "mistral-conversations",
     "openai-responses",
     "azure-openai-responses",
-    "openai-codex",
     "anthropic-messages",
     "bedrock-converse-stream",
     "google-generative-ai",
-    "gemini-subscription",
 ]
 Api = str  # KnownApi or arbitrary string
 
@@ -30,11 +28,8 @@ KnownProvider = Literal[
     "amazon-bedrock",
     "anthropic",
     "google",
-    "gemini-subscription",
     "openai",
     "azure-openai-responses",
-    "openai-codex",
-    "github-copilot",
     "xai",
     "groq",
     "cerebras",

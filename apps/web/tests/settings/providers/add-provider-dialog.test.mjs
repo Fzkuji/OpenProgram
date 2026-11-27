@@ -265,12 +265,12 @@ describe("other ways in", () => {
 
   test("sign-in providers sign in, then pick a model", async () => {
     fakeFetch({
-      "GET /api/providers/openai-codex/models": { models: [{ id: "gpt-5.5", enabled: true, tools: true }, { id: "gpt-5.5-mini", enabled: false }] },
+      "GET /api/providers/opencode-go/models": { models: [{ id: "gpt-5.5", enabled: true, tools: true }, { id: "gpt-5.5-mini", enabled: false }] },
       "GET /api/providers/list": { providers: CATALOGUE },
     });
     const { view } = await openDialog();
-    await view.act(() => view.container.querySelector('button[data-provider="openai-codex"]').click());
-    await view.act(() => view.container.querySelector('[data-login="openai-codex"]').click());
+    await view.act(() => view.container.querySelector('button[data-provider="opencode-go"]').click());
+    await view.act(() => view.container.querySelector('[data-login="opencode-go"]').click());
     await settle(view);
     assert.equal(step(view), "model");
     assert.deepEqual([...view.container.querySelectorAll('[role="radio"]')].map((r) => r.dataset.value), ["gpt-5.5", "gpt-5.5-mini"]);

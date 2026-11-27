@@ -6,7 +6,7 @@ import pytest
 from openprogram.models.providers.types import AgentToolResult, TextContent
 from openprogram.programs import _is_available_agent_tool, get_agent_tool
 from openprogram.programs._authoring import guides
-from openprogram.programs._host.execution import ToolReturn
+from openprogram.runtime.agent.tool_execution import ToolReturn
 from openprogram.programs.tools.computer_use.computer_use.routing import dispatch
 from openprogram.programs.tools.computer_use.computer_use import errors, tool
 from openprogram.programs.tools.computer_use.computer_use.contract import Call

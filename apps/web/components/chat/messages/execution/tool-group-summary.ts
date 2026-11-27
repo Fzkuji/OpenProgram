@@ -348,7 +348,19 @@ function single(bucket: Bucket): string | undefined {
   return bucket.anonymous === 0 && bucket.targets.size === 1 ? [...bucket.targets][0] : undefined;
 }
 
+/** A tool's name as words: an MCP tool's ``mcp__server__tool`` is its
+ *  tool ("update plan"), with its server before a one-word tool
+ *  ("Claude Browser batch" rather than "batch"). */
+export function toolWords(name: string): string {
+  const words = (part: string) => part.replace(/[_-]+/g, " ").trim();
+  const mcp = /^mcp__(.+?)__(.+)$/.exec(name);
+  if (!mcp) return name.includes("__") ? words(name) : name;
+  const tool = words(mcp[2]);
+  return tool.includes(" ") ? tool : `${words(mcp[1])} ${tool}`;
+}
+
 function display(kind: Kind, target: string): string {
+  if (kind === "other") return toolWords(target);
   if (kind === "fetch") return host(target);
   if (kind === "search") return quote(target);
   if (kind === "create" || kind === "edit" || kind === "delete" || kind === "read") return basename(target);

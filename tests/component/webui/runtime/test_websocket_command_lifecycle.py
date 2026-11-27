@@ -11,7 +11,8 @@ import pytest
 from starlette.websockets import WebSocketDisconnect
 
 from openprogram.runtime.permissions.authority import owner_authority
-from openprogram.programs.tools.interaction.ask_user import ask_user, set_ask_user
+from openprogram.programs.tools.interaction.ask_user import ask_user
+from openprogram.runtime.agent.questions import set_ask_user
 from openprogram.interfaces.server import server
 from openprogram.interfaces.server.server_runtime import session_persistence
 from openprogram.interfaces.server.ws_errors import operation_error_frame

@@ -30,7 +30,7 @@ class DispatchOperations:
             if owner_pid != os.getpid():
                 return False
         try:
-            from openprogram.operations.worker.lock import is_held_by
+            from openprogram.host.worker.lock import is_held_by
             return is_held_by(owner_pid)
         except Exception:
             return False

@@ -127,8 +127,8 @@ class JobAgentInputV1(_JobAgentInputSchema):
             request["detached"] = True
         # Resolve the destination before permission defaults: the page may
         # be on a different branch from the delivered message.
-        from openprogram.runtime.conversation.session_settings.branch_config import freeze_branch_request
-        request = freeze_branch_request(request)
+        from openprogram.runtime import conversation_link
+        request = conversation_link.freeze_branch_request(request)
         if permission_snapshot is not None:
             from openprogram.runtime.permissions.modes import VALID_PERMISSION
             if (job.source not in {"agent_spawn", "self_update_replan", "self_update_continue"}
@@ -145,8 +145,7 @@ class JobAgentInputV1(_JobAgentInputSchema):
         elif owner_work and job.parent_session_id:
             # No live parent to inherit from (a message delivered once its
             # target went idle): the turn runs as one sent in that conversation.
-            from openprogram.runtime.conversation.session_settings.session_config import conversation_permission
-            permission = conversation_permission(job.parent_session_id, **(
+            permission = conversation_link.conversation_permission(job.parent_session_id, **(
                 {"branch_id": request["branch_id"]} if request.get("branch_id") else {}
             ))
             request["permission_mode"] = permission["permission_mode"]

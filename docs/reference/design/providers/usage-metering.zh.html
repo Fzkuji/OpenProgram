@@ -29,7 +29,7 @@
 <p class="note">放在 <code translate="no">models/</code> 下，它位于 Programs 和运行时之下，所以各层都能依赖它而不成环。</p>
 
 <h2>采集点</h2>
-<p><code translate="no">models/providers/streaming/stream.py</code> 包住 <code translate="no">stream()</code> 和 <code translate="no">stream_simple()</code>，<code translate="no">complete_simple()</code> 也经过它们。经过这里和被记账是同一件事。记忆、压缩摘要、<code translate="no">mixture_of_agents</code> 和 Agent 方法子进程都走同一点，各自带 <code translate="no">usage_scope</code>。</p>
+<p><code translate="no">models/providers/streaming/stream.py</code> 包住 <code translate="no">stream()</code> 和 <code translate="no">stream_simple()</code>，<code translate="no">complete_simple()</code> 也经过它们。经过这里和被记账是同一件事。用量记账在 providers 之上，所以 <code translate="no">stream.py</code> 通过 <code translate="no">models/providers/usage_port.py</code> 调用记账，这个端口由 models 层加载时填好。记忆、压缩摘要、<code translate="no">mixture_of_agents</code> 和 Agent 方法子进程都走同一点，各自带 <code translate="no">usage_scope</code>。</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">规则</th><th scope="col">原因</th></tr></thead>
 <tbody>

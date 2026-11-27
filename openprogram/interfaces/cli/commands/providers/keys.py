@@ -2,7 +2,7 @@
 
 The same list the Providers page shows: an ordered list per provider, used
 in order, in turn, or least used first. Every verb changes it through
-:mod:`openprogram.models.auth.manage`, which the web routes use too, and
+:mod:`openprogram.models.listing.manage`, which the web routes use too, and
 names a credential by its id, its name, or its 1-based place in ``list``.
 """
 from __future__ import annotations
@@ -15,7 +15,7 @@ import logging
 import sys
 from typing import Optional
 
-from openprogram.models.auth import manage
+from openprogram.models.listing import manage
 from openprogram.models.auth.account.aliases import resolve as _canonical
 from openprogram.models.auth.store import get_store
 from openprogram.models.auth.types import AuthError, Credential
@@ -197,7 +197,7 @@ def _verdict(check: Optional[dict]) -> str:
 def _after_sign_in(provider: str, saved: str) -> None:
     """A new sign-in turns on the provider's default models and reads its model list."""
     try:
-        from openprogram.models.auth.login.login_seed_models import enable_default_models_on_login
+        from openprogram.models.providers.settings.login_seed_models import enable_default_models_on_login
         written = enable_default_models_on_login(provider)
         if written:
             print(f"  turned on models: {', '.join(written)}")
@@ -254,11 +254,6 @@ def _cmd_add(provider: str, *, name: str = "", method: Optional[str] = None,
 
 def _sign_in(provider: str, method: str, *, api_key: Optional[str]) -> Credential:
     """Run a sign-in through the shared login driver, in this terminal."""
-    if method == "pkce_oauth":
-        title, body = _SIGN_IN_NOTES.get(provider, ("", []))
-        if body:
-            from .tui import print_note
-            print_note(title, body)
     from openprogram.models.auth.login.login_driver import run_login
     return asyncio.run(run_login(provider, method, _TerminalLoginUi(), api_key=api_key, source="cli"))
 
@@ -284,19 +279,6 @@ class _TerminalLoginUi:
 
     async def show_code(self, user_code: str, verification_uri: str) -> None:
         print(f"\nGo to {verification_uri} and enter code: {user_code}\n", flush=True)
-
-
-_SIGN_IN_NOTES: dict[str, tuple[str, list[str]]] = {
-    "openai-codex": (
-        "Sign in with ChatGPT",
-        [
-            "A browser window opens for OpenAI sign-in; the callback finishes it.",
-            "Needs a ChatGPT Plus / Pro / Team / Enterprise account.",
-            "The callback listens on localhost:1455; close other codex processes",
-            "that hold that port.",
-        ],
-    ),
-}
 
 
 def _cmd_replace(provider: str, name: str, api_key: Optional[str], api_key_stdin: bool) -> int:
@@ -420,8 +402,8 @@ def add_key_arguments(p: argparse.ArgumentParser) -> None:
     """The options ``keys <p> add`` and ``login <p>`` share."""
     p.add_argument("--name", default=None, help="A name to tell this key or sign-in apart")
     p.add_argument("--method", default=None,
-                   help="Way to connect (api_key, pkce_oauth, device_code, import_from_cli, "
-                        "paste_token); omit it to use the recommended one")
+                   help="Way to connect (api_key, import_from_cli); "
+                        "omit it to use the recommended one")
     p.add_argument("--api-key", default=None, dest="api_key",
                    help="The API key, without a prompt. It stays in shell history; "
                         "prefer --api-key-stdin")
@@ -437,7 +419,7 @@ def build_keys_parser(sub: argparse._SubParsersAction) -> None:
         "keys", help="List and manage a provider's keys and sign-ins",
         description="A provider's keys and sign-ins form one ordered list. Name one by its "
                     "name, its id, or its number in `list`.")
-    p_keys.add_argument("provider", help="Provider id (e.g. openai, anthropic, openai-codex)")
+    p_keys.add_argument("provider", help="Provider id (e.g. openai, anthropic, deepseek)")
     ks = p_keys.add_subparsers(dest="keys_cmd", metavar="verb")
 
     p_list = ks.add_parser("list", help="Show the provider's keys and sign-ins in order")

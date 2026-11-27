@@ -236,7 +236,7 @@ usage: 2 min 10 s · 18 tool calls · 41.2k tokens · $0.084
 <tr><th scope="row">排在</th><td><code translate="no">&lt;session-repo&gt;/inbox.json</code>；条目也随 Job 保存（<code translate="no">Job.deferred_inbox</code>），Worker 在写入前后崩溃都只重建一次</td></tr>
 <tr><th scope="row">取出</th><td>回合结束时和 2 秒扫描时。提交后才删除；已经离开队列的 Job 只删除条目（<a href="../execution/async-job-lifecycle.zh.html#handoffs">崩溃时的交接</a>）</td></tr>
 <tr><th scope="row">满、重复</th><td>50 条，最旧的被丢弃并通知其发送方；同一发送方 60 秒内的相同文字被拒绝，其 Job 取消</td></tr>
-<tr><th scope="row">发送方启动了目标</th><td>发送回合启动、仍在运行的助手（同一对话、同一父 Job）在下一个工具边界以 steer 收到消息（<code translate="no">send_message/steer.py</code>），和人的“添加指令”一样随执行保存，并作为 Agent 输入写进它的分支。收件箱条目也会写入，标上 steer 的命令 id：回合没取到的 steer 在回合结束时送达，取到的就删除。</td></tr>
+<tr><th scope="row">发送方启动了目标</th><td>发送回合启动、仍在运行的助手（同一对话、同一父 Job）在下一个工具边界以 steer 收到消息（<code translate="no">peer_agents/steer.py</code>），和人的“添加指令”一样随执行保存，并作为 Agent 输入写进它的分支。收件箱条目也会写入，标上 steer 的命令 id：回合没取到的 steer 在回合结束时送达，取到的就删除。</td></tr>
 <tr><th scope="row">对助手“添加指令”</th><td>助手自己的回合接受 steer，所以人的指令也能送到子 Agent</td></tr>
 </tbody>
 </table>
@@ -308,7 +308,7 @@ usage: 2 min 10 s · 18 tool calls · 41.2k tokens · $0.084
 <tbody>
 <tr><th scope="row">agent 工具</th><td><code translate="no">openprogram/programs/tools/agents/agent/agent/</code></td></tr>
 <tr><th scope="row">消息、关闭、steer</th><td><code translate="no">openprogram/programs/tools/agents/send_message/</code>（<code translate="no">steer.py</code>、<code translate="no">dispatch.py</code>）</td></tr>
-<tr><th scope="row">链限制</th><td><code translate="no">openprogram/programs/tools/agents/send_message/send_message/depth.py</code></td></tr>
+<tr><th scope="row">链限制</th><td><code translate="no">openprogram/runtime/jobs/chain_budgets.py</code></td></tr>
 <tr><th scope="row">保存的 Agent 设置、Markdown Agent</th><td><code translate="no">openprogram/runtime/agent_registry/delegation.py</code>、<code translate="no">markdown_imports.py</code></td></tr>
 <tr><th scope="row">合并等待</th><td><code translate="no">openprogram/state/worktree/manager.py</code>、<code translate="no">runtime/jobs/execution_hooks.py</code></td></tr>
 <tr><th scope="row">权限交集、询问路线</th><td><code translate="no">openprogram/runtime/permissions/delegation.py</code>、<code translate="no">lifecycle.py</code>（<code translate="no">spawn_question_route</code>）、<code translate="no">runtime/jobs/input.py</code></td></tr>

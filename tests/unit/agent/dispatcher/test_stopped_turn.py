@@ -171,7 +171,7 @@ def test_a_stopped_reply_is_the_same_in_the_stream_the_result_frame_the_row_and_
 
 def test_a_stopped_reply_with_a_file_keeps_its_text_before_the_file(db, monkeypatch) -> None:
     from openprogram.programs.tools.interaction import send_file
-    from openprogram.state.attachments import find_markers
+    from openprogram.state.attachment_markers import find_markers
 
     sent = {"name": "notes.txt", "path": "/work/notes.txt", "size": 3}
     monkeypatch.setattr(send_file, "outbound_files", lambda tool_calls, session_id: [dict(sent)])

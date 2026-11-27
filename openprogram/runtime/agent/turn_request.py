@@ -292,7 +292,7 @@ def inner_turn_request(source: str) -> Optional[Any]:
     outer = get_turn_request()
     if outer is None:
         return None
-    from openprogram.runtime.permissions.authority import runtime_authority
+    from openprogram.state.authority import runtime_authority
     from openprogram.runtime.permissions.identity import inherited_automation
 
     authority = runtime_authority(outer, source)

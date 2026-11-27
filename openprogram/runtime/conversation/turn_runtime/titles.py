@@ -115,7 +115,7 @@ def _strip_attachment_markers(text: str) -> str:
     closing bracket survives; truncating at 50 chars can sever it, so
     we clean first, then truncate.
     """
-    from openprogram.state import attachments as _attachments
+    from openprogram.state import attachment_markers as _attachments
 
     t = re.sub(r"<attachment-preview[^>]*>.*?</attachment-preview>", "", text, flags=re.S)
     t = _attachments.strip_markers(t)

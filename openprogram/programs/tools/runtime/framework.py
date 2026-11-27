@@ -21,7 +21,7 @@ def framework(action: str = 'describe', operation: str = '', arguments: dict | N
     Tool approval and owner/backend/sandbox restrictions still apply.
     """
     from openprogram.programs._host.framework.client import call
-    from openprogram.programs import ToolReturn
+    from openprogram.programs._host.runtime import ToolReturn
     try:
         result = call(action, operation, arguments)
         return ToolReturn(json_data=result, is_error=result.get('ok') is False)

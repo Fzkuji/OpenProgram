@@ -284,7 +284,7 @@ async def stream_simple(
     validate_input_modalities(model, context)
 
     # The SDK's own retries are off: the credential layer
-    # (``models/auth/selection.py``) and the stream's re-send see every
+    # (``models/providers/streaming/credential_failover.py``) and the stream's re-send see every
     # failure once.
     sdk_max_retries = 0
 
@@ -307,16 +307,6 @@ async def stream_simple(
     if opts.get("supports_idempotency_key") and opts.get("idempotency_key"):
         extra_headers["Idempotency-Key"] = opts["idempotency_key"]
 
-    # SuperGrok / X Premium+ OAuth is not an api.x.ai key. Force the
-    # official CLI chat proxy + identity headers even if an older
-    # login seeded models at api.x.ai.
-    if model.provider == "xai-subscription":
-        from openprogram.models.providers.adapters.xai_subscription.headers import (
-            CLI_CHAT_PROXY_BASE_URL,
-            grok_cli_headers,
-        )
-        base_url = CLI_CHAT_PROXY_BASE_URL
-        extra_headers.update(grok_cli_headers(model.id))
 
     request_headers = {}
     from ...catalog.local import is_local_provider
@@ -497,7 +487,7 @@ async def stream_simple(
                     label=model.provider,
                 ) as stream:
                     # Per-minute headroom (``x-ratelimit-*``) the reply carries.
-                    from openprogram.models.usage.quota import observe_headers
+                    from openprogram.models.providers.usage_port import observe_headers
                     observe_headers(
                         model.provider, _client_api_key,
                         getattr(getattr(stream, "response", None), "headers", None),
@@ -674,7 +664,7 @@ async def stream_simple(
                 )
                 # A status the provider answered with (a limit, a refusal, a
                 # server error) is the credential layer's to wait out, retry
-                # or switch (models/auth/selection.py); this loop re-sends
+                # or switch (models/providers/streaming/credential_failover.py); this loop re-sends
                 # only what failed in transport.
                 answered = getattr(e, "status_code", None) is not None
                 if committed or not retryable or answered or _user_cancelled():

@@ -33,7 +33,7 @@ installLoader({
     "/components/chat/top-bar/chips/model-mark.tsx": `${passthrough} export const ModelMark = ({ provider }) => h('i', { 'data-mark': provider });`,
     "/components/chat/top-bar/menus/agent-selector.tsx": `${passthrough} export const PICKER_PANEL = ''; export const AgentSelector = ({ onPick }) => h('button', { 'data-full-picker': '', onClick: () => onPick('openrouter', 'or-9') }, 'all models');`,
     "/lib/session-store/index.ts": [
-      "const state = { agentSettingsBySession: { s1: { chat: { provider: 'openai-codex', model: 'openai-codex:gpt-6.1-sol' } } }, tokens: { s1: { total_used: 90000 } } };",
+      "const state = { agentSettingsBySession: { s1: { chat: { provider: 'opencode-go', model: 'opencode-go:gpt-6.1-sol' } } }, tokens: { s1: { total_used: 90000 } } };",
       "export const useSessionStore = (select) => select(state);",
     ].join("\n"),
     "/lib/models/fallback.ts": [
@@ -59,13 +59,13 @@ const NOW = Date.now() / 1000;
 const reset = new Date(); reset.setHours(23, 59, 0, 0);
 const RESET = reset.getTime() / 1000 > NOW ? reset.getTime() / 1000 : NOW + 60;
 const codexCause = {
-  cause: "quota_exhausted", http_status: 429, provider: "openai-codex", limit: "5h", resets_at: RESET, account: null,
+  cause: "quota_exhausted", http_status: 429, provider: "opencode-go", limit: "5h", resets_at: RESET, account: null,
   other_limits: [{ label: "Week", left_fraction: 0.71, resets_at: null }],
 };
 const kimiCause = { cause: "quota_exhausted", http_status: 402, provider: "kimi", limit: null, resets_at: null, account: null, other_limits: [] };
 const picker = {
   models: [
-    { id: "gpt-6.1-sol", name: "GPT-6.1-Sol", provider: "openai-codex", providerLabel: "OpenAI Codex" },
+    { id: "gpt-6.1-sol", name: "GPT-6.1-Sol", provider: "opencode-go", providerLabel: "OpenCode Go" },
     { id: "kimi-k2", name: "Kimi K2", provider: "kimi", providerLabel: "Kimi" },
   ],
   providers: {
@@ -81,7 +81,7 @@ globalThis.__queries = { [JSON.stringify(S.PICKER_QUERY_KEY)]: picker };
 
 test("the title names the provider and the limit; the line says when it resets and what else is left", () => {
   const html = renderToStaticMarkup(h(Fragment, null, h(QuotaIcon, { cause: codexCause }), h(QuotaCardHead, { cause: codexCause })));
-  assert.match(html, /data-quota-title="true">OpenAI Codex 5h limit reached</);
+  assert.match(html, /data-quota-title="true">OpenCode Go 5h limit reached</);
   assert.match(html, /data-quota-detail="true">Resets \d\d:\d\d · Week 71% left</);
   assert.match(html, /color:var\(--warning-soft\)/);
 });
@@ -106,7 +106,7 @@ test("Continue with the suggestion re-sends this turn with that model, and nothi
   const view = await render(h(QuotaActions, { msg: { id: "reply-1" }, cause: codexCause, sessionId: "s1" }));
   // The offer is asked for the model that failed and the conversation's size.
   const asked = globalThis.__asked.find((q) => q.key.startsWith('["provider-fallback"'));
-  assert.equal(asked.key, '["provider-fallback","openai-codex","gpt-6.1-sol",90]');
+  assert.equal(asked.key, '["provider-fallback","opencode-go","gpt-6.1-sol",90]');
   assert.deepEqual(globalThis.__resent, []);
   const buttons = [...view.container.querySelectorAll("button")].map((b) => b.textContent);
   assert.deepEqual(buttons.filter((t) => /Continue|Other|Wait/.test(t)), ["Continue with deepseek-v4", "Other model…", "Wait"]);

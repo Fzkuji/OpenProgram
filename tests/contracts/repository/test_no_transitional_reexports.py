@@ -52,8 +52,10 @@ MOVED: dict[str, tuple[str, ...]] = {
     "openprogram.runtime.permissions.authority": (
         "AuthorityDecision", "AuthorityTier", "TIER_CAPABILITIES", "MESSAGE_SCHEMA_FIELD",
         "MESSAGE_SCHEMA_VERSION", "decide_capability", "has_capability",
-        "is_legacy_message", "stamp_schema",
+        "is_legacy_message", "stamp_schema", "runtime_authority", "render_model_input",
+        "render_model_input_from", "render_outside_input", "unwrap_owner_input",
     ),
+    "openprogram.runtime.context.prompt_assembly.turn_context": ("interruption_note",),
     "openprogram.runtime.context.commit": (
         "ContextItem", "ContextCommit", "CURRENT_RULES_VERSION", "init_schema",
         "save_commit", "load_commit", "load_latest_commit", "load_commit_for_head",

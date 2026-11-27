@@ -56,7 +56,7 @@ def _big_tool(rooms: list[int]) -> AgentTool:
 
 
 def test_a_small_window_bounds_the_stored_result_and_keeps_the_whole_text(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr("openprogram.programs._host.runtime._tool_results_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.runtime.agent.tool_execution._tool_results_dir", lambda: tmp_path)
     rooms: list[int] = []
     text = _call(_big_tool(rooms), context_window=32_768)
     assert rooms == [9_830]
@@ -67,7 +67,7 @@ def test_a_small_window_bounds_the_stored_result_and_keeps_the_whole_text(tmp_pa
 
 
 def test_a_large_window_keeps_the_default_weight(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr("openprogram.programs._host.runtime._tool_results_dir", lambda: tmp_path)
+    monkeypatch.setattr("openprogram.runtime.agent.tool_execution._tool_results_dir", lambda: tmp_path)
     rooms: list[int] = []
     text = _call(_big_tool(rooms), context_window=500_000)
     cap = spill.DEFAULT_TOOL_OUTPUT_WEIGHT

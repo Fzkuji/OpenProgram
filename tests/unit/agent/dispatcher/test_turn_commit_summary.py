@@ -16,7 +16,7 @@ def commit_db(monkeypatch):
     )
     monkeypatch.setattr("openprogram.state.store.default_store", lambda: db)
     monkeypatch.setattr("openprogram.state.store.session.context_commit.store.load_commit_for_head", lambda *_: None)
-    monkeypatch.setattr("openprogram.state.store.project.project_commit.commit_turn_changes", lambda *_a, **_kw: None)
+    monkeypatch.setattr("openprogram.state.project_commit.commit_turn_changes", lambda *_a, **_kw: None)
     for name in ("_maybe_auto_title", "maybe_auto_name_branch", "persist_turn_file_summary",
                  "commit_turn_to_shadow_git", "_evict_old_snapshots"):
         monkeypatch.setattr(finalize, name, lambda *_a, **_kw: None)

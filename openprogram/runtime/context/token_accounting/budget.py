@@ -175,8 +175,8 @@ def estimate_tools_breakdown(tools: list[Any]) -> list[dict]:
     BudgetAllocator._estimate_tools 共用同一条计价规则）。
     返回 [{"name","tokens","deferred"}, ...]，顺序同入参。"""
     try:
-        from openprogram.programs import split_tools_for_dispatch
-        provider_tools, _catalog = split_tools_for_dispatch(tools)
+        from openprogram.runtime import program_host
+        provider_tools, _catalog = program_host.host().split_tools_for_dispatch(tools)
         resident_ids = {id(tool) for tool in provider_tools}
     except Exception:
         resident_ids = {

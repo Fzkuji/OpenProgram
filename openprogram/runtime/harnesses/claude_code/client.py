@@ -6,13 +6,17 @@ JSON lines on stdin (the person's message, and control requests such as
 session's ``system`` / ``stream_event`` / ``assistant`` / ``user`` /
 ``result`` messages, and its own control requests (``can_use_tool`` when
 ``--permission-prompt-tool stdio`` sends permission prompts here). This is
-the protocol Anthropic's Agent SDK speaks to the same program. A conversation
-keeps one process (``Pool``) and sends each turn into it; model, effort and
-permission mode change in the running process by control requests.
+the protocol Anthropic's Agent SDK speaks to the same program. A conversation's
+turn runs in one process (``Pool``), closed when the turn ends so the Claude app
+can go on with the session; model, effort and permission mode change in the
+running process by control requests.
 
 Which Claude Code: ``OPENPROGRAM_CLAUDE_BINARY``, else the newest one the
 Claude desktop app installed for itself, else ``~/.claude/local/claude``,
-``~/.local/bin/claude`` or ``claude`` on PATH.
+``~/.local/bin/claude`` or ``claude`` on PATH. All of them share the one
+sign-in ``claude auth login`` saves. When Claude Code has none, the Anthropic
+API key set in OpenProgram's Model Services is handed to it
+(``ANTHROPIC_API_KEY``), so its turns are billed to that API account.
 """
 from __future__ import annotations
 
@@ -28,7 +32,7 @@ import threading
 import time
 from collections import deque
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 _log = logging.getLogger(__name__)
 
@@ -80,6 +84,60 @@ def binary_version(binary: str) -> str:
         return ""
     match = re.search(r"\d+\.\d+\.\d+", out or "")
     return match.group(0) if match else ""
+
+
+def settings_key() -> Optional[str]:
+    """The Anthropic API key set in OpenProgram's Model Services, or None.
+
+    Only an API key: Anthropic's sign-in tokens are never handed on."""
+    try:
+        from openprogram.models.auth.resolver import resolve_store_api_key_sync
+        return resolve_store_api_key_sync("anthropic") or None
+    except Exception as exc:  # no traceback: it could carry key material
+        _log.debug("no Anthropic key for Claude Code (%s)", type(exc).__name__)
+        return None
+
+
+def own_sign_in(account: dict) -> bool:
+    """Whether Claude Code reports a sign-in of its own (its ``initialize`` answer's
+    ``account``): a saved login, an API key it was given, or a cloud provider."""
+    return (str(account.get("tokenSource") or "none") != "none"
+            or str(account.get("apiKeySource") or "none") != "none"
+            or str(account.get("apiProvider") or "firstParty") != "firstParty")
+
+
+def saved_login() -> bool:
+    """Whether ``claude auth login`` has a login saved now: the keychain item's presence on
+    macOS (its value is never read), else the credentials file's."""
+    import hashlib
+    import sys
+    if sys.platform == "darwin":
+        names = ["Claude Code-credentials"]
+        config_dir = os.environ.get("CLAUDE_CONFIG_DIR")
+        if config_dir:  # Claude Code names a separate config folder's item by its hash
+            names.insert(0, "Claude Code-credentials-" + hashlib.sha256(config_dir.encode()).hexdigest()[:8])
+        for name in names:
+            try:
+                if subprocess.run(["security", "find-generic-password", "-s", name],
+                                  capture_output=True, timeout=5).returncode == 0:
+                    return True
+            except (OSError, subprocess.SubprocessError):
+                return False
+        return False
+    home = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
+    return (home / ".credentials.json").is_file()
+
+
+def sign_in_now(other_sign_in: bool) -> tuple[bool, Optional[str]]:
+    """Whether Claude Code can sign in now, and the Model Services key to hand it, if any.
+
+    ``other_sign_in``: it reported a sign-in that is no saved login (an API key or token
+    in its environment or settings, a cloud provider), as last read. A saved login is
+    checked now, so a ``claude auth login`` since is never overridden by the key."""
+    if other_sign_in or saved_login():
+        return True, None
+    key = settings_key()
+    return key is not None, key
 
 
 def child_env(extra: Optional[dict[str, str]] = None) -> dict[str, str]:
@@ -261,8 +319,12 @@ def read_listing(binary: str) -> dict:
 
 # -- one process per conversation -------------------------------------------
 
-#: How long an idle conversation keeps its Claude Code process.
-IDLE_SECONDS = 30 * 60
+#: How long a conversation keeps its Claude Code process after a turn: none. A
+#: running one holds the session in ``~/.claude/sessions``, and the Claude app and
+#: ``claude --resume`` refuse a session another process holds.
+IDLE_SECONDS = 0.0
+#: How long a process closed at its turn's end may take to finish writing before it is ended.
+TURN_END_GRACE_SECONDS = 15.0
 
 
 class Live:
@@ -281,10 +343,15 @@ class Live:
         self.mode: Optional[str] = None
         # A turn ran in a process of its own meanwhile: this one's session is behind.
         self.behind = False
+        # The environment it was started with beyond OpenProgram's (the Model Services key).
+        self.env: Optional[dict[str, str]] = None
+        # On OpenProgram's model: the user's settings.json model before it started.
+        self.user_model: Optional[tuple] = None
 
 
 class Pool:
-    """Each conversation's Claude Code process, closed when idle.
+    """Each conversation's Claude Code process, closed when idle (``idle_seconds``; 0
+    closes it as soon as its turn ends).
 
     A process is known by the session it holds, its folder and its agent;
     the model, effort and permission mode change in the running process."""
@@ -293,12 +360,46 @@ class Pool:
         self.idle_seconds = idle_seconds
         self._entries: dict[str, Live] = {}
         self._loose: set[Live] = set()  # started for one turn while another held the branch
+        # A conversation's process closing after its turn. The next start waits for it: a
+        # session another process still holds is resumed as a copy under a new id.
+        self._closing: dict[str, set[threading.Thread]] = {}
         self._lock = threading.Lock()
         self._reaper: Optional[threading.Thread] = None
 
+    def _close_later(self, key: str, close: Callable[[], None]) -> None:
+        """Run ``close`` off the turn's path, recorded under ``key`` until it is done so the
+        conversation's next start waits for it. Called under the lock."""
+        def run() -> None:
+            try:
+                close()
+            finally:
+                with self._lock:
+                    closers = self._closing.get(key)
+                    if closers is not None:
+                        closers.discard(thread)
+                        if not closers:
+                            self._closing.pop(key, None)
+
+        thread = threading.Thread(target=run, name="claude-process-close", daemon=True)
+        self._closing.setdefault(key, set()).add(thread)
+        thread.start()
+
+    def wait_closed(self, key: str, cancel: Optional[threading.Event] = None) -> None:
+        """Wait for the conversation's previous processes to finish closing: a session
+        another process still holds cannot be taken over. Ends early on ``cancel``."""
+        deadline = time.monotonic() + TURN_END_GRACE_SECONDS + 10
+        while True:
+            with self._lock:
+                closers = list(self._closing.get(key, ()))
+            if not closers or time.monotonic() >= deadline or (cancel is not None and cancel.is_set()):
+                return
+            closers[0].join(0.25)
+
     def get(self, key: str, identity: tuple) -> Optional[Live]:
         """The conversation's idle process when it holds ``identity``; an idle one holding
-        another is stopped. A process running a turn is never shared or stopped."""
+        another is stopped. A process running a turn is never shared or stopped. Waits
+        first for the conversation's last processes to finish closing."""
+        self.wait_closed(key)
         with self._lock:
             live = self._entries.get(key)
             if live is None or live.busy:
@@ -321,7 +422,7 @@ class Pool:
                 self._loose.add(live)
                 return
             self._entries[key] = live
-            if self._reaper is None or not self._reaper.is_alive():
+            if self.idle_seconds > 0 and (self._reaper is None or not self._reaper.is_alive()):
                 self._reaper = threading.Thread(target=self._reap_loop, name="claude-pool-reaper", daemon=True)
                 self._reaper.start()
         if current is not None:
@@ -337,13 +438,14 @@ class Pool:
                     current.behind = True
             self._loose.discard(live)
             kept = self._entries.get(key) is live
-            if kept and (broken or not live.process.alive):
+            if kept and (broken or not live.process.alive or self.idle_seconds <= 0):
                 self._entries.pop(key, None)
                 kept = False
+            if not kept and not broken:
+                # Off the turn's path, with time to finish writing the session's transcript.
+                self._close_later(key, lambda: live.process.close(wait=TURN_END_GRACE_SECONDS))
         if broken:
             live.process.kill()
-        elif not kept:
-            live.process.close()
 
     def close_all(self) -> None:
         with self._lock:
@@ -360,9 +462,8 @@ class Pool:
             with self._lock:
                 idle = [key for key, live in self._entries.items()
                         if live.busy == 0 and now - live.used >= self.idle_seconds]
-                stale = [self._entries.pop(key) for key in idle]
-            for live in stale:
-                live.process.close()
+                for key in idle:
+                    self._close_later(key, self._entries.pop(key).process.close)
 
 
 _pool: Optional[Pool] = None

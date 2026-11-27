@@ -1,9 +1,9 @@
 <title>Publishing source to GitHub</title>
-<meta name="description" content="The two local lines, the daily sync that squashes dev onto main, releases started by a tag, and the hooks that keep the working history local.">
+<meta name="description" content="The two local lines, the daily sync that squashes dev onto main and updates latest.json, releases that announce themselves through channel.json and a GitHub Release, and the hooks that keep the working history local.">
 <h1>Publishing source to GitHub</h1>
 
 <figure>
-<svg class="fig-wide" viewBox="0 0 680 372" role="img" aria-label="Three rows. dev takes every commit made with git commit, in the main checkout or a worktree, and feeds the development instance on port 18200. About once a day, scripts/publishing/publish-github.sh -m squashes the current dev tree into one commit on main. main has its own history, one commit per sync, and is the only line GitHub carries; pushing it starts no workflow. Now and then a sync also gets a tag with --tag vX.Y.Z; the tag starts the Release workflow, which publishes signed Apps as a GitHub Release. The stable App on port 18100 is that Release and updates to the next one from inside the App. No dev commit is an ancestor of main and the lines never merge.">
+<svg class="fig-wide" viewBox="0 0 680 372" role="img" aria-label="Three rows. dev takes every commit made with git commit, in the main checkout or a worktree, and feeds the development instance on port 18200. About once a day, scripts/publishing/publish-github.sh -m squashes the current dev tree into one commit on main and points latest.json at it, which notifies nobody. main has its own history, one commit per sync, and is the only line GitHub carries; pushing it starts no workflow. Now and then a sync is a release with --tag: channel.json announces it to every install and it gets a GitHub Release. A vX.Y.0 release also dispatches the Release workflow, which builds the signed installers; a vX.Y.Z or vX.Y.Z.W release is code only. The stable App on port 18100 updates to each release from inside the App. No dev commit is an ancestor of main and the lines never merge.">
   <defs>
     <marker id="p-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker>
   </defs>
@@ -22,16 +22,16 @@
 
   <text class="t-big" translate="no" x="0" y="164">main</text>
   <text class="t-soft" x="0" y="188">One commit per sync</text>
-  <text class="t-soft" x="0" y="208">GitHub; a push runs nothing</text>
+  <text class="t-soft" x="0" y="208">GitHub; latest.json, nobody told</text>
   <line class="ln" x1="240" y1="158" x2="680" y2="158"/>
   <circle class="gate" cx="272" cy="158" r="5"/><circle class="gate" cx="392" cy="158" r="5"/><circle class="gate" cx="512" cy="158" r="5"/><circle class="gate" cx="632" cy="158" r="5"/>
 
   <line class="ln-acc" x1="512" y1="166" x2="512" y2="290" marker-end="url(#p-a)"/>
   <text class="t-cmd mid" translate="no" x="372" y="232">publish-github.sh --tag vX.Y.Z</text>
-  <text class="t-soft mid" x="372" y="252">The tag starts Release</text>
+  <text class="t-soft mid" x="372" y="252">channel.json and a release page</text>
 
   <text class="t-big" x="0" y="304">Release</text>
-  <text class="t-soft" x="0" y="328">Signed Apps on GitHub</text>
+  <text class="t-soft" x="0" y="328">X.Y.0 adds signed installers</text>
   <text class="t-soft" x="0" y="348">Stable App, 18100, updates in-app</text>
   <line class="ln" x1="300" y1="298" x2="680" y2="298"/>
   <circle class="gate" cx="512" cy="298" r="6"/>
@@ -40,13 +40,13 @@
 <ol class="flow fig-narrow">
   <li><strong translate="no">dev</strong><small>Every commit, by <code translate="no">git commit</code> in the main checkout or a worktree</small><small>Development instance, port 18200</small></li>
   <li class="via"><code translate="no">scripts/publishing/publish-github.sh -m</code>, about once a day</li>
-  <li><strong translate="no">main</strong><small>One squashed commit per sync, its own history</small><small>GitHub; pushing it starts no workflow</small></li>
+  <li><strong translate="no">main</strong><small>One squashed commit per sync, its own history</small><small>GitHub; <code translate="no">latest.json</code> follows it, nobody is told</small></li>
   <li class="via"><code translate="no">scripts/publishing/publish-github.sh --tag vX.Y.Z</code>, now and then</li>
-  <li class="flow-end"><strong>Release</strong><small>Built, signed and notarized by the Release workflow</small><small>Stable App, port 18100, updates to it in-app</small></li>
+  <li class="flow-end"><strong>Release</strong><small><code translate="no">channel.json</code> and a GitHub Release; X.Y.0 adds installers built by the Release workflow</small><small>Stable App, port 18100, updates to it in-app</small></li>
 </ol>
 </figure>
 
-<p>GitHub carries <code translate="no">main</code> and nothing else. Its history never merges with <code translate="no">dev</code>, and nothing pulls GitHub's <code translate="no">main</code> back. The stable App on this machine is the published Release, the same build every user gets.</p>
+<p>GitHub carries <code translate="no">main</code> and nothing else. Its history never merges with <code translate="no">dev</code>, and nothing pulls GitHub's <code translate="no">main</code> back. Users hear of a version only through a release. The stable App on this machine follows releases, as every user's does.</p>
 
 <h2 id="branches">Branches</h2>
 <table class="stack fixed">
@@ -59,42 +59,46 @@
 <p>A worktree branch is merged into <code translate="no">dev</code> and deleted, or deleted when abandoned. One worth keeping goes under <code translate="no">refs/archive/</code>, which no command lists as a branch and nothing pushes.</p>
 
 <h2 id="sync-and-release">Daily sync, occasional release</h2>
+<p>Both go through <code translate="no">scripts/release/publish-updates.py</code>, which builds <code translate="no">main</code> on this machine and puts its code on the rolling <code translate="no">updates</code> release under two signed pointers (<a href="automatic-updates.html">automatic updates</a>).</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Step</th><th scope="col">What happens</th></tr></thead>
 <tbody>
-<tr><th scope="row">Sync<span class="arg"><code translate="no">publish-github.sh -m "summary"</code></span></th><td>About once a day, when <code translate="no">dev</code> has new commits. GitHub gets the day's source; no workflow runs</td></tr>
-<tr><th scope="row">Release<span class="arg"><code translate="no">publish-github.sh -m "summary" --tag vX.Y.Z</code></span></th><td>When a version is ready. The sync goes up, then the tag, which starts the Release workflow</td></tr>
+<tr><th scope="row">Sync<span class="arg"><code translate="no">publish-github.sh -m "summary"</code></span></th><td>About once a day, when <code translate="no">dev</code> has new commits. GitHub gets the day's source and <code translate="no">latest.json</code> points at it, for development and testing installs. Nobody is notified; no workflow runs. When the runtime inputs changed, it is refused until the Release workflow uploaded every platform's runtime layer (<code translate="no">gh workflow run release.yml -R Fzkuji/OpenProgram --ref main -f runtime_layers_only=true</code>), and a rerun then goes through</td></tr>
+<tr><th scope="row">Feature release<span class="arg"><code translate="no">--tag vX.Y.0</code></span></th><td><code translate="no">main</code> and the tag are pushed and the Release workflow is dispatched; it builds the installers, every platform's runtime layer, every App's shell layer and the GitHub Release. App shell changes ride on these feature releases only. Once it finished, <code translate="no">publish-updates.py announce vX.Y.0</code> signs <code translate="no">channel.json</code>, which announces it to every install; it refuses until that Release, every runtime layer and a shell layer for every App it published that replaces itself are up</td></tr>
+<tr><th scope="row">Code-only release<span class="arg"><code translate="no">--tag vX.Y.Z</code>, <code translate="no">vX.Y.Z.W</code></span></th><td>The same, without a workflow: <code translate="no">publish-updates.py release-page</code> creates the GitHub Release with the notes in one call. It is not marked latest, so the Latest badge stays on the X.Y.0 release that holds the installers, which its notes link. Refused before anything moves when the runtime or shell inputs changed: that needs a feature release</td></tr>
 </tbody>
 </table>
-<p>Pushing <code translate="no">main</code> starts nothing, so a daily sync costs no Actions time:</p>
+<p>Pushing <code translate="no">main</code> or a tag starts nothing, so a sync or a code-only release costs no Actions time:</p>
 <table class="stack fixed">
 <thead><tr><th scope="col">Workflow</th><th scope="col">Starts on</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">release.yml</code></th><td>A pushed <code translate="no">v*</code> tag, or by hand with <code translate="no">tag</code>; <code translate="no">rehearse</code> builds and checks everything without publishing</td></tr>
+<tr><th scope="row"><code translate="no">release.yml</code></th><td>Only by hand with <code translate="no">tag</code>, which <code translate="no">publish-github.sh --tag vX.Y.0</code> does; <code translate="no">rehearse</code> builds and checks everything without publishing</td></tr>
 <tr><th scope="row"><code translate="no">ci.yml</code>, <code translate="no">docs-pages.yml</code>, <code translate="no">contributors-readme.yml</code>, <code translate="no">linux-release-smoke.yml</code>, <code translate="no">windows-install-smoke.yml</code></th><td>Only by hand (<code translate="no">workflow_dispatch</code>)</td></tr>
 </tbody>
 </table>
 
 <h2 id="stable-app">The stable App on this machine</h2>
-<p><code translate="no">/Applications/OpenProgram.app</code> (port 18100, data in <code translate="no">~/.openprogram</code>) is the official Release: installed once from its DMG, then updated only by the App's own <a href="automatic-updates.html">updater</a>, which downloads the next Release in the background, shows <strong>New</strong> and swaps it in on <strong>Restart to update</strong>.</p>
+<p><code translate="no">/Applications/OpenProgram.app</code> (port 18100, data in <code translate="no">~/.openprogram</code>) is the official Release: installed once from its DMG, then updated only by the App's own <a href="automatic-updates.html">updater</a>, which reads the signed <code translate="no">channel.json</code>, downloads the release it announces in the background, shows <strong>New</strong> and swaps it in on <strong>Restart to update</strong>.</p>
 <p>Nothing on this machine builds or installs it, so what the owner runs as stable is exactly what users download.</p>
 
 <h2 id="syncing">Syncing</h2>
 <pre><code translate="no">scripts/publishing/publish-github.sh -m "Sidebar run status, Launchpad, Agent cards" --dry-run
 scripts/publishing/publish-github.sh -m "Sidebar run status, Launchpad, Agent cards"
-python scripts/release/release-version.py set 1.3.0
-scripts/publishing/publish-github.sh -m "Office editor" --tag v1.3.0 --office-archive /path/to/OfficeAssets-….zip --dry-run
-scripts/publishing/publish-github.sh -m "Office editor" --tag v1.3.0 --office-archive /path/to/OfficeAssets-….zip</code></pre>
+python scripts/release/release-version.py set 1.6.0
+scripts/publishing/publish-github.sh -m "Office editor" --tag v1.6.0 --dry-run
+scripts/publishing/publish-github.sh -m "Office editor" --tag v1.6.0
+python scripts/release/release-version.py set 1.6.1
+scripts/publishing/publish-github.sh -m "Sidebar fixes" --tag v1.6.1</code></pre>
 
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Flag</th><th scope="col">Effect</th></tr></thead>
 <tbody>
 <tr><th scope="row"><code translate="no">-m "summary"</code></th><td>What the sync brings; required when the source differs from <code translate="no">main</code></td></tr>
 <tr><th scope="row"><code translate="no">--source &lt;ref&gt;</code></th><td>Squash another commit on <code translate="no">dev</code>; default <code translate="no">dev</code></td></tr>
-<tr><th scope="row"><code translate="no">--dry-run</code></th><td>Show the message and checks, change nothing</td></tr>
+<tr><th scope="row"><code translate="no">--dry-run</code></th><td>Show the message, the checks and <code translate="no">publish-updates.py plan</code>, change nothing</td></tr>
 <tr><th scope="row"><code translate="no">--no-push</code></th><td>Stop after step 7</td></tr>
-<tr><th scope="row"><code translate="no">--tag vX.Y.Z</code></th><td>Step 9; cannot be combined with <code translate="no">--no-push</code></td></tr>
-<tr><th scope="row"><code translate="no">--office-archive &lt;file&gt;</code></th><td>With <code translate="no">--tag</code>: the local copy of the <a href="#office-archive">Office archive</a>, checked against its pin and put on the tag's draft release when GitHub has none</td></tr>
+<tr><th scope="row"><code translate="no">--tag vX.Y.Z[.W]</code></th><td>Steps 9 and 10; cannot be combined with <code translate="no">--no-push</code></td></tr>
+<tr><th scope="row"><code translate="no">--office-archive &lt;file&gt;</code></th><td>With <code translate="no">--tag vX.Y.0</code>: the local copy of the <a href="#office-archive">Office archive</a>, checked against its pin and put on the tag's draft release when GitHub has none</td></tr>
 </tbody>
 </table>
 
@@ -107,23 +111,29 @@ scripts/publishing/publish-github.sh -m "Office editor" --tag v1.3.0 --office-ar
 <li>Write the message: the summary, the number of local commits since the previous sync, and a <code translate="no">Local-Source:</code> trailer.</li>
 <li>Create the commit with <code translate="no">git commit-tree</code>: the source's tree, the previous <code translate="no">main</code> as only parent (none for the first sync), author and committer the <a href="#publishing-identity">publishing identity</a>. Move <code translate="no">main</code> and record the source in <code translate="no">refs/publish/last</code>, where the next sync starts counting.</li>
 <li>Push <code translate="no">main</code> after checking GitHub's <code translate="no">main</code> is an earlier point of local <code translate="no">main</code>, so the push only fast-forwards. Refuse when any commit being uploaded has another author or committer, or its message names a retired account.</li>
-<li>Tag the pushed commit and push the tag. Before anything moves, a tag run refuses:
+<li>Hand the new <code translate="no">main</code> to <code translate="no">publish-updates.py run --commit &lt;main&gt;</code> (<code translate="no">--release vX.Y.Z</code> for a code-only tag); a feature release skips this step. A run with nothing to sync runs it again, so a failed upload heals.</li>
+<li>With <code translate="no">--tag</code>, tag the pushed commit and push the tag, then for vX.Y.0 dispatch <code translate="no">release.yml</code> with that tag and stop (<code translate="no">publish-updates.py announce</code> follows once it finished), and for any other version run <code translate="no">publish-updates.py release-page --tag</code>. Before anything moves, a tag run refuses:
 <ul>
-<li>a tag that already exists;</li>
-<li>a source where any <a href="#version-places">version place</a> says another version, naming each one;</li>
+<li>a tag that already exists, or one that is not <code translate="no">vX.Y.Z</code> or <code translate="no">vX.Y.Z.W</code>;</li>
+<li>a source where a <a href="#version-places">version place</a> disagrees, naming each one;</li>
 <li>a source without <code translate="no">.github/release-notes/vX.Y.Z.md</code> starting with <code translate="no"># OpenProgram X.Y.Z Release Notes</code>;</li>
-<li>a given <code translate="no">--office-archive</code> that is not the pinned <a href="#office-archive">Office archive</a>;</li>
-<li>a real run when neither the newest release nor the tag's draft has the archive (asked with <code translate="no">gh</code>) and no file was given. With a file, it seeds the draft instead.</li>
+<li>a release <code translate="no">publish-updates.py plan --release</code> refuses (exit 3), such as a code-only version whose runtime or shell inputs changed (for vX.Y.0, a refusal for missing runtime layers is expected and only shown, since its workflow builds them);</li>
+<li>for vX.Y.0, a given <code translate="no">--office-archive</code> that is not the pinned <a href="#office-archive">Office archive</a>, or a real run when neither the newest release nor the tag's draft has the archive (asked with <code translate="no">gh</code>) and no file was given. With a file, it seeds the draft instead.</li>
 </ul>
-<code translate="no">--dry-run</code> runs these checks offline, skipping only the question to GitHub, says whether a local archive was given and matches, and shows the tag.</li>
+<code translate="no">--dry-run</code> runs these checks without the question to GitHub, says whether a local archive was given and matches, and shows the release.</li>
 </ol>
 
 <h3 id="version-places">Version places</h3>
-<p>A release's version is written in six places. <code translate="no">python scripts/release/release-version.py set X.Y.Z</code> writes all of them, or none when one cannot be found; <code translate="no">check vX.Y.Z</code> names each that differs, and is what step 9 runs on the source commit.</p>
+<p>A version is <code translate="no">X.Y.Z</code> or <code translate="no">X.Y.Z.W</code>, written in six places:</p>
+<ul>
+<li><code translate="no">pyproject.toml</code> and <code translate="no">uv.lock</code>, the code's own, take every version.</li>
+<li>The installer places, the rest, move only with a feature release X.Y.0. Under a code-only version they keep the 3-part version of the last installer build in the same X.Y series.</li>
+</ul>
+<p><code translate="no">python scripts/release/release-version.py set VERSION</code> writes its places, or none when one cannot be found; <code translate="no">check vVERSION</code> names each that disagrees, and is what step 10 runs on the source commit.</p>
 <table class="stack fixed">
 <thead><tr><th scope="col">Place</th><th scope="col">What stops a release that missed it</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">pyproject.toml</code>, <code translate="no">apps/desktop/package.json</code></th><td><code translate="no">verify-release-version.py --tag</code> in every build job</td></tr>
+<tr><th scope="row"><code translate="no">pyproject.toml</code>, <code translate="no">apps/desktop/package.json</code></th><td><code translate="no">verify-release-version.py --tag</code> in every build job, which also refuses a tag whose places do not all agree, so the workflow builds only a feature release</td></tr>
 <tr><th scope="row"><code translate="no">scripts/release/install-release.sh</code> and <code translate="no">.ps1</code> default version</th><td>The same check</td></tr>
 <tr><th scope="row"><code translate="no">uv.lock</code>, its <code translate="no">openprogram</code> entry</th><td><code translate="no">uv run --locked</code> and <code translate="no">uv sync --locked</code> in the wheel, runtime and Windows contract steps</td></tr>
 <tr><th scope="row"><code translate="no">package-lock.json</code>, its <code translate="no">apps/desktop</code> entry</th><td>Nothing in the build; kept with the others so the tree never names two versions</td></tr>
@@ -181,15 +191,14 @@ scripts/publishing/publish-github.sh -m "Office editor" --tag v1.3.0 --office-ar
 </table>
 
 <h2 id="what-a-release-builds">What a release builds</h2>
-<p>The Release workflow runs on the pushed tag. Every platform leg is independent.</p>
-<p>A tag never moves, so a release can be rehearsed first. Publish <code translate="no">main</code> without <code translate="no">--tag</code>, then run <code translate="no">gh workflow run release.yml -f tag=vX.Y.Z -f rehearse=true</code>: every leg builds from <code translate="no">main</code>, the same checks run and nothing is published.</p>
-<p><code translate="no">gh workflow run windows-install-smoke.yml -f tag=vX.Y.Z -f run_id=&lt;rehearsal run&gt;</code> installs that run's Windows files on a Windows runner. A leg that fails is fixed at its cause and the rehearsal runs again.</p>
-<p>When both pass, <code translate="no">scripts/publishing/publish-github.sh --source refs/publish/last --tag vX.Y.Z</code> tags the same commit, no sooner than 12 hours after the rehearsal passed. Without <code translate="no">--source</code>, commits made on <code translate="no">dev</code> in between would go up as a new, unrehearsed sync.</p>
+<p>Every platform leg is independent. A code-only release builds nothing here.</p>
+<p>A tag never moves, so a feature release is rehearsed first. Publish <code translate="no">main</code> without <code translate="no">--tag</code>, then run <code translate="no">gh workflow run release.yml -f tag=vX.Y.0 -f rehearse=true</code>: every leg builds from <code translate="no">main</code>, the same checks run and nothing is published.</p>
+<p><code translate="no">gh workflow run windows-install-smoke.yml -f tag=vX.Y.0 -f run_id=&lt;rehearsal run&gt;</code> installs that run's Windows files on a Windows runner. A leg that fails is fixed at its cause and the rehearsal runs again.</p>
+<p>When both pass, <code translate="no">scripts/publishing/publish-github.sh --source refs/publish/last --tag vX.Y.0</code> releases the same commit, no sooner than 12 hours after the rehearsal passed. Without <code translate="no">--source</code>, commits made on <code translate="no">dev</code> in between would go up as a new, unrehearsed sync. A code-only release needs neither the rehearsal nor the wait.</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Point</th><th scope="col">Behaviour</th></tr></thead>
 <tbody>
 <tr><th scope="row">Failed leg</th><td>Its files are left out; the publish job uploads what succeeded</td></tr>
-<tr><th scope="row">Thin App without update files</th><td>The Windows or Linux App leg marks an error before building when its platform's update files were not built, then still builds and checks the App so the same run shows every other problem; publish leaves that App out and names why</td></tr>
 <tr><th scope="row">Windows checks</th><td>App leg: the platform contract tests in <code translate="no">scripts/release/windows-contracts.txt</code>, then the installer installs, launches to a healthy worker, makes one tool call and uninstalls keeping the data. A failed contract does not stop the build and the install check; a step before the upload keeps that App out. Runtime leg: the installed command makes one tool call. A failure leaves out only that package. A failed Windows leg keeps its logs as a <code translate="no">diagnostics-windows-*</code> artifact, never published</td></tr>
 <tr><th scope="row"><code translate="no">release-manifest.json</code></th><td>Lists only what exists</td></tr>
 <tr><th scope="row">Release notes</th><td>Gain a "Not in this release" section naming what is missing and why</td></tr>
@@ -221,22 +230,22 @@ scripts/publishing/publish-github.sh -m "Office editor" --tag v1.3.0 --office-ar
 <tr><th scope="row"><code translate="no">OPENPROGRAM_RELEASE_DESKTOP_MAC</code>, <code translate="no">_WINDOWS</code>, <code translate="no">_LINUX</code></th><td>On; <code translate="no">false</code> switches off</td><td>That platform's App</td></tr>
 <tr><th scope="row"><code translate="no">OPENPROGRAM_RELEASE_WINDOWS_RUNTIME</code></th><td>On; <code translate="no">false</code> switches off</td><td>The Windows command-line runtime</td></tr>
 <tr><th scope="row"><code translate="no">OPENPROGRAM_RELEASE_WINDOWS_ARM64</code></th><td>Off; <code translate="no">true</code> switches on</td><td>Windows on Arm, App and runtime</td></tr>
-<tr><th scope="row"><code translate="no">OPENPROGRAM_RELEASE_MAC_THIN</code></th><td>Off; <code translate="no">true</code> switches on</td><td>The thin macOS App, once signing and the update key exist</td></tr>
+<tr><th scope="row"><code translate="no">OPENPROGRAM_RELEASE_MAC_THIN</code></th><td>On; <code translate="no">false</code> forces the full App</td><td>The thin macOS App, whenever signing and the update key exist</td></tr>
 <tr><th scope="row"><code translate="no">OPENPROGRAM_RELEASE_CLI_SEEDS</code></th><td>Off; <code translate="no">true</code> switches on</td><td><code translate="no">-seed-</code> assets for the command-line installers, once the key exists</td></tr>
 </tbody>
 </table>
 <p>macOS stays on the full App, and command-line installs on the complete runtime, until those two switches are turned on: Apps and command lines from v1.0.0 need the existing DMG names, runtime archives and <code translate="no">release-manifest.json</code>, and a seed install needs a released network fetcher.</p>
 
 <h2 id="office-archive">The Office archive</h2>
-<p>The optional Office editor installs from one zip, about 699 MiB, whose name, size and SHA-256 are pinned in <code translate="no">openprogram/programs/applications/office_editor/install.py</code>; the download limit for <code translate="no">office.assets</code> in <code translate="no">safe_http.py</code> is the same size. Every release from 1.3.0 uploads it once; 1.0.0 to 1.2.0 carry none.</p>
+<p>The optional Office editor installs from one zip, about 699 MiB, whose name, size and SHA-256 are pinned in <code translate="no">openprogram/programs/applications/office_editor/install.py</code>; the download limit for <code translate="no">office.assets</code> in <code translate="no">safe_http.py</code> is the same size. Every feature release from 1.3.0 uploads it once; 1.0.0 to 1.2.0 and code-only releases carry none.</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Point</th><th scope="col">Behaviour</th></tr></thead>
 <tbody>
-<tr><th scope="row">Where the App looks</th><td>Its own version's release, then <code translate="no">releases/latest/download/</code>, which serves a build that has no release of its own while the pin is unchanged. Both copies are held to the pinned size and SHA-256</td></tr>
+<tr><th scope="row">Where the App looks</th><td>Its own version's release, then <code translate="no">releases/latest/download/</code>, which serves a code-only version or a build with no release of its own while the pin is unchanged: the latest release is the X.Y.0 one. Both copies are held to the pinned size and SHA-256</td></tr>
 <tr><th scope="row">Why not only the newest release</th><td>A fixed name on the newest release breaks every installed version the day a release changes the pack; a copy in each release keeps each version installable for as long as its release exists</td></tr>
 <tr><th scope="row">No release has it</th><td>The install answers <code translate="no">office_release_missing</code>: a version before 1.3.0 is told to update to 1.3.0 or newer, any other to update to the newest version. A retry is not offered as the fix</td></tr>
 <tr><th scope="row">Where a release gets it</th><td>It cannot be rebuilt in CI: the licensed fonts and the pinned editor build are the owner's inputs (<a href="https://github.com/Fzkuji/OpenProgram/blob/main/scripts/release/office/README.md">Office README</a>). The <code translate="no">office</code> job downloads the newest published release's copy, or else the one on the tag's draft release, and checks its bytes</td></tr>
-<tr><th scope="row">First release to carry it</th><td><code translate="no">publish-github.sh --tag vX.Y.Z --office-archive /path/to/OfficeAssets-….zip</code> checks the file and, before anything moves, puts it on the tag's draft release (<code translate="no">office-archive.py seed</code>). Every later release carries the previous one's copy with no upload by hand</td></tr>
+<tr><th scope="row">First release to carry it</th><td><code translate="no">publish-github.sh --tag vX.Y.0 --office-archive /path/to/OfficeAssets-….zip</code> checks the file and, before anything moves, puts it on the tag's draft release (<code translate="no">office-archive.py seed</code>). Every later release carries the previous one's copy with no upload by hand</td></tr>
 <tr><th scope="row">Neither copy exists</th><td>The <code translate="no">office</code> job fails with the file name, size, SHA-256 and the seed command. Every build waits for it, so nothing is built or published</td></tr>
 <tr><th scope="row">After publishing</th><td>The check on the public latest release also requires exactly one copy of the archive</td></tr>
 <tr><th scope="row">A new pack</th><td>Needs a new file name, never new bytes under an old one, because installed versions pin the bytes behind each name. <code translate="no">office-archive.py pack</code> names it <code translate="no">OfficeAssets-&lt;editor&gt;-&lt;patch&gt;-&lt;pack&gt;.zip</code>, the last part from the pack's own manifest digest, so different bytes always get a different name</td></tr>
@@ -251,15 +260,15 @@ scripts/publishing/publish-github.sh -m "Office editor" --tag v1.3.0 --office-ar
 <li><code translate="no">python scripts/release/office/prepare.py --source … --font-pack … --font-input … --output /path/to/prepared-office</code></li>
 <li><code translate="no">python scripts/release/office-archive.py pack /path/to/prepared-office /path/to/out</code> writes the zip and pins its name, size and SHA-256 in <code translate="no">install.py</code> and the download limit in <code translate="no">safe_http.py</code>.</li>
 <li>Run the affected tests, commit on <code translate="no">dev</code> and deploy.</li>
-<li><code translate="no">scripts/publishing/publish-github.sh -m "…" --tag vX.Y.Z --office-archive /path/to/out/OfficeAssets-….zip --dry-run</code>, then the same without <code translate="no">--dry-run</code>.</li>
+<li><code translate="no">scripts/publishing/publish-github.sh -m "…" --tag vX.Y.0 --office-archive /path/to/out/OfficeAssets-….zip --dry-run</code>, then the same without <code translate="no">--dry-run</code>.</li>
 </ol>
 
 <h2 id="the-guards">The guards</h2>
 <table class="stack">
 <thead><tr><th scope="col">Hook</th><th scope="col">Refuses</th><th scope="col">Allows</th></tr></thead>
 <tbody>
-<tr><th scope="row"><code translate="no">scripts/git-hooks/pre-push</code></th><td>A push to <code translate="no">refs/heads/main</code> without <code translate="no">OPENPROGRAM_GITHUB_PUBLISH=1</code> (set by the script) or not sending local <code translate="no">main</code>; a push of any other branch, which would upload the working history; a tag not pushed by the script or not naming local <code translate="no">main</code>, because a pushed tag starts the Release workflow</td><td>Deleting a remote branch or tag</td></tr>
-<tr><th scope="row"><code translate="no">scripts/git-hooks/pre-commit</code></th><td>A commit while <code translate="no">main</code> is checked out; a commit whose staged docs fail <code translate="no">scripts.docs_site.check</code></td><td>Every other branch</td></tr>
+<tr><th scope="row"><code translate="no">scripts/git-hooks/pre-push</code></th><td>A push to <code translate="no">refs/heads/main</code> without <code translate="no">OPENPROGRAM_GITHUB_PUBLISH=1</code> (set by the script) or not sending local <code translate="no">main</code>; a push of any other branch, which would upload the working history; a tag not pushed by the script or not naming local <code translate="no">main</code>, because a tag marks a release</td><td>Deleting a remote branch or tag</td></tr>
+<tr><th scope="row"><code translate="no">scripts/git-hooks/pre-commit</code></th><td>A commit while <code translate="no">main</code> is checked out; a commit whose staged docs fail <code translate="no">scripts.docs_site.check</code>; a commit whose staged Python imports a higher layer or closes a cycle inside one (<code translate="no">scripts.testing.layer_check</code>)</td><td>Every other branch</td></tr>
 </tbody>
 </table>
 <p class="note">The machine's global hooks (<code translate="no">core.hooksPath</code>) delegate both to the repository's <code translate="no">.git/hooks</code>, which is why the script installs them there.</p>
@@ -267,8 +276,8 @@ scripts/publishing/publish-github.sh -m "Office editor" --tag v1.3.0 --office-ar
 <h2 id="rules-for-sessions">Rules for sessions</h2>
 <dl class="commands">
 <dt>Commit</dt><dd>to <code translate="no">dev</code> as often as the work needs; deploy as in <a href="dev-instance.html#deploying-to-the-development-instance">Deploying to the development instance</a></dd>
-<dt>Sync</dt><dd>about once a day when <code translate="no">dev</code> has new commits, without <code translate="no">--tag</code></dd>
-<dt>Release</dt><dd>when a version is ready, with <code translate="no">--tag vX.Y.Z</code>; not after every feature</dd>
+<dt>Sync</dt><dd>about once a day when <code translate="no">dev</code> has new commits, without <code translate="no">--tag</code>; it updates <code translate="no">latest.json</code> only</dd>
+<dt>Release</dt><dd>when a version is ready: bump it with <code translate="no">release-version.py set</code>, write its notes, then <code translate="no">--tag vX.Y.Z</code>. vX.Y.0 when installers must be rebuilt (rehearse it and wait 12 hours first), otherwise a code-only vX.Y.Z or vX.Y.Z.W</dd>
 <dt>Never</dt><dd class="struck">commit on <code translate="no">main</code></dd>
 <dt>Never</dt><dd class="struck"><code translate="no">git push</code> <code translate="no">main</code> by hand</dd>
 <dt>Never</dt><dd class="struck">merge <code translate="no">main</code> into <code translate="no">dev</code></dd>
@@ -280,9 +289,9 @@ scripts/publishing/publish-github.sh -m "Office editor" --tag v1.3.0 --office-ar
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Status</th><th scope="col">Items</th></tr></thead>
 <tbody>
-<tr><th scope="row">Implemented</th><td><code translate="no">scripts/publishing/publish-github.sh</code> with dry run, <code translate="no">--no-push</code>, <code translate="no">--tag</code>, credential scan, retired-account scan, publishing-identity check and <code translate="no">refs/publish/last</code>; both guards; every workflow except Release started only by hand; the rules in <code translate="no">AGENTS.md</code>; the Release workflow's independent legs; the Office archive in every release and the App's download from its own release</td></tr>
+<tr><th scope="row">Implemented</th><td><code translate="no">scripts/publishing/publish-github.sh</code> with dry run, <code translate="no">--no-push</code>, <code translate="no">--tag</code> for feature and code-only releases, credential scan, retired-account scan, publishing-identity check and <code translate="no">refs/publish/last</code>; both guards; every workflow started only by hand; the rules in <code translate="no">AGENTS.md</code>; the Release workflow's independent legs; the Office archive in every release and the App's download from its own release</td></tr>
 <tr><th scope="row">Switch-over</th><td>The stable App on this machine is still a local build. It becomes the official Release when the next release is installed from its DMG; installing an older release over data written by newer local builds is avoided, so the switch waits for that release.</td></tr>
-<tr><th scope="row">Not yet run</th><td>A complete Release run. The one run so far, for v1.1.0, published the macOS and Linux Apps and every command-line runtime; the Windows installer was built and left out, because the Windows update files failed. The 1.2.0 rehearsal ran once: the publish job's check named the three Apps that did not pass (both macOS legs at signing, Windows at its App smoke). The Windows install smoke workflow has not run</td></tr>
+<tr><th scope="row">Not yet run</th><td>A complete Release run. The one run so far, for v1.1.0, published the macOS and Linux Apps and every command-line runtime; the Windows installer was built and left out. The 1.2.0 rehearsal ran once: the publish job's check named the three Apps that did not pass (both macOS legs at signing, Windows at its App smoke). The Windows install smoke workflow has not run</td></tr>
 <tr><th scope="row">Waiting for 1.3.0</th><td>No release carries the Office archive yet. The pinned file, <code translate="no">OfficeAssets-d15d12b-dc31dd9d-24d2d8e1.zip</code>, is <a href="#rebuilding-the-office-archive">packed</a> from the installed pack and kept on the owner's machine at <code translate="no">~/OpenProgram-release/office/</code>; 1.3.0 is tagged with <code translate="no">--office-archive</code> pointing at it</td></tr>
 </tbody>
 </table>

@@ -40,7 +40,7 @@ def _scheduled_permission_snapshot(job: shared.Job) -> dict[str, shared.Any] | N
     What it verified when it started that process says whose run this is, and
     the conversation's settings are where the run took its own policy from.
     """
-    from openprogram.runtime.conversation.session_settings.session_config import conversation_permission
+    from openprogram.runtime.conversation_link import conversation_permission
     from openprogram.runtime.permissions.modes import VALID_PERMISSION
     from openprogram.state.authority import normalize_authority
 
@@ -108,7 +108,7 @@ class AdmissionOperations:
 
     def _admit_canonical_job(self, job: shared.Job) -> None:
         """Admit one public Job under its own canonical execution identity."""
-        from openprogram.runtime.conversation.production_driver import AgentProductionDriver
+        from openprogram.runtime.conversation_link import agent_capabilities
         from openprogram.state.authority import normalize_authority
 
         existing = self._execution_store.get_execution(job.id)
@@ -143,12 +143,9 @@ class AdmissionOperations:
             self._execution_store, parent, job, permission_snapshot)
         if parent is None and permission_snapshot is None:
             permission_snapshot = _scheduled_permission_snapshot(job)
-        if job.source == "self_update_continue":
-            from openprogram.operations.self_update.control.continuation import permission_snapshot as update_permission
-            permission_snapshot = update_permission(job)
-        if job.source == "self_update_replan":
-            from openprogram.operations.self_update.delivery.restart import replan_permission_snapshot
-            permission_snapshot = replan_permission_snapshot(self._execution_store, job)
+        from openprogram.runtime import maintenance
+        permission_snapshot = maintenance.job_permission_snapshot(
+            self._execution_store, job, permission_snapshot)
         canonical_parent = parent if parent is not None and parent.session_id == job.parent_session_id else None
         run_id = canonical_parent.run_id if canonical_parent is not None else f"job-run-{job.id}"
         usage_goal = None
@@ -198,7 +195,7 @@ class AdmissionOperations:
             user_message_id=f"{job.id}_user",
             assistant_message_id=f"{job.id}_user_reply",
             run_id=run_id,
-            capabilities=AgentProductionDriver.capabilities_for_payload(input_payload),
+            capabilities=agent_capabilities(input_payload),
             job_agent_payload=input_payload,
             track_process_owner=True,
         )

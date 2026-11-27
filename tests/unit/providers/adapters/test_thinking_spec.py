@@ -43,11 +43,6 @@ def test_load_google():
     assert "budget_map" in spec
 
 
-def test_load_github_copilot_no_thinking():
-    spec = get_thinking_spec("github-copilot")
-    assert spec["wire_format"] == "none"
-
-
 def test_load_nonexistent_provider_uses_fallback():
     spec = get_thinking_spec("nonexistent-provider")
     assert spec.get("_fallback") is True
@@ -58,7 +53,7 @@ def test_load_nonexistent_provider_uses_fallback():
 
 
 def test_hyphen_to_underscore():
-    spec = get_thinking_spec("openai-codex")
+    spec = get_thinking_spec("openai-responses")
     assert spec["wire_format"] == "effort_string"
     assert spec["effort_map"]["xhigh"] == "xhigh"
 
@@ -75,25 +70,14 @@ def test_translate_google_budget():
     assert isinstance(val, int)
 
 
-def test_translate_openai_codex_direct_pass():
-    assert translate_reasoning("openai-codex", "gpt-5.5", "xhigh") == "xhigh"
-    assert translate_reasoning("openai-codex", "gpt-5.5", "max") == "xhigh"
+def test_translate_openai_responses_direct_pass():
+    assert translate_reasoning("openai-responses", "gpt-5.5", "xhigh") == "xhigh"
+    assert translate_reasoning("openai-responses", "gpt-5.5", "max") == "xhigh"
 
 
 def test_translate_openai_completions_clamp():
     assert translate_reasoning("openai-completions", "o3", "xhigh") == "high"
     assert translate_reasoning("openai-completions", "o3", "max") == "high"
-
-
-def test_xai_subscription_uses_its_own_model_specific_efforts():
-    assert derive_thinking_levels("xai-subscription", "grok-4.6", True) == [
-        "low", "medium", "high", "xhigh",
-    ]
-    assert translate_reasoning("xai-subscription", "grok-4.6", "xhigh") == "xhigh"
-    assert derive_thinking_levels("xai-subscription", "grok-4.5", True) == [
-        "low", "medium", "high",
-    ]
-    assert translate_reasoning("xai-subscription", "grok-4.5", "xhigh") == "high"
 
 
 def test_an_effort_the_model_lacks_becomes_the_nearest_it_has():
@@ -108,10 +92,6 @@ def test_an_effort_the_model_lacks_becomes_the_nearest_it_has():
                          "default_thinking_level": "low"})()
     assert normalize_reasoning_level(gap, "medium") == "high"
     assert normalize_reasoning_level(model, "turbo") == "medium"
-
-
-def test_translate_no_thinking_provider():
-    assert translate_reasoning("github-copilot", "copilot-chat", "high") is None
 
 
 def test_model_variant():
@@ -131,11 +111,6 @@ def test_derive_levels_reasoning_false():
     assert levels == []
 
 
-def test_derive_levels_no_thinking_provider():
-    levels = derive_thinking_levels("github-copilot", "copilot", True)
-    assert levels == []
-
-
 def test_derive_levels_model_override():
     levels = derive_thinking_levels("anthropic", "claude-opus-4-7", True)
     # opus-4-7 has effort_map override from API caps: low,medium,high,xhigh,max
@@ -145,9 +120,8 @@ def test_derive_levels_model_override():
 
 def test_default_effort():
     assert get_default_effort("anthropic") == "high"
-    assert get_default_effort("openai-codex") == "xhigh"
+    assert get_default_effort("openai-responses") == "xhigh"
     assert get_default_effort("google") == "medium"
-    assert get_default_effort("github-copilot") is None
 
 
 def test_reads_from_provider_json_no_deprecation():

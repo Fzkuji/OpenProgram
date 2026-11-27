@@ -509,12 +509,13 @@ def test_session_context_without_active_turn_does_not_inject():
 
 def test_execute_code_honors_sandbox_unavailable_refuse(agent_run, monkeypatch):
     from openprogram.host import sandbox
+    from openprogram.state import sandbox_settings
     from openprogram.programs import get_agent_tool
 
     marker = agent_run / "must-not-exist"
     monkeypatch.setattr(
         "openprogram.state.config.read_config",
-        lambda: {"sandbox": {"mode": sandbox.MODE_WORKSPACE_WRITE, "unavailable_policy": "refuse"}},
+        lambda: {"sandbox": {"mode": sandbox_settings.MODE_WORKSPACE_WRITE, "unavailable_policy": "refuse"}},
     )
     monkeypatch.setattr(sandbox, "unavailable_reason", lambda: "sandbox binary missing")
 
@@ -701,6 +702,7 @@ def test_agent_node_rejects_buffer_and_file_url_paths_without_deleting(agent_run
     assert url_target.read_text() == "url"
 
 
+@pytest.mark.slow
 def test_wheel_contains_both_runtime_shims(tmp_path):
     repo = Path(__file__).resolve().parents[4]
     config = tomllib.loads((repo / "pyproject.toml").read_text(encoding="utf-8"))
@@ -714,6 +716,16 @@ def test_wheel_contains_both_runtime_shims(tmp_path):
         "pyproject.toml", "setup.py", "README.md", "LICENSE", "openprogram/__init__.py",
         "openprogram/interfaces/server/__init__.py", "openprogram/interfaces/cli/__init__.py",
         "openprogram/host/__init__.py",
+        # Importing ``openprogram`` installs the layers' ports.
+        "openprogram/host/runtime_facts.py",
+        "openprogram/host/lower_layers.py",
+        "openprogram/models/__init__.py",
+        "openprogram/models/lower_layers.py",
+        "openprogram/state/__init__.py",
+        "openprogram/state/host_facts.py",
+        "openprogram/state/model_facts.py",
+        "openprogram/state/setting_rules.py",
+        "openprogram/state/sandbox_settings.py",
         "openprogram/programs/__init__.py",
         "openprogram/programs/applications/__init__.py",
         "openprogram/programs/applications/browser/__init__.py",

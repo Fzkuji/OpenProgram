@@ -52,6 +52,8 @@ PERMISSION_MODES = {"ask": "default", "plan": "plan", "acceptEdits": "acceptEdit
                     "bypass": "bypassPermissions"}
 _EFFORT_ORDER = ["low", "medium", "high", "xhigh", "max"]
 _MODEL_DEFAULTS = {"", "default", "auto"}
+#: A branch model run through OpenProgram's own providers (the gateway).
+GATEWAY_PREFIX = "openprogram:"
 #: The context window of each model Claude Code last reported.
 _windows: dict[str, int] = {}
 
@@ -85,6 +87,26 @@ def _error_reason(message: str):
     if "overloaded" in text or "529" in text or "500" in text:
         return ErrorReason.PROVIDER_INTERNAL
     return ErrorReason.UNKNOWN
+
+
+def _key_env() -> Optional[dict[str, str]]:
+    """``ANTHROPIC_API_KEY`` from Model Services when Claude Code has no sign-in of its own
+    now, else None: its own sign-in is left in charge."""
+    from openprogram.runtime.harnesses.models import read_harness
+    try:
+        entry = read_harness("claude-code")
+    except Exception:
+        return None
+    if "otherSignIn" not in entry:
+        return None
+    key = client.sign_in_now(bool(entry["otherSignIn"]))[1]
+    return {"ANTHROPIC_API_KEY": key} if key else None
+
+
+def _read_again() -> None:
+    from openprogram.runtime.harnesses.models import read_harness
+    threading.Thread(target=read_harness, args=("claude-code",), kwargs={"refresh": True},
+                     daemon=True, name="harness-read-claude-code").start()
 
 
 def _result_text(content: Any) -> str:
@@ -282,15 +304,48 @@ class ClaudeTurn:
     def _wanted(self) -> tuple[Optional[str], Optional[str], str]:
         """The branch's model, effort and permission mode in Claude Code's terms."""
         model = self.model_id if self.model_id and self.model_id.lower() not in _MODEL_DEFAULTS else None
+        if model and model.startswith(GATEWAY_PREFIX):
+            model = model[len(GATEWAY_PREFIX):]
         effort = claude_effort(getattr(self.req, "thinking_effort", None), self._listed_efforts())
         mode = PERMISSION_MODES.get(str(getattr(self.req, "permission_mode", None) or "bypass"), "bypassPermissions")
         return model, effort, mode
+
+    def _gateway_ref(self) -> Optional[str]:
+        """``provider/model`` when the branch runs one of OpenProgram's models, else None."""
+        model = str(self.model_id or "")
+        return model[len(GATEWAY_PREFIX):] if model.startswith(GATEWAY_PREFIX) else None
+
+    def _chat_key(self) -> str:
+        return f"{self.req.session_id}:{handoff.branch_key(self.req)}"
+
+    @staticmethod
+    def _tiers() -> dict:
+        from openprogram.state.settings import setting_value
+        tiers = setting_value("harnesses.claude_code.tiers") or {}
+        return tiers if isinstance(tiers, dict) else {}
+
+    def _gateway_marker(self) -> dict[str, str]:
+        """The environment that tells a process on OpenProgram's model apart:
+        its model and tiers are in its launch file, read only at start, so a
+        process on another model or tiers is started again."""
+        import hashlib
+        import json
+        launch = json.dumps([self._gateway_ref(), self._tiers()], sort_keys=True)
+        return {"OPENPROGRAM_GATEWAY": hashlib.sha256(launch.encode("utf-8")).hexdigest()[:16]}
 
     def _launch(self, binary: str, session_args: list[str], agent: Optional[str]) -> list[str]:
         model, effort, mode = self._wanted()
         # Full access can be chosen later in the running process (Paseo).
         argv = [*client.stream_args(binary), *session_args, "--allow-dangerously-skip-permissions",
                 "--permission-mode", mode]
+        reference = self._gateway_ref()
+        if reference:
+            # OpenProgram's model, through the gateway: a settings file of the
+            # chat's own over the user's settings.json (magpie
+            # claude_launch.go), so their file and a plain `claude` stay on
+            # their own account, and other chats keep their own models
+            from openprogram.models.gateway.agents.claude_code import launch_settings
+            argv += ["--settings", str(launch_settings(reference, self._tiers(), self._chat_key()))]
         if model:
             argv += ["--model", model]
         if effort:
@@ -323,11 +378,10 @@ class ClaudeTurn:
 
     def _message_text(self, note: Optional[str]) -> str:
         text = self.req.user_text or ""
-        try:
-            from openprogram.runtime.permissions.authority import render_model_input_from
-            text = render_model_input_from(self.req, text)
-        except Exception:  # noqa: BLE001
-            pass
+        # Anyone but the local owner goes in the speaker envelope; a failure here must
+        # not send their words as the owner's, so it is not caught.
+        from openprogram.state.authority import render_outside_input
+        text = render_outside_input(self.req, text)
         return f"{note}\n\n{text}" if note else text
 
     def _opening_message(self, note: Optional[str]) -> dict:
@@ -375,9 +429,16 @@ class ClaudeTurn:
         """The conversation's running Claude Code, started or reused, and the handoff."""
         identity, session_args, note = self._plan()
         key = f"{self.req.session_id}:{handoff.branch_key(self.req)}"
+        # on OpenProgram's model the launch file blanks any key of its own;
+        # the marker restarts a process moving onto, off or along the gateway
+        env = self._gateway_marker() if self._gateway_ref() else _key_env()
         live = client.pool().get(key, identity)
         if live is not None and _synced_since(self.records, self.session_id, live.loaded_at):
             # Turns were added outside since this process read the session (T3 Code).
+            client.pool().release(key, live, broken=True)
+            live = None
+        if live is not None and live.env != env:
+            # Signed in, or the Model Services key changed, since it started: start it again.
             client.pool().release(key, live, broken=True)
             live = None
         if live is not None:
@@ -390,12 +451,20 @@ class ClaudeTurn:
                 # It stopped or cannot be changed: this turn starts a new one.
                 client.pool().release(key, live, broken=True)
         self.reused = False
-        process = ClaudeProcess(self._launch(binary, session_args, identity[2]), cwd=self.cwd)
+        mark = None
+        if self._gateway_ref():
+            # what the user's settings.json says of its model before Claude
+            # Code starts, for launch_after (magpie ClaudeLaunchBefore)
+            from openprogram.models.gateway.agents.claude_code import launch_before
+            mark = launch_before()
+        process = ClaudeProcess(self._launch(binary, session_args, identity[2]), cwd=self.cwd, env=env)
         try:
             process.start()
         except OSError as exc:
             raise ClaudeError(f"Claude Code did not start: {exc}", exited=True) from exc
         live = client.Live(process, identity)
+        live.env = env
+        live.user_model = mark
         live.model, live.effort, live.mode = self._wanted()
         client.pool().put(key, live)
         return live, note
@@ -408,6 +477,9 @@ class ClaudeTurn:
             raise LLMError(message="Claude Code is not installed on this computer.",
                            reason=ErrorReason.INVALID_REQUEST, provider=PROVIDER, model=self.model_id)
         key = f"{self.req.session_id}:{handoff.branch_key(self.req)}"
+        client.pool().wait_closed(key, self.cancel_event)
+        if self.cancel_event.is_set():
+            return "", self.usage, self.tool_calls  # stopped before it started
         live: Optional[client.Live] = None
         finished = broken = False
         try:
@@ -449,7 +521,13 @@ class ClaudeTurn:
             elif result.get("is_error") and not self.cancel_event.is_set():
                 message = str(result.get("result") or "").strip() or "; ".join(
                     str(e) for e in result.get("errors") or []) or str(result.get("subtype") or "error")
-                raise LLMError(message=f"Claude Code: {message}", reason=_error_reason(message),
+                reason = _error_reason(message)
+                if reason == ErrorReason.AUTHENTICATION:
+                    # The next turn starts afresh, with whatever sign-in or key there is by then,
+                    # and the Harness menu shows the sign-in as it is now.
+                    broken = True
+                    _read_again()
+                raise LLMError(message=f"Claude Code: {message}", reason=reason,
                                provider=PROVIDER, model=self.model_id)
             else:
                 finished = True
@@ -467,6 +545,14 @@ class ClaudeTurn:
         finally:
             for call_id in list(self.open_cards):
                 self._end_card(call_id, "Stopped", True, "cancelled")
+            if live is not None and getattr(live, "user_model", None) is not None:
+                # what the turn's /model (or Claude Code's 1M rewrite) left in
+                # the user's settings.json goes back (magpie ClaudeLaunchAfter)
+                from openprogram.models.gateway.agents.claude_code import launch_after
+                try:
+                    launch_after(live.user_model)
+                except Exception:  # noqa: BLE001 - the user's file is theirs to fix; the turn stands
+                    _log.warning("Claude Code's model in settings.json not restored", exc_info=True)
             if live is not None:
                 # A process that took steering may still hold a turn of it: no later turn reads that.
                 client.pool().release(key, live, broken=broken or bool(self.last_steer_at) or not live.process.alive)

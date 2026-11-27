@@ -4,7 +4,7 @@ Library code logs through ``logging`` and never configures it; the process
 entry points do, once, by calling :func:`configure_process_logging`:
 
 * the worker (``operations/worker/runner.py`` ``run_foreground``) and the
-  scheduler worker (``programs/tools/jobs/cron/worker.py``) at ``INFO``: their
+  scheduler worker (``runtime/scheduler/worker.py``) at ``INFO``: their
   stdout and stderr are their log files, so records land next to the
   ``[worker +12.3s]`` status lines;
 * the foreground Server (``python -m openprogram.interfaces.server``) at

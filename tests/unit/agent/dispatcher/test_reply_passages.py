@@ -26,6 +26,7 @@ from openprogram.models.providers.types import (
     ToolCall, Usage,
 )
 from openprogram.programs._host import runtime as R
+from openprogram.runtime.agent import tool_execution
 from openprogram.programs._host.runtime import function
 from openprogram.runtime.agent import turn_request as agent_turn_request
 from openprogram.runtime.context.session_db import SessionDB
@@ -75,7 +76,7 @@ def probe(monkeypatch: pytest.MonkeyPatch):
     R._registry.clear()
     R._toolset_membership.clear()
     R._unsafe_in_channel.clear()
-    R._cache.clear()
+    tool_execution._cache.clear()
     import openprogram.programs as programs
     monkeypatch.setattr(programs, "_exposed_set", lambda: None)
     hooks: dict = {"ran": lambda: None}
@@ -89,7 +90,7 @@ def probe(monkeypatch: pytest.MonkeyPatch):
     R._registry.clear()
     R._toolset_membership.clear()
     R._unsafe_in_channel.clear()
-    R._cache.clear()
+    tool_execution._cache.clear()
     R._registry.update(saved[0])
     R._toolset_membership.update(saved[1])
     R._unsafe_in_channel.update(saved[2])
@@ -590,6 +591,7 @@ def _delta_reader(events: list[dict]) -> str:
     return text
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("seed", range(60))
 def test_wherever_a_reply_ends_every_reader_has_the_same_text(db, probe, seed) -> None:
     """Stopped, failed, steered or sent again at any point: the stream, the

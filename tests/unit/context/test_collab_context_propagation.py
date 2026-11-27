@@ -40,7 +40,7 @@ def _run_followup(job, monkeypatch, inside=None):
     def fake_turn(req, on_event=None):
         from openprogram.runtime.execution.run_control import get_current_session_id
         from openprogram.runtime.jobs.runner import _current_job_id
-        from openprogram.programs.tools.agents.send_message.send_message.depth import (
+        from openprogram.runtime.jobs.chain_budgets import (
             current_chain_generations, current_chain_messages,
         )
         seen["session_id"] = get_current_session_id()

@@ -37,7 +37,7 @@ def test_framework_preserves_application_agent_exposure(tmp_path, monkeypatch):
         monkeypatch.setattr('httpx.Client', lambda **_kwargs: Proxy())
         monkeypatch.setattr('openprogram.host.security.backend_endpoint.resolve_backend_endpoint', lambda: SimpleNamespace(
             base_url='http://testserver', authorization_header='Bearer test', origin='http://testserver'))
-        monkeypatch.setattr('openprogram.host.backend.get_active_backend', lambda: SimpleNamespace(backend_id='local'))
+        monkeypatch.setattr('openprogram.host.machines.get_active_backend', lambda: SimpleNamespace(backend_id='local'))
         monkeypatch.setattr('openprogram.host.sandbox.resolve_policy', lambda: None)
         token = agent_turn_request.set_turn_request(SimpleNamespace(authority_tier='owner'))
         try:

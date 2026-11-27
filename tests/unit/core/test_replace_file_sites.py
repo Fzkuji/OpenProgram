@@ -71,14 +71,14 @@ def _run_ending(state: Path) -> Path:
 
 
 def _schedule(state: Path) -> Path:
-    from openprogram.programs.tools.jobs.cron import cron
+    from openprogram.runtime.scheduler import store as task_store
 
-    cron._save(str(state / "schedule.json"), [{"id": "job", "prompt": "中文"}])
+    task_store._save(str(state / "schedule.json"), [{"id": "job", "prompt": "中文"}])
     return state / "schedule.json"
 
 
 def _cron_worker_state(state: Path) -> Path:
-    from openprogram.programs.tools.jobs.cron import worker
+    from openprogram.runtime.scheduler import worker
 
     worker._write_json(str(state / "worker-state.json"), {"job": {"last_run": 1}})
     return state / "worker-state.json"

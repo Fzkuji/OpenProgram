@@ -110,7 +110,7 @@ def _in_a_process(body: Callable[[], Any]) -> SimpleNamespace:
     receive, send = context.Pipe(duplex=False)
 
     def run() -> None:
-        from openprogram.operations.worker.lock import WorkerLock
+        from openprogram.host.worker.lock import WorkerLock
 
         try:
             lock = WorkerLock()  # held, like a Worker's, until the process ends
@@ -373,7 +373,7 @@ def _card_tool_call_ids(world) -> list:
 
 def test_a_card_written_by_recovery_keeps_the_calls_tool_call_id(world):
     def act() -> None:
-        from openprogram.programs._host import runtime as host_runtime
+        from openprogram.runtime.agent import call_state as host_runtime
         from openprogram.runtime.conversation.peer_agents import sub_agent_run
         _die_before(sub_agent_run, "write_attach_placeholder_for_spawn")
         host_runtime._current_tool_call_id.set("call_abc")

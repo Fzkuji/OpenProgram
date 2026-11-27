@@ -28,9 +28,9 @@ import tomllib
 
 from openprogram.operations.self_update.delivery.activation import COMPONENTS, component_of
 
-from . import layout as paths
+from openprogram.host._platform import runtime_layout as paths
 from . import store
-from .layout import Layout
+from openprogram.host._platform.runtime_layout import Layout
 from openprogram.host._platform import filesystem
 
 GIB = 1024 ** 3
@@ -78,6 +78,12 @@ class BuildRequest:
     repository: Path | None = None  # Where to find the commit; defaults to the store's repo.
     parent: str | None = None  # The running version, when there is one.
     built_by: str = ""
+    # A frontend bundle built elsewhere (an update's code layer), used instead of
+    # building or cloning it.
+    frontend_dir: Path | None = None
+    # What the official update this version is made from says about itself:
+    # ``{"commit", "sequence", "code_layer"}``, recorded in version.json.
+    official: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -245,24 +251,25 @@ def _read_bytes(worktree: Path, relative: str) -> bytes:
         raise BuildError(f"the commit has no {relative}: {exc}") from exc
 
 
-def _base_id(worktree: Path) -> str:
+def _base_id(worktree: Path, commit: str) -> str:
+    tailnet = subprocess.run(
+        ["git", "rev-parse", "--verify", "--quiet", f"{commit}:{paths.TAILNET_SOURCE}"],
+        cwd=str(worktree), capture_output=True, text=True, timeout=60,
+    )
     return paths.make_base_id(
         uv_lock=_read_bytes(worktree, "uv.lock"),
         pyproject=_read_bytes(worktree, "pyproject.toml"),
         product_runtime=_read_bytes(worktree, "scripts/release/product-runtime.json"),
+        tailnet=tailnet.stdout.strip() if tailnet.returncode == 0 else "",
     )
 
 
 def _check_python_minor(layout: Layout, base_id: str) -> None:
-    """The launcher embeds one Python minor; a candidate may not change it."""
-    try:
-        launcher_minor = (layout.root / "identity" / "python-minor").read_text(encoding="ascii").strip()
-    except OSError:
-        return
-    if launcher_minor != paths.base_minor(base_id):
+    """The launcher embeds one Python minor; a candidate may not change it, unless a staged shell brings it."""
+    if not paths.shell_hosts(layout, None, base_id, compat=False):
         raise BuildError(
             f"this change moves Python to {paths.base_minor(base_id)}, and the installed launcher "
-            f"is built for {launcher_minor}; it needs a new signed release"
+            "is built for another; it needs a new signed release"
         )
 
 
@@ -417,10 +424,12 @@ TAILNET = "openprogram-tailnet"
 
 
 def _stage_tailnet(worktree: Path, staging: Path, previous: Path | None, changed: list[str] | None,
-                   environment: dict[str, str]) -> None:
+                   environment: dict[str, str], base: Path | None = None) -> None:
     """Put the embedded Tailscale sidecar in the version's ``bin/``.
 
-    The parent's copy is kept while ``apps/tailnet`` is unchanged; otherwise it
+    A base assembled from an update's runtime layer carries it in its ``bin/``
+    (its id covers ``apps/tailnet``), and that copy is used. Otherwise the
+    parent's copy is kept while ``apps/tailnet`` is unchanged; otherwise it
     is built with Go. Without Go a changed sidecar falls back to the parent's
     copy, and a version with neither runs without Open from anywhere.
     """
@@ -429,7 +438,9 @@ def _stage_tailnet(worktree: Path, staging: Path, previous: Path | None, changed
     kept = previous / "bin" / name if previous is not None else None
     unchanged = changed is not None and not any(path.startswith("apps/tailnet/") for path in changed)
     script = worktree / "scripts" / "release" / "build-tailnet.py"
-    if kept is not None and kept.is_file() and unchanged:
+    if base is not None and (base / "bin" / name).is_file():
+        built = base / "bin" / name
+    elif kept is not None and kept.is_file() and unchanged:
         built = kept
     elif script.is_file() and shutil.which("go", path=environment.get("PATH")):
         _run([sys.executable, "-I", str(script)], environment=environment, cwd=worktree,
@@ -456,11 +467,8 @@ def _read_shell_compat(layout: Layout, worktree: Path) -> object:
     except (OSError, ValueError) as exc:
         raise BuildError(f"apps/desktop/shell/compat.json is unreadable: {exc}") from exc
     value = declared.get("shell_compat")
-    try:
-        supported = json.loads((layout.root / "identity" / "shell-compat.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return value  # No shell installed here.
-    if not isinstance(value, int) or not supported["min"] <= value <= supported["max"]:
+    # The installed shell, or one staged for the next restart, must host it.
+    if not paths.shell_hosts(layout, value):
         raise BuildError("this change needs a new signed shell release")
     return value
 
@@ -544,28 +552,6 @@ def _worktree_for(layout: Layout, request: BuildRequest) -> Iterator[Path]:
         shutil.rmtree(path, ignore_errors=True)
 
 
-def seal_prebuilt(layout: Layout, staging: Path, manifest: dict, *, parent: str | None) -> Path:
-    """Finish a version unpacked from a release, as if it had been built here.
-
-    A venv names its base by absolute path, so a release does not carry one:
-    ``staging`` holds everything else and the venv's interpreter links are made
-    here by the same command a build uses. Sealing afterwards records this
-    machine's paths and times.
-    """
-    base_id = str(manifest["base"])
-    final = layout.version(paths.require_id(manifest["id"], "version id"))
-    venv = staging / "venv"
-    _run([str(paths.base_python(layout.base(base_id))), "-m", "venv", "--without-pip", "--system-site-packages", str(venv)],
-         environment=_base_environment(layout), what="creating the virtual environment")
-    _settle_venv(venv, staging, final)
-    fields = {key: value for key, value in manifest.items() if key != "frontend_sha"}
-    sealed = store.seal(layout, staging, {**fields, "parent": parent})
-    differences = store.changed_files(sealed, base_id)
-    if differences:
-        raise BuildError(f"the unpacked version does not match its seal: {differences[0]}")
-    return sealed
-
-
 def build_version(layout: Layout, request: BuildRequest) -> BuildResult:
     """Build and seal ``request.commit``. Raises :class:`BuildError`."""
     staging = layout.staging(request.update_id)
@@ -574,7 +560,7 @@ def build_version(layout: Layout, request: BuildRequest) -> BuildResult:
     layout.bases.mkdir(parents=True, exist_ok=True)
     with _worktree_for(layout, request) as worktree:
         _check_worktree(worktree, request.commit)
-        base_id = _base_id(worktree)
+        base_id = _base_id(worktree, request.commit)
         _check_python_minor(layout, base_id)
         staged_base = layout.base_staging(base_id)
         shutil.rmtree(staged_base, ignore_errors=True)
@@ -630,14 +616,17 @@ def _build(
     if parent is not None:
         previous_bundle = paths.frontend_bundle(paths.site_packages(layout.version(str(parent["id"])), str(parent["base"])))
     rebuild = frontend_changes(changed) or previous_bundle is None or not previous_bundle.is_dir()
-    if rebuild:
+    if request.frontend_dir is not None:
+        _clone_tree(request.frontend_dir, bundle)
+        rebuild = False
+    elif rebuild:
         _stage_frontend(layout, worktree, bundle, venv_python, environment)
     else:
         _clone_tree(previous_bundle, bundle)  # type: ignore[arg-type]
 
     _copy_desktop(worktree, request.commit, staging)
     previous_version = layout.version(str(parent["id"])) if parent is not None else None
-    _stage_tailnet(worktree, staging, previous_version, changed, environment)
+    _stage_tailnet(worktree, staging, previous_version, changed, environment, using_base)
     shell_compat = _read_shell_compat(layout, worktree)
 
     if new_base:
@@ -667,6 +656,7 @@ def _build(
         "parent": request.parent,
         "number": int((parent or {}).get("number") or 0) + 1,
         **_manifest_notes(worktree, parent_commit, request.commit),
+        **({"official": request.official} if request.official else {}),
     })
     differences = store.changed_files(sealed, base_id)
     if differences:
