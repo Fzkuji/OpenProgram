@@ -23,13 +23,19 @@ export function useComposerInputEffects({
     const element = inputAreaRef.current;
     if (!element || typeof ResizeObserver === "undefined") return;
     // The covered height: a tucked row's empty strip above the box is
-    // left to the transcript (use-tuck-backdrop.ts).
+    // left to the transcript (use-tuck-backdrop.ts). It is written on the
+    // chat view, which holds the transcript and the Jump to latest chip
+    // that read it, not on the page root: the tuck slide writes it in
+    // every frame, and a property changed on the root restyles the whole
+    // page, about 35 ms a frame (traced), where the chat view takes 1.5.
+    const host = element.closest<HTMLElement>("#chatView") ?? document.documentElement;
+    let published = "";
     const publishHeight = () => {
       if (element.offsetHeight > 0) {
-        document.documentElement.style.setProperty(
-          "--main-composer-height",
-          `${Math.round(visibleComposerHeight(element))}px`,
-        );
+        const value = `${Math.round(visibleComposerHeight(element))}px`;
+        if (value === published) return;
+        published = value;
+        host.style.setProperty("--main-composer-height", value);
       }
     };
     publishHeight();
@@ -39,7 +45,7 @@ export function useComposerInputEffects({
     return () => {
       observer.disconnect();
       element.removeEventListener(COMPOSER_TUCK_SHIFT_EVENT, publishHeight);
-      document.documentElement.style.removeProperty("--main-composer-height");
+      host.style.removeProperty("--main-composer-height");
     };
   }, [bound]);
 
