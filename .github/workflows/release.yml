@@ -375,7 +375,7 @@ jobs:
               fi
             done
           done
-          uv run --no-project --python 3.12 --with zstandard --with cryptography \
+          uv run --no-project --python 3.12 --with zstandard --with cryptography --with httpx \
             python scripts/release/publish-updates.py upload-runtime-layer \
             --base "$base" --platform "${{ matrix.platform }}-${{ matrix.arch }}" ${tailnet[@]+"${tailnet[@]}"}
 
@@ -733,7 +733,7 @@ jobs:
             fi
             seed=(--seed apps/desktop/build/seed)
           fi
-          uv run --no-project --python 3.12 --with zstandard --with cryptography \
+          uv run --no-project --python 3.12 --with zstandard --with cryptography --with httpx \
             python scripts/release/publish-updates.py upload-shell-layer \
             --app "$app" --platform "${{ matrix.runtime_platform }}-${{ matrix.arch }}" "${seed[@]}" \
             ${{ inputs.rehearse && '--no-upload' || '' }}

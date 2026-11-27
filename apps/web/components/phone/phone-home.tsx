@@ -439,7 +439,7 @@ function NewChatDock({ projectId, name }: { projectId?: string; name?: string; s
       </div>
       <div className="toolbar-pane phone-new-chat-pane">
         <Link className="phone-new-chat" onClick={newChat}>
-          <span>{name ? text(`New chat in ${name}`, `在 ${name} 里开新对话`) : text("New chat", "新对话")}</span>
+          <span>{text("New chat", "新对话")}</span>
         </Link>
       </div>
       <div className="right">

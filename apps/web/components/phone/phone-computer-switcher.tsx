@@ -11,7 +11,7 @@
  */
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
-import { Check, Laptop, Link2, Monitor, Plus, Settings2 } from "lucide-react";
+import { Check, Laptop, Link2, Plus, Settings2 } from "lucide-react";
 import { Link, List, ListItem } from "framework7-react";
 
 import { useTranslation } from "@/lib/i18n";
@@ -100,7 +100,7 @@ export function PhoneComputerSwitcher({ status, online }: { status: string; onli
 
   const mark = (
     <>
-      <Laptop size={22} strokeWidth={1.9} aria-hidden="true" />
+      <Laptop size={22} aria-hidden="true" />
       <span className="phone-computer-dot" data-online={online ? "" : undefined} aria-hidden="true" />
     </>
   );
@@ -153,7 +153,8 @@ export function PhoneComputerSwitcher({ status, online }: { status: string; onli
                 title={computer.name}
                 footer={pairedSub(computer)}
               >
-                <span slot="media"><Monitor size={22} aria-hidden="true" /></span>
+                {/* The same laptop as the button the menu grew from. */}
+                <span slot="media"><Laptop size={22} aria-hidden="true" /></span>
                 <span slot="after">{check(isCurrent(computer) && !shownLinked)}</span>
               </ListItem>
             ))}

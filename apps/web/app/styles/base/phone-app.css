@@ -415,22 +415,10 @@ html[data-phone-keyboard] .phone-conversation [data-composer-input-area] {
    id, render and compress), which only the desktop's inspector keeps. */
 .phone-app .detail-section[data-internal] { display: none; }
 
-/* The new-chat bar is Framework7's glass toolbar: settings, the new chat
-   and voice each on a glass piece. The middle one takes the room between,
-   and a long project name in it ends in an ellipsis instead of pushing the
-   other two off the bar. */
+/* The new-chat bar is Framework7's glass toolbar: settings, New chat and
+   voice each on a glass piece, the middle one taking the room between. */
 .phone-app .toolbar .phone-new-chat-pane {
   flex: 1 1 auto;
-  min-width: 0;
-}
-.phone-app .toolbar .phone-new-chat {
-  min-width: 0;
-  flex-shrink: 1;
-}
-.phone-app .toolbar .phone-new-chat > span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* Projects and a project carry their title in the bar, not as a large
