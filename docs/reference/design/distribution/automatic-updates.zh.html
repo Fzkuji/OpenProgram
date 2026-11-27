@@ -1,7 +1,7 @@
 <title>自动更新</title>
 <meta name="description" content="OpenProgram 如何把更新发布成按内容寻址的层，已安装的 App 如何发现、下载、构建并切换到它。">
 <h1>自动更新</h1>
-<p>用户只安装一次，用最新 <code translate="no">vX.Y.0</code> 的安装包。之后的每次更新都在 App 内到达：只下载变了的文件，构建并试运行新版本，然后在侧栏标志旁显示 <strong>New</strong>；点<strong>重启以更新</strong>就切换过去。</p>
+<p>用户只安装一次，用最新 <code translate="no">vX.Y.0</code> 的安装包。之后的每次更新都在 App 内到达：检查到新版本时侧栏标志旁显示 <strong>New</strong>；点<strong>下载更新</strong>只下载变了的文件，构建并试运行新版本；点<strong>重启以更新</strong>就切换过去。</p>
 <p>只有 GitHub Release 会到达已安装的 App；<code translate="no">main</code> 的每日同步不会。</p>
 
 <figure>
@@ -37,7 +37,7 @@
 <ol class="flow fig-narrow">
   <li><strong>发布端</strong><small>本机，不用 Actions：<code translate="no">publish-github.sh</code>，然后 <code translate="no">publish-updates.py run</code> 构建代码层，把新对象写成一个包，并给指针签名</small></li>
   <li><strong><code translate="no">updates</code> 发行版</strong><small><code translate="no">channel.json</code> 对应已宣布的发行版，<code translate="no">latest.json</code> 对应每次发布，签名都在文件里；包里是永不改变的对象</small></li>
-  <li class="flow-end"><strong>已安装的 App</strong><small>启动 30 秒后，之后每小时：校验签名和序号；读取变动的层 tree；按字节范围下载缺少的对象；组装、构建、试运行；保留到重启以更新</small></li>
+  <li class="flow-end"><strong>已安装的 App</strong><small>启动 30 秒后，之后每小时：校验签名和序号，显示 New。点下载更新后：读取变动的层 tree；按字节范围下载缺少的对象；组装、构建、试运行；保留到重启以更新</small></li>
 </ol>
 </figure>
 
@@ -90,7 +90,7 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">步骤</th><th scope="col">规则</th></tr></thead>
 <tbody>
-<tr><th scope="row">检查</th><td>启动约 30 秒后一次，之后每小时一次，失败的也一样。<code translate="no">update-service.js</code> 读取 <code translate="no">channel.json</code>；自动检查打开时运行 <code translate="no">openprogram upgrade --prepare --json</code>，由它完成其余步骤</td></tr>
+<tr><th scope="row">检查</th><td>启动约 30 秒后一次，之后每小时一次，失败的也一样。<code translate="no">update-service.js</code> 读取 <code translate="no">channel.json</code>；检查只发现并显示更新。<strong>下载更新</strong>运行 <code translate="no">openprogram upgrade --prepare --json</code>，由它完成其余步骤</td></tr>
 <tr><th scope="row">指针</th><td>先对签名文本验签。序号低于已见过的最高值（<code translate="no">&lt;runtime&gt;/channel-seen.json</code>）就拒绝，重放的旧指针不能把 App 带回旧代码。指针正好处在替换它的删除和上传之间而缺失时，这次检查当作没有新内容，不提示；下一次每小时检查会读到</td></tr>
 <tr><th scope="row">Tree</th><td>读代码层的；本平台运行时层的只在它的 base 在本机是新的时候才读。本机已有的 tree 不再下载。单个 tree 上限 16 MiB。树或文件所在的包不在指针列表里就拒绝：指针列出它各层的文件和树所在的每个包，包括沿用在旧包里的，垃圾回收保留的也正是这些包</td></tr>
 <tr><th scope="row">App 外壳</th><td>在能替换自己的 App 上（没被转移、所在文件夹可写、macOS 上有 Developer ID 团队、Linux 上是 AppImage 而不是 deb），本机的外壳层版本比运行中的 App（<code translate="no">OPENPROGRAM_SHELL_VERSION</code>）新时读取它，代码已经在本机时也一样</td></tr>
@@ -121,7 +121,7 @@
 <tr><th scope="row">官方线</th><td>每接受一次更新，在 <code translate="no">refs/heads/release</code> 上加一个本地提交。不需要 GitHub 的历史：只需要新的官方提交，以及 <code translate="no">local</code> 上它不包含的提交</td></tr>
 <tr><th scope="row">重放</th><td>所有者的提交是 <code translate="no">release..local</code>。从旧到新在 <code translate="no">work/official-&lt;release&gt;</code> 里 cherry-pick。冲突的提交存到 <code translate="no">unreplayable/&lt;release&gt;/</code>，其余继续。release 已包含的提交跳过。候选基于官方版本构建，没动过的 Web 包直接克隆</td></tr>
 <tr><th scope="row">失败</th><td>构建或试运行失败时保存最新的提交并尝试其余的，最多重试 5 次，然后直接试未修改的官方版本。磁盘不足不丢弃提交。切换失败不重试</td></tr>
-<tr><th scope="row">先准备，重启时切换</th><td>App 的自动检查运行 <code translate="no">openprogram upgrade --prepare --json</code>。它下载、构建并试运行候选版本，然后停在 <code translate="no">ready</code>，标记为 <code translate="no">held</code> 并记下目标，App 于是显示<strong>重启以更新</strong>，什么都不切换，和 VS Code、Chrome 后台下载、重启时切换一样。worker 启动、看门狗和队列都不会推进被保留的更新</td></tr>
+<tr><th scope="row">先准备，重启时切换</th><td>App 的<strong>下载更新</strong>运行 <code translate="no">openprogram upgrade --prepare --json</code>。它下载、构建并试运行候选版本，然后停在 <code translate="no">ready</code>，标记为 <code translate="no">held</code> 并记下目标，App 于是显示<strong>重启以更新</strong>，什么都不切换。检查从不下载，下载由用户发起。worker 启动、看门狗和队列都不会推进被保留的更新</td></tr>
 <tr><th scope="row">被保留的更新</th><td>对同一目标再次准备什么都不做；更新的目标会先取消保留的那个。下一次 <code translate="no">upgrade --json</code> 在保留的更新仍是应安装的版本时（离线也一样）切换到它（结果 <code translate="no">activated</code>）；如果 <code translate="no">local</code> 在这之后移动过，就取消它，按常规方式安装。任何需要更新槽的其他更新（包括 <code translate="no">self_update</code> 工具）都会先取消它。<code translate="no">upgrade --check --json</code> 在 <code translate="no">prepared</code> 下列出它</td></tr>
 </tbody>
 </table>
@@ -344,7 +344,7 @@
 <tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/desktop/main.js"><code translate="no">apps/desktop/main.js</code></a></th><td>定时器、唤醒、IPC、多窗口广播</td></tr>
 <tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/desktop/main/preload.js"><code translate="no">main/preload.js</code></a></th><td>固定的渲染进程桥</td></tr>
 <tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/settings/sections/general-section.tsx"><code translate="no">general-section.tsx</code></a></th><td>设置页状态和 Web 回退</td></tr>
-<tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/sidebar/update-badge.tsx"><code translate="no">update-badge.tsx</code></a></th><td>标志旁的 New 和它的重启菜单</td></tr>
+<tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/sidebar/update-badge.tsx"><code translate="no">update-badge.tsx</code></a></th><td>发现更新后标志旁的 New：先下载更新，再重启以更新</td></tr>
 <tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/interfaces/cli/commands/updates/upgrade.py"><code translate="no">commands/updates/upgrade.py</code></a></th><td>安装类型路由、Release 关卡、dry-run、JSON、执行安装器</td></tr>
 <tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/operations/self_update/github_release/github.py"><code translate="no">github_release/github.py</code></a></th><td>稳定版元数据、清单、不可变安装器获取</td></tr>
 <tr><th scope="row"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/scripts/install-release.sh"><code translate="no">scripts/install-release.sh</code></a>、<a href="https://github.com/Fzkuji/OpenProgram/blob/main/scripts/install-release.ps1"><code translate="no">.ps1</code></a></th><td>已发布的兼容入口；从同一标签取真正的安装器</td></tr>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, type RefObject } from "react";
-import { COMPOSER_TUCK_SHIFT_EVENT, visibleComposerHeight } from "@/lib/chat/history/chat-scroll";
+import { COMPOSER_TUCK_SHIFT_EVENT, composerSliding, visibleComposerHeight } from "@/lib/chat/history/chat-scroll";
 
 interface Options {
   bound: string | null;
@@ -30,7 +30,10 @@ export function useComposerInputEffects({
     // page, about 35 ms a frame (traced), where the chat view takes 1.5.
     const host = element.closest<HTMLElement>("#chatView") ?? document.documentElement;
     let published = "";
+    // While the composer slides (COMPOSER_SLIDING_ATTR) the transcript rides
+    // the change as a transform; the reserve lands when the slide ends.
     const publishHeight = () => {
+      if (composerSliding(element)) return;
       if (element.offsetHeight > 0) {
         const value = `${Math.round(visibleComposerHeight(element))}px`;
         if (value === published) return;

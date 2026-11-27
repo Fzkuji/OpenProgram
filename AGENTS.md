@@ -15,7 +15,7 @@
 | 数据 | `~/.openprogram` | `~/.openprogram-dev`（`dev` profile） |
 | 怎么更新 | 只靠 App 自己的更新：后台下载，侧边栏出现 NEW，点“重启以更新” | 提交后运行 `.venv/bin/openprogram dev deploy` |
 
-- 稳定版就是用户拿到的那个正式版：从 Release 的 DMG 装一次，之后只在 App 里更新。本地不构建、不安装、不改动它，也不在它的对话里改代码去“升级”它。现在机器上的稳定版还是本地构建的，等下一个正式版（1.5.1；v1.5.0 标签的构建失败，没有 Release）发布后用它的 DMG 覆盖安装一次完成切换；切换前不动它，也不要装比它旧的正式版（旧代码读不了新代码写过的数据）。
+- 稳定版就是用户拿到的那个正式版：从 Release 的 DMG 装一次，之后只在 App 里更新。本地不构建、不安装、不改动它，也不在它的对话里改代码去“升级”它。
 - 一个功能完成并提交后运行 `scripts/local-instances/refresh-dev-instance.sh`（或 `.venv/bin/openprogram dev deploy`），只更新开发版（运行时和 `OpenProgram Dev.app`）；可以在稳定版的对话里运行。改动做完就停在开发版，不再往稳定版推。
 - 用户可见的 App 只有 `/Applications/OpenProgram.app`（稳定版）和 `/Applications/OpenProgram Dev.app`（开发版，由开发版部署安装，见 `scripts/local-instances/install-dev-app.sh`）；日常测试和可视验收用开发版 App 或浏览器（`.venv/bin/openprogram --profile dev web auth-url --base-url http://127.0.0.1:18200` 取登录链接），不占用稳定版。禁止运行 `node_modules/electron`、`npm run dev --workspace apps/desktop` 或临时 E2E Electron 作为用户可见 App。
 - 禁止在 `post-commit` 中自动刷新开发版；禁止从旧 worktree 或旧环境单独执行 `openprogram worker restart`。
@@ -43,8 +43,10 @@
 - 日常提交只进 `dev`。禁止在 `main` 上提交（`pre-commit` 会拒绝），禁止把 `main` 合进 `dev`，两边历史本来就不同。
 - **每天同步一次代码**：当天 `dev` 有新提交时运行 `scripts/publishing/publish-github.sh -m "今天的改动摘要"`（不带 `--tag`），把 `dev` 的文件树压成一个提交接到 `main` 上，在 `refs/publish/last` 记下来源，推送 `main`，再把这次的代码层传到 `updates` 发行版、更新 `latest.json`（只给开发版看）。不触发任何 GitHub Action，用户也收不到提醒，不用问。先加 `--dry-run` 看提交说明和要上传的东西；`--no-push` 只更新本地 `main`。依赖或外壳变了而 `updates` 上还没有对应的运行时层时，脚本会拒绝上传并给出补层的命令。
 - **用户只在发 Release 时收到更新**：只有用户说要发版时才加 `--tag`。版本号和发布说明先提交，`--dry-run` 能看到检查结果。
-  - **小版本** `vX.Y.Z`（Z>0）或 `vX.Y.Z.W`：只发代码，不跑 Actions。脚本推送 `main` 和标签，上传代码层，签好 `channel.json`，再建好 Release 页面，用户的 App 一小时内提示更新。依赖或 App 外壳变了会被拒绝，这种改动要发功能版本。
-  - **功能版本** `vX.Y.0`：要跑 Release 工作流，构建新安装包和五个平台的运行时层。先演练：不带 `--tag` 同步 `main`，运行 `gh workflow run release.yml -R Fzkuji/OpenProgram --ref main -f tag=vX.Y.0 -f rehearse=true`，通过后运行 `gh workflow run windows-install-smoke.yml -R Fzkuji/OpenProgram -f tag=vX.Y.0 -f run_id=<演练的运行号>`；有失败就修根因、重新同步、重新演练。全部通过后至少等 12 小时，运行 `publish-github.sh --source refs/publish/last --tag vX.Y.0` 推送并启动工作流；工作流完成后运行 `.venv/bin/python scripts/release/publish-updates.py announce vX.Y.0` 通知用户。
+  - **小版本** `vX.Y.Z`（Z>0）或 `vX.Y.Z.W`：只发代码，不跑构建。脚本推送 `main` 和标签，上传代码层，签好 `channel.json`，再建好 Release 页面，用户的 App 一小时内提示更新。依赖或 App 外壳变了会被拒绝，这种改动要发功能版本。
+  - **功能版本** `vX.Y.0`：要跑 Release 工作流，构建新安装包、五个平台的运行时层和 App 外壳层。不演练，`--dry-run` 看过后直接运行 `publish-github.sh -m "…" --tag vX.Y.0`，脚本推送 `main` 和标签并启动工作流；工作流完成后运行 `.venv/bin/python scripts/release/publish-updates.py announce vX.Y.0` 通知用户。
+- **网站**：每次发版（小版本和功能版本）脚本都会启动 `docs-pages.yml` 更新网站，不带标签的同步不更新。改版本号时 `website/index.html` 里的版本号和发版链接要一起改，否则同步会被拒绝。
+- **发布说明**（`.github/release-notes/vX.Y.Z.md`）：标题下面先写 1–8 条编号短句（`1. …`），App 的更新面板只显示这几条，不放大段文字；下面的分节给 GitHub Release 页面，每条一两句。
 - 禁止手动 `git push`；`.git/hooks/pre-push` 只放行脚本推送的 `main` 和指向它的标签，其他分支一律拒绝。不要从本地分支向 GitHub 开 PR。
 - worktree 分支合入 `dev` 或放弃后删除，想留着的放到 `refs/archive/`。
 

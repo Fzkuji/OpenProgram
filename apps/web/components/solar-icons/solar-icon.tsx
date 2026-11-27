@@ -34,8 +34,9 @@ export type SolarMotionPreset = "pop" | "nudge" | "pulse" | "none";
 
 const PRESETS: Record<Exclude<SolarMotionPreset, "none">, Variants> = {
   pop: HOVER_POP,
-  nudge: { normal: { x: 0 }, animate: { x: 1.5 } },
-  pulse: { normal: { scale: 1 }, animate: { scale: [0.5, 1.15, 1] } },
+  // Whole transforms, run by the compositor (hover-pop.ts).
+  nudge: { normal: { transform: "translateX(0px)" }, animate: { transform: "translateX(1.5px)" } },
+  pulse: { normal: { transform: "scale(1)" }, animate: { transform: ["scale(0.5)", "scale(1.15)", "scale(1)"] } },
 };
 
 /** The motions of a filled glyph (fit="fill"): a pop grows the

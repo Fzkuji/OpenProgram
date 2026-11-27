@@ -1124,16 +1124,16 @@ async function checkVersionPrepare(directory) {
     relaunchApp: () => { relaunched += 1; },
     ...extra,
   });
+  // A check only finds the update; nothing is fetched until asked.
   const service = serviceIn(directory, options());
   service.setAutomaticChecks(true);
-  await service.check({ force: true });
-  await service.downloadPromise;
+  assert.equal((await service.check({ force: true })).status, "available");
+  assert.ok(!service.downloadPromise, "a check downloads nothing");
+  assert.deepEqual(calls, []);
+  assert.equal((await service.download()).status, "ready", "Download update prepares it");
   const ready = service.getState();
-  assert.equal(ready.status, "ready", "prepared without asking");
   assert.equal(ready.readyVersion, "1.1.0");
   assert.deepEqual(calls, ["prepare"], "nothing is switched before the restart");
-  service.prepareInBackground();
-  assert.deepEqual(calls, ["prepare"], "a prepared update is not prepared again");
   const installed = await service.install();
   assert.deepEqual(calls, ["prepare", "apply"]);
   assert.equal(relaunched, 1, "the App starts again on the new version");
@@ -1158,7 +1158,7 @@ async function checkVersionPrepare(directory) {
   }));
   broken.setAutomaticChecks(true);
   await broken.check({ force: true });
-  await broken.downloadPromise;
+  await broken.download();
   const failed = await broken.install();
   assert.equal(failed.status, "error");
   assert.match(failed.error, /did not start/);
@@ -1266,7 +1266,7 @@ async function checkChannel(directory) {
     relaunchApp: () => { relaunched += 1; },
   });
   await prepare.check({ force: true });
-  await prepare.downloadPromise;
+  await prepare.download();
   assert.equal(prepare.getState().status, "ready");
   assert.equal(prepare.getState().readyVersion, "1.0.1");
   const installed = await prepare.install();
@@ -1352,7 +1352,7 @@ async function checkChannel(directory) {
     relaunchApp: () => { restarted += 1; },
   });
   await before.check({ force: true });
-  await before.downloadPromise;
+  await before.download();
   assert.equal(before.getState().status, "ready");
   await before.install();
   assert.deepEqual(swaps, [["/runtime/shell/staged/OpenProgram.app", "1.0.1#42"]]);
@@ -1388,7 +1388,7 @@ async function checkChannel(directory) {
   });
   const offered = await onlyShell.check({ force: true });
   assert.equal(offered.release.status, "available");
-  await onlyShell.downloadPromise;
+  await onlyShell.download();
   assert.equal(onlyShell.getState().status, "ready");
   await onlyShell.install();
   assert.equal(swaps.length, 1, "the App is swapped");

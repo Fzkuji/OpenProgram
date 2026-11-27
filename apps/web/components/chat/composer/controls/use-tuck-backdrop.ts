@@ -7,19 +7,38 @@
  * height so the box never moves (tuck-row.tsx), which left an empty strip
  * of mask above the box covering the transcript. While the row above is
  * tucked the mask starts SHIFT px lower, MARGIN above whatever comes next
- * (queued messages or the box); untucked it is back at the top. The shift
- * moves on the rows' own spring, in one pass, and is written as
- * COMPOSER_TUCK_SHIFT_VAR on the composer root; each change fires
- * COMPOSER_TUCK_SHIFT_EVENT so the transcript's reserve and the Jump to
- * latest chip follow the covered height (visibleComposerHeight).
+ * (queued messages or the box); untucked it is back at the top.
+ *
+ * The shift is written once, as its end value, in COMPOSER_TUCK_SHIFT_VAR
+ * on the composer root; it moves the mask by a transform, and while a
+ * toggle slides the root carries COMPOSER_SLIDING_ATTR, which gives that
+ * transform the rows' spring as a CSS transition. The transcript does not
+ * restyle during the slide: COMPOSER_RESERVE_SLIDE_EVENT tells it, at the
+ * toggle, how far its reserve will move, so a transcript following the
+ * latest rides that distance as a transform (use-chat-area-stick.ts), and
+ * COMPOSER_TUCK_SHIFT_EVENT fires once the slide has ended, when the
+ * height publishers write the new covered height (visibleComposerHeight)
+ * and the ride is dropped in the same frame. Every frame of the slide is
+ * the compositor's; the page's own style and layout work happens at the
+ * toggle (the box and its rows only) and after the slide.
  */
-import { useLayoutEffect, useRef, type RefObject } from "react";
-import { animate, useReducedMotion } from "framer-motion";
-import { COMPOSER_TUCK_SHIFT_EVENT, COMPOSER_TUCK_SHIFT_VAR } from "@/lib/chat/history/chat-scroll";
-import { TUCK_SLIDE } from "./tuck-row";
+import { useLayoutEffect, type RefObject } from "react";
+import { useReducedMotion } from "framer-motion";
+import {
+  COMPOSER_RESERVE_SLIDE_EVENT,
+  COMPOSER_TUCK_SHIFT_EVENT,
+  COMPOSER_TUCK_SHIFT_VAR,
+  COMPOSER_SLIDING_ATTR,
+  type ReserveSlide,
+} from "@/lib/chat/history/chat-scroll";
+import type { TuckStore } from "./use-tucked-controls";
 
 /** Solid mask kept above the box: the composer's own 12px padding. */
 export const BACKDROP_MARGIN = 12;
+
+/** How long a toggle's slide lasts: --composer-tuck-duration, with a
+ *  margin for the last frame. */
+const SLIDE_MS = 560;
 
 /** How far down the mask can start with the row above tucked: down to
  *  MARGIN above the next row. Nothing when panels sit above that row. */
@@ -32,44 +51,69 @@ export function tuckedShift(area: HTMLElement): number {
   return Math.max(0, next.offsetTop - row.offsetTop - BACKDROP_MARGIN);
 }
 
-export function useTuckBackdrop(areaRef: RefObject<HTMLElement | null>, tucked: boolean) {
+/** The slide's timing, from the --composer-tuck-* tokens. */
+function slideTiming(area: HTMLElement): { duration: number; easing: string } {
+  const style = getComputedStyle(area);
+  const duration = parseFloat(style.getPropertyValue("--composer-tuck-duration"));
+  return {
+    duration: Number.isFinite(duration) ? duration : 500,
+    easing: style.getPropertyValue("--composer-tuck-easing").trim() || "ease-out",
+  };
+}
+
+export function useTuckBackdrop(areaRef: RefObject<HTMLElement | null>, store: TuckStore, enabled: boolean) {
   const reduced = useReducedMotion();
-  const shift = useRef(0);
-  const first = useRef(true);
 
   useLayoutEffect(() => {
     const area = areaRef.current;
     if (!area) return;
+    let shift = 0;
+    let tucked: boolean | null = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    // The tokens are fixed: read once here, not in the click, where the
+    // read forced a style pass right after the mask's shift was written.
+    const timing = slideTiming(area);
+    const publish = () => area.dispatchEvent(new Event(COMPOSER_TUCK_SHIFT_EVENT));
     const write = (value: number) => {
-      shift.current = value;
+      shift = value;
       area.style.setProperty(COMPOSER_TUCK_SHIFT_VAR, `${value}px`);
-      area.dispatchEvent(new Event(COMPOSER_TUCK_SHIFT_EVENT));
     };
-    const target = tucked ? tuckedShift(area) : 0;
-    // A page that opens with the rows tucked starts settled, as the rows do.
-    const instant = first.current || reduced;
-    first.current = false;
-    let controls: ReturnType<typeof animate> | null = null;
-    let moving = false;
-    if (instant || target === shift.current) write(target);
-    else {
-      moving = true;
-      controls = animate(shift.current, target, {
-        ...TUCK_SLIDE,
-        onUpdate: write,
-        onComplete: () => { moving = false; },
-      });
-    }
+    const settle = () => {
+      if (timer) clearTimeout(timer);
+      timer = null;
+      area.removeAttribute(COMPOSER_SLIDING_ATTR);
+    };
+    const apply = () => {
+      const next = enabled && store.get().tucked;
+      if (next === tucked) return;
+      // A page that opens with the rows tucked starts settled, as the rows do.
+      const instant = tucked === null || reduced;
+      tucked = next;
+      const from = shift;
+      const target = next ? tuckedShift(area) : 0;
+      settle();
+      write(target);
+      if (instant || target === from) { publish(); return; }
+      area.setAttribute(COMPOSER_SLIDING_ATTR, "");
+      const detail: ReserveSlide = { by: target - from, ...timing };
+      area.dispatchEvent(new CustomEvent(COMPOSER_RESERVE_SLIDE_EVENT, { bubbles: true, detail }));
+      timer = setTimeout(() => { settle(); publish(); }, SLIDE_MS);
+    };
+    apply();
+    const off = store.subscribe(apply);
 
-    if (!tucked || typeof ResizeObserver === "undefined") return () => controls?.stop();
     // Tucked and settled: a row above or below the gap that changes height
     // (queued messages arriving, the row rewrapping) moves the mask with it.
-    const observer = new ResizeObserver(() => {
-      if (moving) return;
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => {
+      if (!tucked || timer) return;
       const next = tuckedShift(area);
-      if (next !== shift.current) write(next);
+      if (next !== shift) { write(next); publish(); }
     });
-    for (const child of Array.from(area.children)) observer.observe(child);
-    return () => { controls?.stop(); observer.disconnect(); };
-  }, [areaRef, tucked, reduced]);
+    if (observer) for (const child of Array.from(area.children)) observer.observe(child);
+    return () => {
+      off();
+      observer?.disconnect();
+      if (timer) { settle(); publish(); }
+    };
+  }, [areaRef, store, enabled, reduced]);
 }

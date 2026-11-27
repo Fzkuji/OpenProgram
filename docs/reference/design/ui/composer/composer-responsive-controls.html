@@ -20,10 +20,10 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Aspect</th><th scope="col">Rule</th></tr></thead>
 <tbody>
-<tr><th scope="row">Measure</th><td><code translate="no">use-compact-controls-row.ts</code> sums clusters and gap in a hidden max-content copy beside <code translate="no">.composer-bottom-row</code>, removed before paint</td></tr>
+<tr><th scope="row">Measure</th><td><code translate="no">use-compact-controls-row.ts</code> sums clusters and gap. A full-size row with free space is read as laid out (flex items shrink only without free space); a compact or full row is measured on a hidden max-content copy beside <code translate="no">.composer-bottom-row</code>, removed before paint</td></tr>
 <tr><th scope="row">Compact</th><td>Sets <code translate="no">data-compact</code> when the sum exceeds the width: permission, model and effort labels collapse to Shield, Message, Terminal and Biceps icons</td></tr>
 <tr><th scope="row">Expand</th><td>Needs 12px of slack</td></tr>
-<tr><th scope="row">Re-measures on</th><td>Resize, content or class changes, web-font load</td></tr>
+<tr><th scope="row">Re-measures on</th><td>Resize (compared in the ResizeObserver, no copy); content or class changes 320 ms after the last one, once a label's animation has ended; web-font load</td></tr>
 <tr><th scope="row">Why a copy</th><td>The live row is never toggled: its Buttons transition every property, so it would still report compact widths</td></tr>
 </tbody>
 </table>

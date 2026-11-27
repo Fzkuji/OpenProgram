@@ -1,6 +1,7 @@
 """release release workflow tests."""
 from __future__ import annotations
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -112,6 +113,23 @@ def test_release_workflow_publishes_structured_release_notes() -> None:
     assert '--title "OpenProgram $release_version Release"' in workflow
     assert '--notes-file "$final_notes"' in workflow
     assert "--generate-notes" not in workflow
+
+
+
+def test_the_app_shows_only_the_numbered_points_of_the_release_notes() -> None:
+    spec = importlib.util.spec_from_file_location("publish_updates_notes", ROOT / "scripts/release/publish-updates.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    version = _desktop_package()["version"]
+    notes = (ROOT / ".github" / "release-notes" / f"v{version}.md").read_text(encoding="utf-8")
+    shown = module.app_notes(notes).splitlines()
+    assert 1 <= len(shown) <= module.APP_POINTS
+    assert [line.split(". ", 1)[0] for line in shown] == [str(n) for n in range(1, len(shown) + 1)]
+    assert all("**" not in line and len(line) <= module.APP_POINT_CHARS for line in shown)
+    with pytest.raises(module.Failed, match="numbered points"):
+        module.app_notes("# OpenProgram 9.9.0 Release Notes\n\nA paragraph of prose.\n\n## ✨ New features\n\n1. Not here.\n")
+    with pytest.raises(module.Failed, match="at most"):
+        module.app_notes("# T\n\n" + "".join(f"{n}. Point.\n" for n in range(1, module.APP_POINTS + 2)))
 
 
 

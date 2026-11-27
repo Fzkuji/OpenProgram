@@ -408,7 +408,7 @@ export function Composer({ sessionId: boundSessionId, placeholder }: {
     textareaRef,
   });
   // The mask above the box drops to just above it while the rows are tucked.
-  useTuckBackdrop(inputAreaRef, tuck.tucked);
+  useTuckBackdrop(inputAreaRef, tuck.store, tuck.enabled);
 
   // Close the effort pill on outside click. It's INLINE inside the
   // composer wrapper, so a click in the textarea or on any other
@@ -674,7 +674,6 @@ export function Composer({ sessionId: boundSessionId, placeholder }: {
       ref={inputAreaRef}
       className={styles.inputArea}
       data-composer-input-area
-      data-tucked={tuck.covering ? "" : undefined}
       onPointerDown={tuck.onAreaPointerDown}
       onPointerMove={tuck.onAreaPointerMove}
       onPointerLeave={tuck.onAreaPointerLeave}
@@ -694,7 +693,7 @@ export function Composer({ sessionId: boundSessionId, placeholder }: {
         : null}
       <div className={styles.decisionColumn}><PendingDecisionPanels sessionId={activeChatKey ?? currentSessionId} /></div>
       {touchPhone && !newChat ? null : (
-        <TuckRow tucked={tuck.tucked} side="above" onSettled={tuck.onSettled}>
+        <TuckRow store={tuck.store} enabled={tuck.enabled} side="above">
           <EnvironmentRow sessionId={currentSessionId} />
         </TuckRow>
       )}
@@ -870,7 +869,7 @@ export function Composer({ sessionId: boundSessionId, placeholder }: {
       </div>
       </div>{/* /.composerStack */}
       {touchPhone ? null : (
-        <TuckRow tucked={tuck.tucked} side="below" onSettled={tuck.onSettled}>
+        <TuckRow store={tuck.store} enabled={tuck.enabled} side="below">
           <div ref={controlsRowRef} className={`${styles.controlsRow} composer-bottom-row`}>
             {controlsCluster}
           </div>

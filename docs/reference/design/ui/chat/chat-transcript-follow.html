@@ -41,6 +41,9 @@
 </tbody>
 </table>
 <p class="note"><code translate="no">latestScrollTop = max(0, scrollHeight - clientHeight)</code>. The pad follows the composer as it grows or shrinks, so the room under the last row is one size on every visit.</p>
+<p class="note">A composer sliding to a new height (rows tucking, the function form opening or closing) marks its root <code translate="no">data-composer-sliding</code> and announces the distance with <code translate="no">composer-reserve-slide</code>. The pad lands when the slide ends.</p>
+<p class="note">Both pads are registered custom properties that do not inherit; only the scroller, the column and the Jump to latest chip take them (<code translate="no">inherit</code>), so a new value restyles those few elements, not every row.</p>
+<p class="note">Meanwhile a transcript following the latest rides that distance as a compositor transform, dropped in the frame the pad lands, so no frame of the slide restyles or lays out the transcript.</p>
 <h3 id="distances">Three distances</h3>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Distance from the latest</th><th scope="col">Meaning</th></tr></thead>

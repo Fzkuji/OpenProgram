@@ -52,6 +52,20 @@
    sheet never matches it. */
 .chat-area:has(#welcome-mount > *) { overflow: hidden; }
 
+/* The composer reserve (below) is published on #chatView or the split
+   pane, but only the scroller, the column and the Jump to latest chip read
+   it. Registered as not inherited, a change restyles those few elements
+   instead of every row of the transcript: inherited, it restyled about
+   1,450 elements, 19 ms in the frame a slide ended (traced). */
+@property --main-composer-height { syntax: "<length>"; inherits: false; initial-value: 0px; }
+@property --peer-composer-h { syntax: "<length>"; inherits: false; initial-value: 180px; }
+.chat-area,
+.chat-messages,
+.jump-latest-anchor {
+  --main-composer-height: inherit;
+  --peer-composer-h: inherit;
+}
+
 
 
 .chat-messages {

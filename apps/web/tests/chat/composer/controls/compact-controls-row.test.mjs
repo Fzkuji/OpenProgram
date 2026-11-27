@@ -92,7 +92,7 @@ describe("useCompactControlsRow", () => {
     assert.equal(row.parentElement.children.length, 1);
   });
 
-  test("a class change inside the row (a tool toggled, a model switched) re-measures", async () => {
+  test("a class change inside the row (a tool toggled, a model switched) re-measures once the row is still", async () => {
     const { row } = await mountRow([cluster(100), cluster(100)], 150);
     assert.equal(row.getAttribute("data-compact"), "true");
     await view.act(async () => {
@@ -100,6 +100,27 @@ describe("useCompactControlsRow", () => {
       row.firstChild.className = "toggled-off";
       await frame(); await frame();
     });
+    // Not in the next frames: the label's own animation is still running.
+    assert.equal(row.getAttribute("data-compact"), "true");
+    await view.act(() => new Promise((resolve) => setTimeout(resolve, 360)));
+    assert.equal(row.hasAttribute("data-compact"), false);
+  });
+
+  test("a full-size row with room to spare is measured as laid out, without a copy", async () => {
+    const { row } = await mountRow([cluster(100), cluster(100)], 300);
+    const clone = window.HTMLElement.prototype.cloneNode;
+    let copies = 0;
+    window.HTMLElement.prototype.cloneNode = function cloneNode(...args) { copies += 1; return clone.apply(this, args); };
+    try {
+      await view.act(async () => {
+        row.firstChild.setAttribute("data-full", "120");
+        row.firstChild.className = "renamed";
+        await new Promise((resolve) => setTimeout(resolve, 360));
+      });
+    } finally {
+      window.HTMLElement.prototype.cloneNode = clone;
+    }
+    assert.equal(copies, 0);
     assert.equal(row.hasAttribute("data-compact"), false);
   });
 

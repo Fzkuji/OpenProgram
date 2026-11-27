@@ -99,6 +99,31 @@ def _notes(release: str) -> str:
         raise Failed(f"a release needs its notes at {path.relative_to(ROOT)}") from exc
 
 
+APP_POINTS = 8
+APP_POINT_CHARS = 120
+
+
+def app_notes(notes: str) -> str:
+    """What the App shows: the numbered points between the title and the first section.
+
+    The App's update panel is a short list ("1. …", "2. …"), never the page's
+    prose; the GitHub release page keeps the whole file.
+    """
+    points = []
+    for line in notes.splitlines()[1:]:
+        if line.startswith("## "):
+            break
+        stripped = line.strip()
+        head, dot, rest = stripped.partition(". ")
+        if dot and head.isdigit() and rest:
+            points.append(f"{len(points) + 1}. {rest.replace('**', '')}")
+    if not points:
+        raise Failed("release notes need numbered points (1. …) under the title; the App shows only those")
+    if len(points) > APP_POINTS or any(len(point) > APP_POINT_CHARS for point in points):
+        raise Failed(f"release notes' numbered points: at most {APP_POINTS}, each under {APP_POINT_CHARS} characters")
+    return "\n".join(points)
+
+
 def _summary(commit: str) -> str:
     text = subprocess.run(["git", "log", "-1", "--format=%B", commit], cwd=ROOT, capture_output=True, text=True).stdout
     return text.strip()[:20_000]
@@ -285,6 +310,8 @@ def _plan(options: argparse.Namespace) -> int:
     if options.release:
         what += " (feature release: announced once the Release workflow built installers and runtime layers)" \
             if publish.feature_release(options.release) else " (code-only: no workflow runs)"
+    if options.release:
+        app_notes(_notes(options.release))
     print(f"updates: would publish {what}, sequence {live.sequence + 1}\n  {decision.describe()}")
     if decision.refused:
         print(f"refused: {decision.refused}", file=sys.stderr)
@@ -301,7 +328,7 @@ def _run(options: argparse.Namespace) -> int:
             not options.release or (live.announced is not None and live.announced.commit == commit)):
         print(f"updates: {commit[:12]} is already published")
         return 0
-    notes = _notes(options.release) if options.release else ""
+    notes = app_notes(_notes(options.release)) if options.release else ""
     github = GitHub()
     if options.release and publish.feature_release(options.release) and not github.published_release(options.release):
         print(f"refused: {options.release} is announced only after the Release workflow published its installers; "
@@ -341,7 +368,7 @@ def _release_page(options: argparse.Namespace) -> int:
         raise Failed(f"{tag} is a feature release; the Release workflow makes its page with the installers")
     parts = tag[1:].split(".")
     installers = f"https://github.com/{OWNER}/{REPO}/releases/tag/v{parts[0]}.{parts[1]}.0"
-    body = (f"{_notes(tag)}\n\n---\nInstalled apps update to this release by themselves. "
+    body = (f"{_notes(tag)}\n\n---\nInstalled apps offer this release as an update. "
             f"New installs: the installers are on [v{parts[0]}.{parts[1]}.0]({installers}), which then updates in the app.")
     github = GitHub()
     github.api("-X", "POST", f"repos/{OWNER}/{REPO}/releases", "-f", f"tag_name={tag}",

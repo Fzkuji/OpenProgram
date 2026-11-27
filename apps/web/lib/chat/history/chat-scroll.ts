@@ -414,7 +414,9 @@ export function subscribeTakeLatest(listener: TakeLatestListener): () => void {
 
 /** How far the composer's mask starts below its top edge while its rows
  *  are tucked behind the input box (use-tuck-backdrop.ts writes it on the
- *  composer root and fires COMPOSER_TUCK_SHIFT_EVENT on each change). */
+ *  composer root). COMPOSER_TUCK_SHIFT_EVENT fires on the root whenever
+ *  the covered height settles at a new value: a tuck shift, or the end of
+ *  a slide (COMPOSER_SLIDING_ATTR). */
 export const COMPOSER_TUCK_SHIFT_VAR = "--composer-tuck-shift";
 export const COMPOSER_TUCK_SHIFT_EVENT = "composer-tuck-shift";
 
@@ -423,4 +425,36 @@ export const COMPOSER_TUCK_SHIFT_EVENT = "composer-tuck-shift";
 export function visibleComposerHeight(root: HTMLElement): number {
   const shift = parseFloat(root.style?.getPropertyValue(COMPOSER_TUCK_SHIFT_VAR) ?? "");
   return Math.max(0, root.offsetHeight - (Number.isFinite(shift) ? shift : 0));
+}
+
+/** On the composer root while its covered height slides to a new value:
+ *  a tuck toggle (use-tuck-backdrop.ts) or the function form growing or
+ *  shrinking (use-fn-form-wrapper.ts). The height publishers wait
+ *  (composerSliding) and publish once COMPOSER_TUCK_SHIFT_EVENT fires at
+ *  the end, so no frame of the slide restyles or lays out the transcript. */
+export const COMPOSER_SLIDING_ATTR = "data-composer-sliding";
+
+/** Whether this composer root's covered height is sliding; its height
+ *  publishers write the reserve when the slide ends. */
+export function composerSliding(root: Element): boolean {
+  return root.hasAttribute(COMPOSER_SLIDING_ATTR);
+}
+
+/** Fired (bubbling) from the composer root when a slide starts: the
+ *  covered height will change by `-by` once the slide ends, when
+ *  COMPOSER_TUCK_SHIFT_EVENT fires. A transcript following the latest
+ *  rides `by` meanwhile, on the slide's own timing, so the step its
+ *  reserve takes at the end does not show. */
+export const COMPOSER_RESERVE_SLIDE_EVENT = "composer-reserve-slide";
+
+export interface ReserveSlide {
+  /** How far the transcript's latest row moves down (px). */
+  by: number;
+  duration: number;
+  easing: string;
+}
+
+/** The pane a scroller or a composer belongs to. */
+export function chatPaneOf(element: Element): Element | null {
+  return element.closest("#chatView, .peer-session-pane");
 }

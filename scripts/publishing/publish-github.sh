@@ -6,7 +6,7 @@
 # each holding a `dev` tree on top of the previous `main` commit, so it never
 # contains dev's history. refs/publish/last records the commit the latest
 # sync was made from, so the next one lists only what is new. Pushing `main`
-# or a tag starts no workflow.
+# or a tag starts no workflow; a release dispatches the ones it needs.
 #
 # A push of main is followed by scripts/release/publish-updates.py run, which
 # builds that main here and puts its code on the rolling `updates` release
@@ -26,6 +26,9 @@
 #                    the page with the notes. One whose runtime or shell inputs
 #                    changed needs a feature release and is refused before
 #                    anything moves.
+# Every release also dispatches the website workflow (docs-pages.yml), so the
+# site at project_site.SITE_URL shows the released tree. A sync without a tag
+# leaves the site as it is.
 #
 # Usage: scripts/publishing/publish-github.sh -m "summary" [--source <ref>] [--tag vX.Y.Z[.W]]
 #                                  [--office-archive <file>] [--no-push] [--dry-run]
@@ -226,14 +229,17 @@ if test -n "$summary"; then
   printf '%s\n' "$summary" | check_retired_accounts "the summary" --stdin
 fi
 
-# The whole site leaves the machine, so every docs error stops a sync. The
-# check reads the commit being published, not whatever this checkout holds.
+# The whole site leaves the machine, so every docs error stops a sync, and so
+# does a landing page the website workflow would refuse (it must name the
+# version pyproject.toml carries). The checks read the commit being
+# published, not whatever this checkout holds.
 check_docs() {
   local parent status=0
   parent="$(mktemp -d)"
   trap 'git worktree remove --force "$parent/tree" 2>/dev/null; rm -rf "$parent"; git worktree prune' EXIT
   git -c core.hooksPath=/dev/null worktree add --quiet --detach "$parent/tree" "$source_commit"
-  (cd "$parent/tree" && "$python" -B -m scripts.docs_site.check --all) || status=$?
+  (cd "$parent/tree" && "$python" -B -m scripts.docs_site.check --all \
+    && "$python" -B -m scripts.docs_site.check_landing --source-only) || status=$?
   git worktree remove --force "$parent/tree"
   rm -rf "$parent"
   git worktree prune
@@ -360,6 +366,12 @@ printf 'published %s to GitHub main\n' "$(git rev-parse --short "$main_head")"
 
 short_main="$(git rev-parse --short "$main_head")"
 
+# The website builds from GitHub's main, which now holds the released tree.
+publish_site() {
+  gh workflow run docs-pages.yml -R Fzkuji/OpenProgram --ref main
+  printf 'dispatched the website workflow for %s\n' "$tag"
+}
+
 # A feature release is announced only after its Release workflow published
 # the installers and every platform's runtime layer: tag and dispatch here,
 # announce later.
@@ -367,6 +379,7 @@ if test "$feature_release" -eq 1; then
   git tag "$tag" "$main_head"
   OPENPROGRAM_GITHUB_PUBLISH=1 git push origin "refs/tags/$tag:refs/tags/$tag"
   gh workflow run release.yml -R Fzkuji/OpenProgram --ref main -f tag="$tag"
+  publish_site
   printf 'tagged %s as %s; the Release workflow builds its installers, runtime layers and release page from here.\n' \
     "$short_main" "$tag"
   printf 'next, once that workflow finished: python scripts/release/publish-updates.py announce %s\n' "$tag"
@@ -389,5 +402,6 @@ if test -n "$tag"; then
   git tag "$tag" "$main_head"
   OPENPROGRAM_GITHUB_PUBLISH=1 git push origin "refs/tags/$tag:refs/tags/$tag"
   "$python" -B "$updates_tool" release-page --tag "$tag"
+  publish_site
   printf 'released %s as %s\n' "$short_main" "$tag"
 fi

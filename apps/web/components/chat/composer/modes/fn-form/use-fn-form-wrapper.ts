@@ -32,6 +32,12 @@ import {
 } from "react";
 
 import type { AgenticFunction } from "@/lib/session-store";
+import {
+  COMPOSER_RESERVE_SLIDE_EVENT,
+  COMPOSER_SLIDING_ATTR,
+  COMPOSER_TUCK_SHIFT_EVENT,
+  type ReserveSlide,
+} from "@/lib/chat/history/chat-scroll";
 
 // Crossfade slack: keep the outgoing layer mounted slightly longer
 // than the composer's fade animation so the unmount happens after
@@ -157,8 +163,10 @@ export function useFnFormWrapper({
         "--composer-height-transition",
         `${ms}ms cubic-bezier(0.25, 0.1, 0.25, 1)`,
       );
+      const before = el.offsetHeight;
       el.style.height = `${next}px`;
       el.style.maxHeight = `${avail}px`;
+      slideCoveredHeight(el, before, Math.min(next, avail));
     };
     const ta = el.querySelector("textarea");
     const onInput = () => apply();
@@ -222,6 +230,7 @@ function runCloseTransition(
   el.style.height = `${current}px`;
   void el.offsetHeight;
   el.style.height = `${chatHeight}px`;
+  slideCoveredHeight(el, current, chatHeight);
   const onEnd = (ev: TransitionEvent) => {
     if (ev.target !== el || ev.propertyName !== "height") return;
     el.removeEventListener("transitionend", onEnd);
@@ -251,8 +260,10 @@ function runOpenTransition(
     el.style.height = `${chatHeight}px`;
     void el.offsetHeight;
   }
+  const from = parseFloat(el.style.height) || chatHeight;
   const natural = measureFnFormHeight(el);
   el.style.height = `${natural}px`;
+  slideCoveredHeight(el, from, natural);
   const onEnd = (ev: TransitionEvent) => {
     if (ev.target !== el || ev.propertyName !== "height") return;
     el.removeEventListener("transitionend", onEnd);
@@ -260,6 +271,52 @@ function runOpenTransition(
   };
   el.addEventListener("transitionend", onEnd);
   return () => el.removeEventListener("transitionend", onEnd);
+}
+
+/**
+ * The form's height transition moves the composer's covered height. The
+ * transcript's reserve is published once, when the transition ends
+ * (COMPOSER_SLIDING_ATTR, chat-scroll.ts); meanwhile a transcript following
+ * the latest rides the distance as a transform. Published every frame, the
+ * reserve restyled and laid out the whole transcript in each frame of the
+ * transition, about 8 ms (traced). The slide ends with the height
+ * transition (or a fallback timer), not with the React effect that
+ * started it: an effect re-run mid-transition must not publish early. A
+ * new slide on the same composer ends the one before it.
+ */
+const activeSlides = new WeakMap<HTMLElement, () => void>();
+
+function slideCoveredHeight(el: HTMLElement, from: number, to: number): void {
+  const area = el.closest<HTMLElement>("[data-composer-input-area]");
+  if (!area || Math.abs(to - from) < 1) return;
+  activeSlides.get(area)?.();
+  const style = getComputedStyle(el);
+  const properties = style.transitionProperty.split(",").map((p) => p.trim());
+  const at = Math.max(0, properties.indexOf("height"));
+  const pick = (list: string) => {
+    const items = list.split(/,(?![^(]*\))/).map((v) => v.trim());
+    return items[at % items.length] ?? items[0];
+  };
+  const seconds = parseFloat(pick(style.transitionDuration));
+  const duration = Number.isFinite(seconds) ? seconds * 1000 : 300;
+  const easing = pick(style.transitionTimingFunction) || "ease";
+  area.setAttribute(COMPOSER_SLIDING_ATTR, "");
+  const detail: ReserveSlide = { by: from - to, duration, easing };
+  area.dispatchEvent(new CustomEvent(COMPOSER_RESERVE_SLIDE_EVENT, { bubbles: true, detail }));
+  const onEnd = (ev: TransitionEvent) => {
+    if (ev.target === el && ev.propertyName === "height") end();
+  };
+  const end = () => {
+    if (activeSlides.get(area) !== end) return;
+    activeSlides.delete(area);
+    clearTimeout(timer);
+    el.removeEventListener("transitionend", onEnd);
+    area.removeAttribute(COMPOSER_SLIDING_ATTR);
+    area.dispatchEvent(new Event(COMPOSER_TUCK_SHIFT_EVENT));
+  };
+  activeSlides.set(area, end);
+  el.addEventListener("transitionend", onEnd);
+  const timer = setTimeout(end, duration + 100);
 }
 
 /**

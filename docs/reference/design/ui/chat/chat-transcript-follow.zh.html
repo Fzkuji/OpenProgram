@@ -41,6 +41,8 @@
 </tbody>
 </table>
 <p class="note"><code translate="no">latestScrollTop = max(0, scrollHeight - clientHeight)</code>。留白随输入框变高变矮，所以最后一行下面的空间每次打开都是同一个大小。</p>
+<p class="note">输入框滑到新高度时（上下两行收起、函数表单展开或收起），根元素带 <code translate="no">data-composer-sliding</code>，并用 <code translate="no">composer-reserve-slide</code> 告知要移动的距离。留白在滑动结束后才写入；期间停在最新处的对话记录以合成层位移跟着走，留白落定的那一帧去掉位移。滑动的每一帧都不重算对话记录的样式和布局。</p>
+<p class="note">两个留白变量都注册为不继承的自定义属性，只有滚动层、内容列和“跳到最新”按钮显式 <code translate="no">inherit</code>，新值只重算这几个元素的样式，不波及每一行。</p>
 <h3 id="distances">三个距离</h3>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">离最新处的距离</th><th scope="col">含义</th></tr></thead>

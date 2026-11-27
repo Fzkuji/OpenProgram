@@ -1,4 +1,5 @@
 import { useShallow } from "zustand/react/shallow";
+import { sameData } from "./same-data";
 import { createWithEqualityFn } from "zustand/traditional";
 
 import {
@@ -717,7 +718,9 @@ export const useSessionStore = createWithEqualityFn<ConvState>((set) => ({
     })),
   agentSettingsBySession: {},
   setSessionAgentSettings: (key, settings) =>
-    set((prev) => ({ agentSettingsBySession: { ...prev.agentSettingsBySession, [key]: settings } })),
+    set((prev) => (sameData(prev.agentSettingsBySession[key], settings)
+      ? prev
+      : { agentSettingsBySession: { ...prev.agentSettingsBySession, [key]: settings } })),
   agentSettingsEpoch: 0,
   markSessionAgentSettingsStale: () => set((prev) => ({ agentSettingsEpoch: prev.agentSettingsEpoch + 1 })),
   boundAgentBySession: {},
@@ -1104,6 +1107,12 @@ export const useSessionStore = createWithEqualityFn<ConvState>((set) => ({
       // values.
       const base =
         state.composerSettingsBySession[sid] ?? DEFAULT_COMPOSER_SETTINGS;
+      // A reply echoing what is already set (the branch id, the resolved
+      // values, the stored controls) keeps the old settings: see sameData.
+      if (
+        state.composerSettingsBySession[sid]
+        && Object.entries(patch).every(([key, value]) => sameData(base[key as keyof ComposerSettings], value))
+      ) return state;
       const next = { ...base, ...patch };
       const map = { ...state.composerSettingsBySession, [sid]: next };
       persistComposerSettingsMap(map);

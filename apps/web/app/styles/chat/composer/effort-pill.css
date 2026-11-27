@@ -199,6 +199,9 @@
 .effort-level { position:relative; display:inline-flex; min-width:0; font-weight:400; }
 .effort-level[data-accent="true"] { color:var(--effort-pro); font-weight:500; }
 .effort-label-stack,.effort-label-motion { position:relative; display:block; min-width:0; }
+/* The outgoing label leaves the flow (effort-label.tsx), so the stack takes
+   the new label's width at once without popLayout's layout measuring. */
+.effort-label-motion[data-leaving] { position:absolute; left:0; top:0; }
 .effort-label-motion { isolation:isolate; }
 .effort-label-blur { position:absolute; inset:0; pointer-events:none; white-space:nowrap; }
 .effort-label-sharp { display:block; white-space:nowrap; }

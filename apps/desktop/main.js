@@ -282,7 +282,7 @@ function initializeDesktopUpdates() {
   });
   startAutomaticUpdateChecks();
   // After a swap to a new App shell, the prepared version is switched to now.
-  void desktopUpdates.resumeAfterShellSwap().then(() => desktopUpdates.prepareInBackground());
+  void desktopUpdates.resumeAfterShellSwap();
 }
 
 function registerOwnerAuthIpc() {

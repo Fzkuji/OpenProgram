@@ -4,6 +4,26 @@ import { useLayoutEffect, type RefObject } from "react";
 
 const COMPACT_HYSTERESIS = 12;
 
+/** A content change is measured once the row has been still this long.
+ *  Labels change with an animation (an effort level slides its words,
+ *  a model name fades in) and the copy costs a forced layout of the row,
+ *  about 10 ms (traced): measured in the next frame it landed in the
+ *  middle of that animation. Waiting past it moves the cost to a frame
+ *  where nothing moves, and a burst of changes (the outgoing label
+ *  leaving later) is measured once. */
+const SETTLE_MS = 320;
+
+/** Floating parts of the row (the expanded effort card): out of flow, so
+ *  nothing inside them changes the row's need. A level change animates
+ *  the card's labels and slider; measuring the row for each of those
+ *  cost a forced layout in the frame, about 8 ms (traced). */
+const FLOATING = ".effort-card";
+
+function insideFloating(node: Node): boolean {
+  const element = node instanceof Element ? node : node.parentElement;
+  return !!element?.closest(FLOATING);
+}
+
 /** Width the row's clusters take at full size: the sum of the in-flow
  *  children plus the gaps between them. */
 function clustersWidth(row: HTMLElement): number {
@@ -40,7 +60,8 @@ function clustersWidth(row: HTMLElement): number {
  *
  * The full-size need depends only on the row's content, so it is measured
  * when the content or classes change (a tool toggled, a model or effort
- * switched) and when web fonts finish loading. A resize only compares that
+ * switched; SETTLE_MS after the last change) and when web fonts finish
+ * loading. A resize only compares that
  * need with the new width: cloning and laying out the row on every frame
  * of a pane or window resize made dragging stutter.
  *
@@ -55,6 +76,7 @@ export function useCompactControlsRow(ref: RefObject<HTMLDivElement | null>) {
     if (!row) return;
 
     let frame = 0;
+    let settle = 0;
     let compact = false;
     let need = 0;
     let stale = true;
@@ -68,6 +90,9 @@ export function useCompactControlsRow(ref: RefObject<HTMLDivElement | null>) {
       probe.setAttribute("aria-hidden", "true");
       probe.setAttribute("inert", "");
       for (const node of Array.from(probe.querySelectorAll("[id]"))) node.removeAttribute("id");
+      // The expanded effort card floats out of flow and takes no room;
+      // copying it (its canvas, slider and labels) only made the copy dear.
+      for (const node of Array.from(probe.querySelectorAll(FLOATING))) node.remove();
       probe.style.cssText =
         "position:absolute;left:0;top:0;width:max-content;max-width:none;" +
         "visibility:hidden;pointer-events:none;contain:layout style;";
@@ -79,11 +104,23 @@ export function useCompactControlsRow(ref: RefObject<HTMLDivElement | null>) {
       }
     };
 
+    // A full-size row with room to spare needs no copy: flex items shrink
+    // only when there is no free space, so its clusters already sit at
+    // their natural widths. Measured once the row is still, it is read
+    // as laid out. The copy is a new element for each node of the row,
+    // styled from scratch: 12 to 20 ms (traced), paid now only when the
+    // row is compact or full.
+    const liveWidth = (available: number) => {
+      if (row.dataset.compact === "true") return 0;
+      const width = clustersWidth(row);
+      return width < available - 1 ? width : 0;
+    };
+
     const apply = () => {
       const available = row.clientWidth;
       if (available <= 0) return;
       if (stale) {
-        need = Math.ceil(fullWidth());
+        need = Math.ceil(liveWidth(available) || fullWidth());
         stale = need <= 0;
       }
       if (need <= 0) return;
@@ -94,15 +131,19 @@ export function useCompactControlsRow(ref: RefObject<HTMLDivElement | null>) {
       else delete row.dataset.compact;
     };
 
-    // Content changes measure the copy in the next frame, once for a burst
-    // of them; a resize alone compares in the observer. A need not yet
-    // measured (the row had no width) is measured in a frame as well.
+    // Content changes measure the copy once the row has settled, once for
+    // a burst of them; a resize alone compares in the observer. A need not
+    // yet measured (the row had no width) is measured in a frame.
     const later = () => {
       if (!frame) frame = requestAnimationFrame(() => { frame = 0; apply(); });
     };
     const measure = () => {
       stale = true;
       later();
+    };
+    const measureSettled = () => {
+      window.clearTimeout(settle);
+      settle = window.setTimeout(() => { settle = 0; measure(); }, SETTLE_MS);
     };
     const resized = () => {
       if (stale) later();
@@ -120,8 +161,8 @@ export function useCompactControlsRow(ref: RefObject<HTMLDivElement | null>) {
       typeof MutationObserver === "undefined"
         ? null
         : new MutationObserver((records) => {
-            if (records.every((record) => record.target === row)) return;
-            measure();
+            if (records.every((record) => record.target === row || insideFloating(record.target))) return;
+            measureSettled();
           });
     mutationObserver?.observe(row, {
       childList: true,
@@ -139,6 +180,7 @@ export function useCompactControlsRow(ref: RefObject<HTMLDivElement | null>) {
     measure();
     return () => {
       cancelAnimationFrame(frame);
+      window.clearTimeout(settle);
       resizeObserver?.disconnect();
       mutationObserver?.disconnect();
       fonts?.removeEventListener?.("loadingdone", measure);

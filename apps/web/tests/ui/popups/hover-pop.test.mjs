@@ -43,7 +43,7 @@ test("an icon follows the hover of its nearest control, or its own outside one",
 
 test("menu rows of every kind are controls", () => {
   for (const role of ["menuitem", "menuitemradio", "menuitemcheckbox", "option"]) assert.ok(HOVER_HOST.includes(`[role="${role}"]`), role);
-  assert.deepEqual(HOVER_POP, { normal: { scale: 1 }, animate: { scale: HOVER_POP_SCALE } });
+  assert.deepEqual(HOVER_POP, { normal: { transform: "scale(1)" }, animate: { transform: `scale(${HOVER_POP_SCALE})` } });
 });
 
 test("every icon keeps the 1.12 pop; a filled composer icon grows from 16 px to exactly 18 px", () => {
@@ -51,7 +51,7 @@ test("every icon keeps the 1.12 pop; a filled composer icon grows from 16 px to 
   assert.equal(FILL_BOX, 16);
   assert.equal(FILL_HOVER_BOX, 18);
   assert.equal(HOVER_FILL_SCALE * FILL_BOX, 18);
-  assert.deepEqual(HOVER_POP_FILL, { normal: { scale: 1 }, animate: { scale: 18 / 16 } });
+  assert.deepEqual(HOVER_POP_FILL, { normal: { transform: "scale(1)" }, animate: { transform: `scale(${18 / 16})` } });
 });
 
 test("Solar glyphs, brand logos and Agent characters pop with the one shared motion", () => {

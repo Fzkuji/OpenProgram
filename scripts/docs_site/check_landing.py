@@ -1,12 +1,17 @@
 """Validate the published landing page's stable structure and metadata.
 
-Run:  python -m scripts.docs_site.check_landing
+Run:  python -m scripts.docs_site.check_landing [--source-only]
+
+--source-only checks the landing page and the files it reads, not the built
+docs site: publish-github.sh runs it on every commit it syncs, before any
+build, so a page the website workflow would refuse stops the sync.
 """
 
 from __future__ import annotations
 
 import json
 import re
+import sys
 import tomllib
 from html.parser import HTMLParser
 from pathlib import Path
@@ -141,7 +146,17 @@ def _contrast_ratio(foreground: str, background: str) -> float:
     return (light + 0.05) / (dark + 0.05)
 
 
-def main() -> int:
+def report(failures: list[str]) -> int:
+    for failure in failures:
+        print(f"landing: {failure}")
+    if failures:
+        return 1
+    print("check-landing: ok")
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    source_only = "--source-only" in (sys.argv[1:] if argv is None else argv)
     source = LANDING.read_text(encoding="utf-8")
     page = LandingParser()
     page.feed(source)
@@ -336,6 +351,8 @@ def main() -> int:
         r"\.composer \.cmd\s*\{[^}]*white-space\s*:\s*nowrap[^}]*"
         r"overflow-x\s*:\s*auto", css,
     ) is not None, "command text can wrap inside the install box", failures)
+    if source_only:
+        return report(failures)
 
     sitemap_path = BUILT_SITE / "sitemap.xml"
     require(sitemap_path.is_file(), "docs build did not produce sitemap.xml", failures)
@@ -504,12 +521,7 @@ def main() -> int:
         ):
             require(url in llms_text, f"llms.txt is missing {url}", failures)
 
-    if failures:
-        for failure in failures:
-            print(f"landing: {failure}")
-        return 1
-    print("check-landing: ok")
-    return 0
+    return report(failures)
 
 
 if __name__ == "__main__":

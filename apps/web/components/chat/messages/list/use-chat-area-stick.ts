@@ -4,6 +4,7 @@ import {
   animateJumpToLatest,
   followAfterGrowth,
   followAfterScroll,
+  chatPaneOf,
   isProvisionalSessionBind,
   jumpVisible,
   lastSettledTakeLatest,
@@ -18,6 +19,9 @@ import {
   subscribeTakeLatest,
   scrolledAwayFromLatest,
   CHAT_READER_SEEK_EVENT,
+  COMPOSER_RESERVE_SLIDE_EVENT,
+  COMPOSER_SLIDING_ATTR,
+  type ReserveSlide,
 } from "@/lib/chat/history/chat-scroll";
 import { typesetMath } from "@/lib/runtime-bridge/dom/markdown-render";
 import { useSessionHistory } from "@/lib/chat/history/session-history";
@@ -175,7 +179,18 @@ export function useChatAreaStick(
     const msgs = columnRef ? columnRef.current : document.getElementById("chatMessages");
     if (!area || !msgs) return;
 
+    // A tuck toggle (use-tuck-backdrop.ts) moves the composer's covered
+    // height only once its slide has ended. Meanwhile a column following
+    // the latest rides the distance its reserve will move, as a transform
+    // the compositor runs; when the reserve lands, the scroll that
+    // follows it and the end of the ride share one frame.
+    let ride: { animation: Animation; composer: Element } | null = null;
+    const endRide = () => {
+      ride?.animation.cancel();
+      ride = null;
+    };
     const cancelPending = () => {
+      endRide();
       const op = opRef.current;
       interactionRef.current += 1;
       pendingJumpRef.current = false;
@@ -216,7 +231,26 @@ export function useChatAreaStick(
       scrollTopRef.current = area.scrollTop;
     };
 
+    const onReserveSlide = (event: Event) => {
+      const composer = event.target as Element;
+      const pane = chatPaneOf(area);
+      if (!pane || chatPaneOf(composer) !== pane) return;
+      if (!stuckRef.current || jumpingRef.current || !atLatestWindow() || area.clientHeight <= 0) return;
+      const { by, duration, easing } = (event as CustomEvent<ReserveSlide>).detail;
+      endRide();
+      ride = {
+        animation: msgs.animate(
+          [{ transform: "none" }, { transform: `translateY(${by}px)` }],
+          { duration, easing, fill: "forwards" },
+        ),
+        composer,
+      };
+    };
     const pin = () => {
+      follow();
+      if (ride && !ride.composer.hasAttribute(COMPOSER_SLIDING_ATTR)) endRide();
+    };
+    const follow = () => {
       typesetMath(msgs);
       if (area.clientHeight <= 0) return;
       const op = opRef.current;
@@ -286,6 +320,7 @@ export function useChatAreaStick(
     // A seek started outside the area is the reader moving, like a wheel up.
     area.addEventListener(CHAT_READER_SEEK_EVENT, onSeek);
     area.addEventListener("keydown", onKey);
+    document.addEventListener(COMPOSER_RESERVE_SLIDE_EVENT, onReserveSlide);
     // The border box: a taller composer grows only the column's bottom
     // padding (its reserve), which leaves the content box as it was.
     const ro = new ResizeObserver(pin);
@@ -313,6 +348,8 @@ export function useChatAreaStick(
       area.removeEventListener("wheel", onWheel);
       area.removeEventListener(CHAT_READER_SEEK_EVENT, onSeek);
       area.removeEventListener("keydown", onKey);
+      document.removeEventListener(COMPOSER_RESERVE_SLIDE_EVENT, onReserveSlide);
+      endRide();
       ro.disconnect();
     };
   }, [paintRows, chatKey, sessionId, areaRef, columnRef, applySnap, atLatestWindow, opCurrent, publish, readerActive, setApplied]);

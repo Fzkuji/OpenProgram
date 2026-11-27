@@ -25,6 +25,9 @@ globalThis.probeValues={
  runtimeState:{},setSocket:s=>{socket=s},waitForOwnerAuthBootstrap:async()=>{},
 };
 globalThis.location={protocol:'http:',host:'unused'};
+// The socket wakes on visibility and network changes; a quiet visible page here.
+globalThis.document={visibilityState:'visible',addEventListener(){},removeEventListener(){}};
+globalThis.window??={addEventListener(){},removeEventListener(){}};
 globalThis.WebSocket=class {static OPEN=1;readyState=1;send(){}close(){}};
 registerHooks({resolve(s,c,next){if(mocks.has(s))return{url:'data:text/javascript,'+encodeURIComponent(mocks.get(s)),shortCircuit:true};return next(s,c)},load(url,c,next){if(url===pathToFileURL(target).href)return{format:'module',source:code,shortCircuit:true};return next(url,c)}});
 test('global Sandbox updates accept mutations but ignore correlated read/write replies',async()=>{

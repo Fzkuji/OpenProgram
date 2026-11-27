@@ -85,13 +85,16 @@
    composer components and every popup. ::before is solid from the
    env-chip row down (hides transcript text behind the chips, box and
    controls); ::after is the short fade above the chips. With the rows
-   tucked both start --composer-tuck-shift lower, 12px above the box
-   (use-tuck-backdrop.ts moves it on the rows' spring), so the strip the
-   tucked row leaves empty shows the transcript. */
+   tucked both start --composer-tuck-shift lower, 12px above the box, so
+   the strip the tucked row leaves empty shows the transcript. The shift
+   is a transform, so the slide (data-composer-sliding, use-tuck-backdrop.ts)
+   runs on the compositor; the part pushed past the bottom is clipped by
+   the pane. */
 .inputArea::before {
   content: "";
   position: absolute;
-  inset: calc(12px + var(--composer-tuck-shift, 0px)) 0 0;
+  inset: 12px 0 0;
+  transform: translateY(var(--composer-tuck-shift, 0px));
   background: var(--bg-primary);
   pointer-events: none;
   z-index: 4;
@@ -101,11 +104,49 @@
   position: absolute;
   left: 0;
   right: 0;
-  top: calc(-16px + var(--composer-tuck-shift, 0px));
+  top: -16px;
+  transform: translateY(var(--composer-tuck-shift, 0px));
   height: 28px;
   background: linear-gradient(to bottom, transparent, var(--bg-primary));
   pointer-events: none;
   z-index: 4;
+}
+.inputArea[data-composer-sliding]::before,
+.inputArea[data-composer-sliding]::after {
+  transition: transform var(--composer-tuck-duration) var(--composer-tuck-easing);
+}
+/* A row tucking behind the box (tuck-row.tsx): it slides into the box
+   and fades, keeping its height so the box never moves. Transform and
+   opacity only, so the compositor runs the slide. */
+/* Tucked, a row turns hidden once its slide has ended (the visibility
+   transition's delay), so focus, clicks and assistive tech skip it, and
+   shows again at once when it slides out. Not `inert`: inert restyles
+   every node of the row from scratch, about 400 of them, where hidden
+   reaches them through the browser's fast path for that one inherited
+   property. */
+.tuckRow {
+  transition: transform var(--composer-tuck-duration) var(--composer-tuck-easing),
+    opacity 180ms ease, visibility 0s linear 0s;
+}
+.tuckRow[data-tucked] {
+  visibility: hidden;
+  transition: transform var(--composer-tuck-duration) var(--composer-tuck-easing),
+    opacity 180ms ease, visibility 0s linear var(--composer-tuck-duration);
+}
+.tuckRow[data-tucked][data-tuck-side="above"] {
+  transform: translateY(100%) scale(0.96);
+  opacity: 0;
+}
+.tuckRow[data-tucked][data-tuck-side="below"] {
+  transform: translateY(-100%) scale(0.96);
+  opacity: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tuckRow,
+  .inputArea[data-composer-sliding]::before,
+  .inputArea[data-composer-sliding]::after {
+    transition: none;
+  }
 }
 
 /* Wrapper — the rounded rectangle the textarea sits inside.

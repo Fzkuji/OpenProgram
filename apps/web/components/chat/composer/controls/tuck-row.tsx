@@ -4,33 +4,46 @@
  * A row that tucks behind the input box (use-tucked-controls.ts): it
  * slides into the box (the row above down, the row below up) and fades,
  * keeping its height so the box never moves; untucked it slides out
- * again. Tucked, it is inert so focus and clicks skip it.
+ * again. Tucked, it turns hidden when its slide ends, so focus, clicks
+ * and assistive tech skip it (composer.module.css).
+ *
+ * The slide is a CSS transition of transform and opacity (.tuckRow in
+ * composer.module.css, on the --composer-tuck-* spring), which the
+ * compositor runs: a frame of it costs the page's main thread nothing.
  */
-import type { ReactNode } from "react";
-import { motion, useReducedMotion } from "framer-motion";
+import { useEffect, useRef, useSyncExternalStore, type ReactNode, type TransitionEvent } from "react";
+import { useReducedMotion } from "framer-motion";
+import styles from "../composer.module.css";
+import type { TuckStore } from "./use-tucked-controls";
 
-/** The rows' slide; the mask above the box moves on the same spring
- *  (use-tuck-backdrop.ts). */
-export const TUCK_SLIDE = { type: "spring", stiffness: 420, damping: 32 } as const;
-
-export function TuckRow({ tucked, side, onSettled, children }: {
-  tucked: boolean; side: "above" | "below";
-  /** Called when a slide ends, so the box can stop covering the rows. */
-  onSettled?: () => void;
+export function TuckRow({ store, enabled, side, children }: {
+  /** The composer's tuck state (use-tucked-controls.ts); a toggle
+   *  re-renders this row alone, not its children or the composer. */
+  store: TuckStore;
+  /** Tucking applies (chat mode); otherwise the row stays out. */
+  enabled: boolean;
+  side: "above" | "below";
   children: ReactNode;
 }) {
+  const snapshot = () => enabled && store.get().tucked;
+  const tucked = useSyncExternalStore(store.subscribe, snapshot, snapshot);
+  const onSettled = store.settle;
   const reduced = useReducedMotion();
-  return <motion.div
-    initial={false}
-    animate={tucked
-      ? { y: side === "above" ? "100%" : "-100%", opacity: 0, scale: 0.96 }
-      : { y: 0, opacity: 1, scale: 1 }}
-    transition={reduced ? { duration: 0 } : { ...TUCK_SLIDE, opacity: { duration: 0.18 } }}
-    onAnimationComplete={onSettled}
-    inert={tucked}
+  const first = useRef(true);
+  // Without motion no transition runs, so nothing ends: settle at once.
+  useEffect(() => {
+    if (first.current) { first.current = false; return; }
+    if (reduced) onSettled?.();
+  }, [tucked, reduced, onSettled]);
+  const onTransitionEnd = (event: TransitionEvent<HTMLDivElement>) => {
+    if (event.target === event.currentTarget && event.propertyName === "transform") onSettled?.();
+  };
+  return <div
+    className={styles.tuckRow}
+    onTransitionEnd={onTransitionEnd}
     data-tucked={tucked ? "" : undefined}
     data-tuck-side={side}
   >
     {children}
-  </motion.div>;
+  </div>;
 }

@@ -52,6 +52,25 @@ export function inkViewBox(svg: SVGSVGElement): string | null {
   return [round(x), round(y), round(side), round(side)].join(" ");
 }
 
+/** Ink boxes by drawing: the svg's class, stroke width and markup. The
+ *  same glyph has the same ink wherever it is drawn. Measuring forces the
+ *  page's style and layout in the middle of a commit (getBBox), and the fit
+ *  runs after every render of every composer icon: an effort change or a
+ *  form opening paid it a dozen times over (traced). */
+const inkBoxes = new Map<string, string>();
+const INK_BOXES_MAX = 500;
+
+function cachedInkViewBox(svg: SVGSVGElement): string | null {
+  const key = `${svg.getAttribute("class") ?? ""}|${svg.getAttribute("stroke-width") ?? ""}|${svg.innerHTML}`;
+  const known = inkBoxes.get(key);
+  if (known) return known;
+  const measured = inkViewBox(svg);
+  if (!measured) return null;
+  if (inkBoxes.size >= INK_BOXES_MAX) inkBoxes.clear();
+  inkBoxes.set(key, measured);
+  return measured;
+}
+
 /** Fit the drawing inside `box` to a `size` px square. */
 function fitDrawing(box: HTMLElement, size: number, crop: boolean) {
   const drawing = box.querySelector("svg, img, canvas");
@@ -60,16 +79,19 @@ function fitDrawing(box: HTMLElement, size: number, crop: boolean) {
   if (drawing instanceof Element && drawing.tagName.toLowerCase() === "svg") {
     if (!crop) return;
     const svg = drawing as SVGSVGElement;
-    const viewBox = inkViewBox(svg);
+    const viewBox = cachedInkViewBox(svg);
     if (!viewBox) return;
     if (svg.getAttribute("viewBox") !== viewBox) svg.setAttribute("viewBox", viewBox);
-    svg.style.overflow = "visible";
-  } else {
+    if (svg.style.overflow !== "visible") svg.style.overflow = "visible";
+  } else if ((element as HTMLElement).style.objectFit !== "contain") {
     (element as HTMLElement).style.objectFit = "contain";
   }
-  element.style.width = `${size}px`;
-  element.style.height = `${size}px`;
-  element.style.flexShrink = "0";
+  // Written only when they differ: an inline style write restyles the
+  // drawing even when the value is the same.
+  const side = `${size}px`;
+  if (element.style.width !== side) element.style.width = side;
+  if (element.style.height !== side) element.style.height = side;
+  if (element.style.flexShrink !== "0") element.style.flexShrink = "0";
 }
 
 export interface FillIconProps {

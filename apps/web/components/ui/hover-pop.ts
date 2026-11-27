@@ -18,7 +18,11 @@ export const HOVER_SPRING: Transition = { type: "spring", stiffness: 420, dampin
 
 export const HOVER_POP_SCALE = 1.12;
 
-export const HOVER_POP: Variants = { normal: { scale: 1 }, animate: { scale: HOVER_POP_SCALE } };
+/** The pops are written as whole `transform` strings, not framer's `scale`
+ *  shorthand: framer hands a `transform` to the browser as a Web Animation
+ *  (its spring sampled into linear()), which the compositor runs, where a
+ *  `scale` is stepped on the main thread and repainted every frame. */
+export const HOVER_POP: Variants = { normal: { transform: "scale(1)" }, animate: { transform: `scale(${HOVER_POP_SCALE})` } };
 
 /** The box of a filled icon in the composer and the popups it opens: the
  *  drawing's ink is scaled until its longer side is this many px. */
@@ -31,7 +35,7 @@ export const FILL_HOVER_BOX = 18;
 export const HOVER_FILL_SCALE = FILL_HOVER_BOX / FILL_BOX;
 
 /** The pop of a filled icon (opt-in; every other icon keeps HOVER_POP). */
-export const HOVER_POP_FILL: Variants = { normal: { scale: 1 }, animate: { scale: HOVER_FILL_SCALE } };
+export const HOVER_POP_FILL: Variants = { normal: { transform: "scale(1)" }, animate: { transform: `scale(${HOVER_FILL_SCALE})` } };
 
 /** The element whose hover moves the icon `self`. */
 export function hoverHostOf(self: Element): Element {

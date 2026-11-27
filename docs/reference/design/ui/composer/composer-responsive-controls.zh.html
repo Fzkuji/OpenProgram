@@ -20,10 +20,10 @@
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">方面</th><th scope="col">规则</th></tr></thead>
 <tbody>
-<tr><th scope="row">测量</th><td><code translate="no">use-compact-controls-row.ts</code> 在 <code translate="no">.composer-bottom-row</code> 旁放一份隐藏的 max-content 副本，累加各簇和间距，绘制前移除</td></tr>
+<tr><th scope="row">测量</th><td><code translate="no">use-compact-controls-row.ts</code> 累加各簇和间距。未紧凑且还有空余的行直接读实际布局（只有没有空余时 flex 项才会被压缩）；紧凑或已占满时在 <code translate="no">.composer-bottom-row</code> 旁放一份隐藏的 max-content 副本测量，绘制前移除</td></tr>
 <tr><th scope="row">紧凑</th><td>超过宽度时设 <code translate="no">data-compact</code>：权限、模型和深度标签收成 Shield、Message、Terminal、Biceps 图标</td></tr>
 <tr><th scope="row">展开</th><td>需要 12px 余量</td></tr>
-<tr><th scope="row">重新测量时机</th><td>尺寸、内容或 class 变化，Web 字体加载</td></tr>
+<tr><th scope="row">重新测量时机</th><td>尺寸变化（在 ResizeObserver 里比较，不建副本）；内容或 class 变化在最后一次变化 320 ms 后、标签动画结束后再测；Web 字体加载</td></tr>
 <tr><th scope="row">为什么用副本</th><td>不切换真实的行：它的 Button 对所有属性做过渡，仍会报告紧凑宽度</td></tr>
 </tbody>
 </table>

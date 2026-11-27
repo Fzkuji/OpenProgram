@@ -29,6 +29,7 @@
 <thead class="sr"><tr><th scope="col">方向</th><th scope="col">做法</th></tr></thead>
 <tbody>
 <tr><th scope="row">作用域到全局</th><td>setter 先更新自己的实例，面板同一拍重绘，再写穿到全局按 key 的 setter。钩子在全局 store 初始化时由 <code translate="no">installScopeWriteThrough</code> 安装，保持导入单向。</td></tr>
+<tr><th scope="row">无变化的写入</th><td><code translate="no">setComposerSettings</code> 和 <code translate="no">setSessionAgentSettings</code> 收到数据相同的补丁时保留原状态（<code translate="no">sameData</code>），服务器回显输入框刚设的控件不会触发渲染。聚焦的面板不订阅 <code translate="no">agentSettingsEpoch</code>，只有未聚焦的面板在它变化时重新读取。</td></tr>
 <tr><th scope="row">全局到作用域</th><td><code translate="no">setComposerInputFor</code>、<code translate="no">setComposerSettings</code>、<code translate="no">setRunningTaskFor</code> 调用 <code translate="no">pushToSessionStore</code>，WS 帧、旧桥接或标签转移都能到达活实例。</td></tr>
 <tr><th scope="row">初始值</th><td>实例首次渲染时从全局 map 取初值，刷新后重新挂载能显示已持久化的草稿。</td></tr>
 </tbody>

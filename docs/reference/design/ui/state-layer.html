@@ -30,6 +30,7 @@
 <tbody>
 <tr><th scope="row">Scope to global</th><td>A setter updates its instance first, so the pane repaints on the same tick, then writes through to the global keyed setter. Hooks come from <code translate="no">installScopeWriteThrough</code> at the global store's init, keeping the import one-directional.</td></tr>
 <tr><th scope="row">Global to scope</th><td><code translate="no">setComposerInputFor</code>, <code translate="no">setComposerSettings</code>, <code translate="no">setRunningTaskFor</code> call <code translate="no">pushToSessionStore</code>, so a WS frame, legacy bridge or tab transfer reaches the live instance.</td></tr>
+<tr><th scope="row">Unchanged writes</th><td><code translate="no">setComposerSettings</code> and <code translate="no">setSessionAgentSettings</code> keep the old state when a patch holds the same data (<code translate="no">sameData</code>), so a server reply echoing a control the composer just set renders nothing. A focused pane does not subscribe to <code translate="no">agentSettingsEpoch</code>; only an unfocused one reads again when it moves.</td></tr>
 <tr><th scope="row">Seeding</th><td>An instance seeds from the global maps on first render, so a remount after reload shows the persisted draft.</td></tr>
 </tbody>
 </table>

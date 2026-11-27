@@ -68,12 +68,13 @@
 <tr><th scope="row">纯代码发布<span class="arg"><code translate="no">--tag vX.Y.Z</code>、<code translate="no">vX.Y.Z.W</code></span></th><td>同上，但不跑工作流：<code translate="no">publish-updates.py release-page</code> 一次调用创建带发布说明的 GitHub Release。它不标为 latest，Latest 标记留在带安装包的 X.Y.0 发布上，说明里链接那些安装包。运行时或外壳的输入变了就在移动任何东西之前拒绝：那需要功能发布</td></tr>
 </tbody>
 </table>
-<p>推送 <code translate="no">main</code> 或标签都不启动任何东西，所以同步和纯代码发布不花 Actions 时间：</p>
+<p>推送 <code translate="no">main</code> 或标签都不启动任何东西，所以同步不花 Actions 时间，纯代码发布只花网站两分钟的构建：</p>
 <table class="stack fixed">
 <thead><tr><th scope="col">工作流</th><th scope="col">何时启动</th></tr></thead>
 <tbody>
 <tr><th scope="row"><code translate="no">release.yml</code></th><td>只能手动给出 <code translate="no">tag</code>，<code translate="no">publish-github.sh --tag vX.Y.0</code> 就是这样启动它；<code translate="no">rehearse</code> 构建并检查全部内容但不发布</td></tr>
-<tr><th scope="row"><code translate="no">ci.yml</code>、<code translate="no">docs-pages.yml</code>、<code translate="no">contributors-readme.yml</code>、<code translate="no">linux-release-smoke.yml</code>、<code translate="no">windows-install-smoke.yml</code></th><td>只能手动（<code translate="no">workflow_dispatch</code>）</td></tr>
+<tr><th scope="row"><code translate="no">docs-pages.yml</code></th><td>每次发版由 <code translate="no">publish-github.sh --tag</code> 启动，让网站显示发布的代码；其他时候手动</td></tr>
+<tr><th scope="row"><code translate="no">ci.yml</code>、<code translate="no">contributors-readme.yml</code>、<code translate="no">linux-release-smoke.yml</code>、<code translate="no">windows-install-smoke.yml</code></th><td>只能手动（<code translate="no">workflow_dispatch</code>）</td></tr>
 </tbody>
 </table>
 
@@ -116,7 +117,7 @@ scripts/publishing/publish-github.sh -m "Sidebar fixes" --tag v1.6.1</code></pre
 <ul>
 <li>已经存在的标签，或不是 <code translate="no">vX.Y.Z</code>、<code translate="no">vX.Y.Z.W</code> 形式的标签；</li>
 <li><a href="#version-places">版本位置</a>不一致的源提交，逐处列出；</li>
-<li>缺少 <code translate="no">.github/release-notes/vX.Y.Z.md</code>（开头必须是 <code translate="no"># OpenProgram X.Y.Z Release Notes</code>）的源提交；</li>
+<li>缺少 <code translate="no">.github/release-notes/vX.Y.Z.md</code>（开头必须是 <code translate="no"># OpenProgram X.Y.Z Release Notes</code>，下面接 1 到 8 条编号要点 <code translate="no">1. …</code>，App 只显示这几条）的源提交；</li>
 <li><code translate="no">publish-updates.py plan --release</code> 拒绝的发布（退出码 3），例如运行时或外壳输入变了的纯代码版本（vX.Y.0 缺运行时层而被拒绝是预期的，只显示，因为它的工作流会构建这些层）；</li>
 <li>vX.Y.0 时，用 <code translate="no">--office-archive</code> 给出、却不是固定 <a href="#office-archive">Office 归档</a>的文件；或真正运行时，最新 release 和这个 tag 的草稿都没有归档（用 <code translate="no">gh</code> 询问）且没有给文件。给了文件就改为 seed 草稿。</li>
 </ul>
@@ -178,6 +179,7 @@ scripts/publishing/publish-github.sh -m "Sidebar fixes" --tag v1.6.1</code></pre
 
 <h2 id="website">网站</h2>
 <p>落地页和文档由 docs-pages 工作流发布为 <code translate="no">Fzkuji/OpenProgram</code> 自己的 GitHub Pages 站点，地址 <code translate="no">https://fzkuji.github.io/OpenProgram/</code>，文档在 <code translate="no">docs/</code> 下。放在另一个账号下的独立站点仓库会随那个账号一起失效，所以站点和代码放在一起。地址只有一处设置：<code translate="no">openprogram/operations/project_site.py</code> 里的 <code translate="no">SITE_URL</code>。</p>
+<p>每次发版都会启动这个工作流，所以网站跟着发版更新，不跟每天的同步。工作流会拒绝发布链接没写 <code translate="no">pyproject.toml</code> 里版本号的落地页，所以每次同步都对要发布的提交跑 <code translate="no">scripts.docs_site.check_landing --source-only</code>（同样的检查，不看构建出的站点），改版本号时落地页的版本号要一起改。</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">要点</th><th scope="col">决定</th></tr></thead>
 <tbody>
@@ -192,9 +194,8 @@ scripts/publishing/publish-github.sh -m "Sidebar fixes" --tag v1.6.1</code></pre
 
 <h2 id="what-a-release-builds">一次发布构建什么</h2>
 <p>每个平台分支彼此独立。纯代码发布在这里什么都不构建。</p>
-<p>标签不会移动，所以功能发布先演练。不带 <code translate="no">--tag</code> 发布 <code translate="no">main</code>，再运行 <code translate="no">gh workflow run release.yml -f tag=vX.Y.0 -f rehearse=true</code>：每个分支都从 <code translate="no">main</code> 构建，跑同样的检查，什么都不发布。</p>
-<p><code translate="no">gh workflow run windows-install-smoke.yml -f tag=vX.Y.0 -f run_id=&lt;演练运行&gt;</code> 在 Windows runner 上安装那次运行的 Windows 文件。有分支失败就修根因，再演练一次。</p>
-<p>两者都通过后，<code translate="no">scripts/publishing/publish-github.sh --source refs/publish/last --tag vX.Y.0</code> 发布同一个提交，最早在演练通过 12 小时之后。不带 <code translate="no">--source</code> 时，这期间 <code translate="no">dev</code> 上的新提交会作为一次没演练过的新同步上传。纯代码发布不需要演练，也不用等。</p>
+<p>功能发布在 <code translate="no">--dry-run</code> 之后直接打标签：<code translate="no">publish-github.sh -m "…" --tag vX.Y.0</code> 推送 <code translate="no">main</code> 和标签并启动 Release 工作流。<code translate="no">rehearse=true</code> 仍可用来构建并检查全部内容而不发布，但发布不等它。</p>
+<p>Windows 改动需要时，<code translate="no">gh workflow run windows-install-smoke.yml -f tag=vX.Y.0 -f run_id=&lt;运行号&gt;</code> 在 Windows runner 上安装那次运行的 Windows 文件。</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">项目</th><th scope="col">行为</th></tr></thead>
 <tbody>
@@ -277,7 +278,7 @@ scripts/publishing/publish-github.sh -m "Sidebar fixes" --tag v1.6.1</code></pre
 <dl class="commands">
 <dt>提交</dt><dd>按需要频繁提交到 <code translate="no">dev</code>；部署见<a href="dev-instance.zh.html#deploying-to-the-development-instance">部署到开发版</a></dd>
 <dt>同步</dt><dd>大约每天一次，<code translate="no">dev</code> 有新提交时，不带 <code translate="no">--tag</code>；只更新 <code translate="no">latest.json</code></dd>
-<dt>发布</dt><dd>版本准备好时：用 <code translate="no">release-version.py set</code> 改版本号，写发布说明，再带 <code translate="no">--tag vX.Y.Z</code>。要重建安装包时用 vX.Y.0（先演练，再等 12 小时），否则用纯代码的 vX.Y.Z 或 vX.Y.Z.W</dd>
+<dt>发布</dt><dd>版本准备好时：用 <code translate="no">release-version.py set</code> 改版本号，写发布说明，再带 <code translate="no">--tag vX.Y.Z</code>。要重建安装包时用 vX.Y.0，否则用纯代码的 vX.Y.Z 或 vX.Y.Z.W</dd>
 <dt>禁止</dt><dd class="struck">在 <code translate="no">main</code> 上提交</dd>
 <dt>禁止</dt><dd class="struck">手动 <code translate="no">git push</code> <code translate="no">main</code></dd>
 <dt>禁止</dt><dd class="struck">把 <code translate="no">main</code> 合进 <code translate="no">dev</code></dd>

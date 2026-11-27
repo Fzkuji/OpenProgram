@@ -61,7 +61,7 @@
 <tr><th scope="row">Solar</th><td><code translate="no">SolarIcon fit="fill"</code> 把 view box 裁成围绕墨迹的正方形。边界在 <code translate="no">solar-icons/ink-bounds.ts</code>，光栅化 <code translate="no">bodies.ts</code> 生成（50% 层也算墨迹）：<code translate="no">npm run generate:solar-ink-bounds --workspace apps/web</code>。</td></tr>
 <tr><th scope="row">品牌标志</th><td><code translate="no">BrandMark fit="fill"</code>，经 <code translate="no">ModelMark</code> 和 <code translate="no">ChannelLogo fit="fill"</code>，数据来自 <code translate="no">brand-mark/ink-bounds.generated.ts</code></td></tr>
 <tr><th scope="row">Agent 角色</th><td><code translate="no">fit="mark"</code>，<code translate="no">components/avatar/bot/catalog.ts</code> 的 <code translate="no">botMarkFit</code>；身体作墨迹。上传图、字母方块或 DiceBear 本来就填满方框，只放大。</td></tr>
-<tr><th scope="row">其他</th><td><code translate="no">FillIcon</code>（<code translate="no">components/ui/fill-icon.tsx</code>）按几何加半个描边裁剪 svg，图片或 canvas 整体放入。应用图标和 favicon 是运行时位图，没有测得的墨迹。上下文圆环只响应悬停。</td></tr>
+<tr><th scope="row">其他</th><td><code translate="no">FillIcon</code>（<code translate="no">components/ui/fill-icon.tsx</code>）按几何加半个描边裁剪 svg，图片或 canvas 整体放入。墨迹框按 svg 的标记缓存，重新渲染不再测量。应用图标和 favicon 是运行时位图，没有测得的墨迹。上下文圆环只响应悬停。</td></tr>
 </tbody>
 </table>
 <details>
@@ -133,6 +133,7 @@
 <tr><th scope="row">Handle</th><td>所有家族共用 <code translate="no">AnimatedNavIconHandle</code>（<code translate="no">startAnimation</code>、<code translate="no">stopAnimation</code>）</td></tr>
 <tr><th scope="row">悬停目标</th><td>容器，不是 16px 的图标。没有 ref 的 Solar 图标跟随最近的可点击祖先：按钮、链接、任意菜单项、listbox 选项、胶囊</td></tr>
 <tr><th scope="row">选择器、放大比例、弹簧</th><td><code translate="no">components/ui/hover-pop.ts</code>，Agent 角色也用它</td></tr>
+<tr><th scope="row">合成层</th><td>每个预设都写成完整的 <code translate="no">transform</code> 字符串，framer 把它交给浏览器作为 Web Animation，由合成层运行；悬停动画的每一帧都不占页面主线程</td></tr>
 <tr><th scope="row">减少动态</th><td><code translate="no">prefers-reduced-motion</code> 下全部不动</td></tr>
 <tr><th scope="row">外层</th><td><code translate="no">SolarIcon</code> 渲染与动态图标相同的 <code translate="no">span.inline-flex</code> 外层</td></tr>
 </tbody>

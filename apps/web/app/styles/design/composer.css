@@ -45,4 +45,10 @@
   --composer-fade-duration: 0.25s;
   --composer-fade-delay-header: 0.10s;
   --composer-fade-delay-body: 0.15s;
+  /* The tuck slide (controls/tuck-row.tsx): a spring of stiffness 420 and
+     damping 32 sampled into linear(), so the rows, the mask above the box
+     and the transcript's reserve all move in CSS / Web Animations, which
+     the compositor runs without the page's main thread. */
+  --composer-tuck-duration: 500ms;
+  --composer-tuck-easing: linear(0, 0.0301, 0.1046, 0.2045, 0.3156, 0.4278, 0.5345, 0.6314, 0.7165, 0.789, 0.8489, 0.8972, 0.935, 0.9637, 0.9849, 0.9997, 1.0096, 1.0156, 1.0187, 1.0197, 1.0193, 1.0179, 1.016, 1.0138, 1.0116, 1.0095, 1.0075, 1.0058, 1.0043, 1.0031, 1.0021, 1.0014, 1.0008, 1.0003, 1, 0.9998, 1, 1, 1, 1);
 }

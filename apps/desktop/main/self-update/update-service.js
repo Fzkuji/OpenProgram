@@ -1172,7 +1172,6 @@ class DesktopUpdateService {
         error: null,
         errorKind: null,
       });
-      this.prepareInBackground();
     } catch (error) {
       if (error instanceof DesktopAssetNotPublished) {
         this.persisted.release = null;
@@ -1184,19 +1183,6 @@ class DesktopUpdateService {
       this.publish({ status: "error", ...updateErrorFields(error, "check") });
     }
     return this.getState();
-  }
-
-  /**
-   * With automatic checks on, a version-store release is fetched and prepared
-   * without asking; "ready" then offers the restart. Called after
-   * each check and once at start, for a release found before the last quit.
-   */
-  prepareInBackground() {
-    const release = this.persisted.release;
-    if (!this.persisted.automaticChecks || release?.status !== "available") return;
-    if (this.prepared?.key === releaseKey(release) || this.downloadPromise) return;
-    if (!this.takesVersion()) return;
-    void this.download().catch(() => {});
   }
 
   /**

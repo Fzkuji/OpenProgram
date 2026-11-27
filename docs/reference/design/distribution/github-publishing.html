@@ -68,12 +68,13 @@
 <tr><th scope="row">Code-only release<span class="arg"><code translate="no">--tag vX.Y.Z</code>, <code translate="no">vX.Y.Z.W</code></span></th><td>The same, without a workflow: <code translate="no">publish-updates.py release-page</code> creates the GitHub Release with the notes in one call. It is not marked latest, so the Latest badge stays on the X.Y.0 release that holds the installers, which its notes link. Refused before anything moves when the runtime or shell inputs changed: that needs a feature release</td></tr>
 </tbody>
 </table>
-<p>Pushing <code translate="no">main</code> or a tag starts nothing, so a sync or a code-only release costs no Actions time:</p>
+<p>Pushing <code translate="no">main</code> or a tag starts nothing, so a sync costs no Actions time and a code-only release only the website's two-minute build:</p>
 <table class="stack fixed">
 <thead><tr><th scope="col">Workflow</th><th scope="col">Starts on</th></tr></thead>
 <tbody>
 <tr><th scope="row"><code translate="no">release.yml</code></th><td>Only by hand with <code translate="no">tag</code>, which <code translate="no">publish-github.sh --tag vX.Y.0</code> does; <code translate="no">rehearse</code> builds and checks everything without publishing</td></tr>
-<tr><th scope="row"><code translate="no">ci.yml</code>, <code translate="no">docs-pages.yml</code>, <code translate="no">contributors-readme.yml</code>, <code translate="no">linux-release-smoke.yml</code>, <code translate="no">windows-install-smoke.yml</code></th><td>Only by hand (<code translate="no">workflow_dispatch</code>)</td></tr>
+<tr><th scope="row"><code translate="no">docs-pages.yml</code></th><td>Dispatched by <code translate="no">publish-github.sh --tag</code> for every release, so the site shows the released tree; otherwise by hand</td></tr>
+<tr><th scope="row"><code translate="no">ci.yml</code>, <code translate="no">contributors-readme.yml</code>, <code translate="no">linux-release-smoke.yml</code>, <code translate="no">windows-install-smoke.yml</code></th><td>Only by hand (<code translate="no">workflow_dispatch</code>)</td></tr>
 </tbody>
 </table>
 
@@ -116,7 +117,7 @@ scripts/publishing/publish-github.sh -m "Sidebar fixes" --tag v1.6.1</code></pre
 <ul>
 <li>a tag that already exists, or one that is not <code translate="no">vX.Y.Z</code> or <code translate="no">vX.Y.Z.W</code>;</li>
 <li>a source where a <a href="#version-places">version place</a> disagrees, naming each one;</li>
-<li>a source without <code translate="no">.github/release-notes/vX.Y.Z.md</code> starting with <code translate="no"># OpenProgram X.Y.Z Release Notes</code>;</li>
+<li>a source without <code translate="no">.github/release-notes/vX.Y.Z.md</code> starting with <code translate="no"># OpenProgram X.Y.Z Release Notes</code>, followed by 1 to 8 numbered points (<code translate="no">1. …</code>), the only part the App shows;</li>
 <li>a release <code translate="no">publish-updates.py plan --release</code> refuses (exit 3), such as a code-only version whose runtime or shell inputs changed (for vX.Y.0, a refusal for missing runtime layers is expected and only shown, since its workflow builds them);</li>
 <li>for vX.Y.0, a given <code translate="no">--office-archive</code> that is not the pinned <a href="#office-archive">Office archive</a>, or a real run when neither the newest release nor the tag's draft has the archive (asked with <code translate="no">gh</code>) and no file was given. With a file, it seeds the draft instead.</li>
 </ul>
@@ -178,6 +179,7 @@ scripts/publishing/publish-github.sh -m "Sidebar fixes" --tag v1.6.1</code></pre
 
 <h2 id="website">The website</h2>
 <p>The landing page and the documentation are published by the docs-pages workflow as the GitHub Pages site of <code translate="no">Fzkuji/OpenProgram</code> itself, at <code translate="no">https://fzkuji.github.io/OpenProgram/</code>, documentation under <code translate="no">docs/</code>. A separate site repository under another account went down with that account, so the site lives with the code. The address is one setting: <code translate="no">SITE_URL</code> in <code translate="no">openprogram/operations/project_site.py</code>.</p>
+<p>Every release dispatches the workflow, so the site follows releases, not daily syncs. The workflow refuses a landing page whose release link does not name the version in <code translate="no">pyproject.toml</code>, so every sync runs <code translate="no">scripts.docs_site.check_landing --source-only</code> (the same checks, without the built site) on the commit it publishes, and a version bump moves the landing page's version with the rest.</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Point</th><th scope="col">Decision</th></tr></thead>
 <tbody>
@@ -192,9 +194,8 @@ scripts/publishing/publish-github.sh -m "Sidebar fixes" --tag v1.6.1</code></pre
 
 <h2 id="what-a-release-builds">What a release builds</h2>
 <p>Every platform leg is independent. A code-only release builds nothing here.</p>
-<p>A tag never moves, so a feature release is rehearsed first. Publish <code translate="no">main</code> without <code translate="no">--tag</code>, then run <code translate="no">gh workflow run release.yml -f tag=vX.Y.0 -f rehearse=true</code>: every leg builds from <code translate="no">main</code>, the same checks run and nothing is published.</p>
-<p><code translate="no">gh workflow run windows-install-smoke.yml -f tag=vX.Y.0 -f run_id=&lt;rehearsal run&gt;</code> installs that run's Windows files on a Windows runner. A leg that fails is fixed at its cause and the rehearsal runs again.</p>
-<p>When both pass, <code translate="no">scripts/publishing/publish-github.sh --source refs/publish/last --tag vX.Y.0</code> releases the same commit, no sooner than 12 hours after the rehearsal passed. Without <code translate="no">--source</code>, commits made on <code translate="no">dev</code> in between would go up as a new, unrehearsed sync. A code-only release needs neither the rehearsal nor the wait.</p>
+<p>A feature release is tagged straight after a <code translate="no">--dry-run</code>: <code translate="no">publish-github.sh -m "…" --tag vX.Y.0</code> pushes <code translate="no">main</code> and the tag and starts the Release workflow. <code translate="no">rehearse=true</code> stays available to build and check everything without publishing, but a release does not wait for it.</p>
+<p><code translate="no">gh workflow run windows-install-smoke.yml -f tag=vX.Y.0 -f run_id=&lt;run&gt;</code> installs a run's Windows files on a Windows runner when a Windows change needs it.</p>
 <table class="stack fixed">
 <thead class="sr"><tr><th scope="col">Point</th><th scope="col">Behaviour</th></tr></thead>
 <tbody>
@@ -277,7 +278,7 @@ scripts/publishing/publish-github.sh -m "Sidebar fixes" --tag v1.6.1</code></pre
 <dl class="commands">
 <dt>Commit</dt><dd>to <code translate="no">dev</code> as often as the work needs; deploy as in <a href="dev-instance.html#deploying-to-the-development-instance">Deploying to the development instance</a></dd>
 <dt>Sync</dt><dd>about once a day when <code translate="no">dev</code> has new commits, without <code translate="no">--tag</code>; it updates <code translate="no">latest.json</code> only</dd>
-<dt>Release</dt><dd>when a version is ready: bump it with <code translate="no">release-version.py set</code>, write its notes, then <code translate="no">--tag vX.Y.Z</code>. vX.Y.0 when installers must be rebuilt (rehearse it and wait 12 hours first), otherwise a code-only vX.Y.Z or vX.Y.Z.W</dd>
+<dt>Release</dt><dd>when a version is ready: bump it with <code translate="no">release-version.py set</code>, write its notes, then <code translate="no">--tag vX.Y.Z</code>. vX.Y.0 when installers must be rebuilt, otherwise a code-only vX.Y.Z or vX.Y.Z.W</dd>
 <dt>Never</dt><dd class="struck">commit on <code translate="no">main</code></dd>
 <dt>Never</dt><dd class="struck"><code translate="no">git push</code> <code translate="no">main</code> by hand</dd>
 <dt>Never</dt><dd class="struck">merge <code translate="no">main</code> into <code translate="no">dev</code></dd>

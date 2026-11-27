@@ -17,7 +17,7 @@ installLoader();
 const window = installDom();
 const { createElement: h, useRef } = await import("react");
 const { useTuckBackdrop, tuckedShift } = await import("../../../../components/chat/composer/controls/use-tuck-backdrop.ts");
-const { visibleComposerHeight, COMPOSER_TUCK_SHIFT_EVENT } = await import("../../../../lib/chat/history/chat-scroll.ts");
+const { visibleComposerHeight, COMPOSER_TUCK_SHIFT_EVENT, COMPOSER_RESERVE_SLIDE_EVENT, COMPOSER_SLIDING_ATTR } = await import("../../../../lib/chat/history/chat-scroll.ts");
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "../../../..");
 const read = (path) => readFileSync(join(root, path), "utf8");
@@ -31,9 +31,27 @@ for (const [prop, attr] of [["offsetTop", "data-top"], ["offsetHeight", "data-he
   });
 }
 
-function Area({ tucked, decisions = 0 }) {
+// The toggle path, not the first paint, slides: motion is on here.
+window.matchMedia ??= () => ({ matches: false, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} });
+
+// The test DOM computes no styles: the slide falls back to its defaults.
+globalThis.getComputedStyle ??= () => ({ getPropertyValue: () => "" });
+
+// A stand-in for the composer's tuck store (use-tucked-controls.ts).
+function storeOf(tucked) {
+  const listeners = new Set();
+  const store = {
+    state: { tucked, covering: tucked },
+    get: () => store.state,
+    subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
+    set(next) { store.state = { tucked: next, covering: true }; listeners.forEach((l) => l()); },
+  };
+  return store;
+}
+
+function Area({ store, decisions = 0 }) {
   const area = useRef(null);
-  useTuckBackdrop(area, tucked);
+  useTuckBackdrop(area, store, true);
   return h("div", { ref: area, "data-area": "", "data-height": 140 },
     h("div", { "data-height": decisions }),
     h("div", { "data-tuck-side": "above", "data-top": 12 + decisions, "data-height": 40 }),
@@ -42,7 +60,7 @@ function Area({ tucked, decisions = 0 }) {
 }
 
 test("tucked, the mask starts 12px above the box and the covered height leaves the strip out", async () => {
-  const view = await render(h(Area, { tucked: true }));
+  const view = await render(h(Area, { store: storeOf(true) }));
   const area = view.container.querySelector("[data-area]");
   assert.equal(area.style.getPropertyValue("--composer-tuck-shift"), "28px");
   assert.equal(visibleComposerHeight(area), 112);
@@ -50,7 +68,7 @@ test("tucked, the mask starts 12px above the box and the covered height leaves t
 });
 
 test("untucked, the mask is where it was and the whole composer counts", async () => {
-  const view = await render(h(Area, { tucked: false }));
+  const view = await render(h(Area, { store: storeOf(false) }));
   const area = view.container.querySelector("[data-area]");
   assert.equal(area.style.getPropertyValue("--composer-tuck-shift"), "0px");
   assert.equal(visibleComposerHeight(area), 140);
@@ -58,30 +76,42 @@ test("untucked, the mask is where it was and the whole composer counts", async (
 });
 
 test("panels above the tucked row keep the mask at the top", async () => {
-  const view = await render(h(Area, { tucked: true, decisions: 60 }));
+  const view = await render(h(Area, { store: storeOf(true), decisions: 60 }));
   const area = view.container.querySelector("[data-area]");
   assert.equal(tuckedShift(area), 0);
   await view.unmount();
 });
 
-test("each shift tells the height publishers", async () => {
-  const view = await render(h(Area, { tucked: false }));
+test("a toggle moves the mask at once and the covered height after the slide", async () => {
+  const store = storeOf(false);
+  const view = await render(h(Area, { store }));
   const area = view.container.querySelector("[data-area]");
   let told = 0;
+  const slides = [];
   area.addEventListener(COMPOSER_TUCK_SHIFT_EVENT, () => { told += 1; });
-  await view.rerender(h(Area, { tucked: true }));
-  await view.act(async () => { await new Promise((resolve) => setTimeout(resolve, 600)); });
-  assert.ok(told > 0);
+  area.addEventListener(COMPOSER_RESERVE_SLIDE_EVENT, (event) => { slides.push(event.detail); });
+  await view.act(async () => { store.set(true); });
   assert.equal(area.style.getPropertyValue("--composer-tuck-shift"), "28px");
+  assert.ok(area.hasAttribute(COMPOSER_SLIDING_ATTR));
+  assert.equal(slides.length, 1);
+  assert.equal(slides[0].by, 28);
+  assert.equal(told, 0);
+  await view.act(async () => { await new Promise((resolve) => setTimeout(resolve, 700)); });
+  assert.equal(told, 1);
+  assert.ok(!area.hasAttribute(COMPOSER_SLIDING_ATTR));
   await view.unmount();
 });
 
-test("the mask, the height publishers and the rows share the shift and the spring", () => {
+test("the mask, the rows and the reserve move on the compositor, on one spring", () => {
   const css = read("components/chat/composer/composer.module.css");
-  assert.match(css, /inset: calc\(12px \+ var\(--composer-tuck-shift, 0px\)\) 0 0;/);
-  assert.match(css, /top: calc\(-16px \+ var\(--composer-tuck-shift, 0px\)\);/);
-  assert.match(read("components/chat/composer/controls/tuck-row.tsx"), /\{ \.\.\.TUCK_SLIDE, opacity: \{ duration: 0\.18 \} \}/);
+  assert.match(css, /inset: 12px 0 0;\n  transform: translateY\(var\(--composer-tuck-shift, 0px\)\);/);
+  assert.match(css, /top: -16px;\n  transform: translateY\(var\(--composer-tuck-shift, 0px\)\);/);
+  assert.match(css, /\[data-composer-sliding\]::before,[\s\S]*?transition: transform var\(--composer-tuck-duration\) var\(--composer-tuck-easing\);/);
+  assert.match(css, /\.tuckRow \{\n  transition: transform var\(--composer-tuck-duration\) var\(--composer-tuck-easing\),/);
+  assert.match(read("app/styles/design/composer.css"), /--composer-tuck-easing: linear\(/);
+  assert.doesNotMatch(read("components/chat/composer/controls/tuck-row.tsx"), /motion\./);
   assert.match(read("components/chat/composer/input/use-composer-input-effects.ts"), /visibleComposerHeight\(element\)/);
   assert.match(read("components/chat/pane/peer-session-pane.tsx"), /visibleComposerHeight\(target\)/);
-  assert.match(read("components/chat/composer/index.tsx"), /useTuckBackdrop\(inputAreaRef, tuck\.tucked\)/);
+  assert.match(read("components/chat/composer/index.tsx"), /useTuckBackdrop\(inputAreaRef, tuck\.store, tuck\.enabled\)/);
+  assert.match(read("components/chat/messages/list/use-chat-area-stick.ts"), /document\.addEventListener\(COMPOSER_RESERVE_SLIDE_EVENT, onReserveSlide\)/);
 });

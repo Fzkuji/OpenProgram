@@ -17,9 +17,16 @@
  * input area. A click in the box's inner padding (above or below the
  * text, beside the mic and send) focuses the text instead. Only the band
  * shows the hand cursor (data-tuck-rim on the area, composer.module.css).
+ *
+ * The state lives in a small store (TuckStore), not in the composer's
+ * React state: a toggle re-renders only the two rows (tuck-row.tsx), and
+ * the box covering the rows (data-tucked on the input area) and the mask
+ * (use-tuck-backdrop.ts) follow it from subscriptions. Kept in the
+ * composer, a toggle re-rendered the whole composer, about 8 ms (traced),
+ * in the frame the slide starts.
  */
 import { useCallback, useLayoutEffect, useRef, useState, type PointerEvent, type RefObject } from "react";
-import { animate, useReducedMotion } from "framer-motion";
+import { useReducedMotion } from "framer-motion";
 
 const KEY = "openprogram.composer.tucked";
 
@@ -55,13 +62,67 @@ function controlUnder(band: HTMLElement, x: number, y: number): boolean {
   return !!under?.closest(OWN_TARGET);
 }
 
+export interface TuckSnapshot {
+  /** The rows are tucked behind the box. */
+  tucked: boolean;
+  /** The box covers the rows: tucked, or still sliding out. */
+  covering: boolean;
+}
+
+/** One composer's tuck state, outside React. */
+export interface TuckStore {
+  get(): TuckSnapshot;
+  subscribe(listener: () => void): () => void;
+  /** Flip the rows; the choice is remembered per browser. */
+  toggle(): void;
+  /** A slide ended: settled and out, the rows' popovers go back on top. */
+  settle(): void;
+}
+
+function createTuckStore(): TuckStore {
+  const initial = stored();
+  let state: TuckSnapshot = { tucked: initial, covering: initial };
+  const listeners = new Set<() => void>();
+  const set = (next: TuckSnapshot) => {
+    if (next.tucked === state.tucked && next.covering === state.covering) return;
+    state = next;
+    listeners.forEach((listener) => listener());
+  };
+  return {
+    get: () => state,
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => { listeners.delete(listener); };
+    },
+    toggle() {
+      const tucked = !state.tucked;
+      try { localStorage.setItem(KEY, tucked ? "1" : "0"); } catch { /* the choice lasts this page only */ }
+      set({ tucked, covering: true });
+    },
+    settle() {
+      set({ ...state, covering: state.tucked });
+    },
+  };
+}
+
 export function useTuckedControls(boxRef: RefObject<HTMLElement | null>, enabled: boolean) {
   const bandRef = useRef<HTMLDivElement | null>(null);
-  const [tucked, setTucked] = useState(stored);
+  const [store] = useState(createTuckStore);
+  const reduced = useReducedMotion();
+
   // The box covers the rows while they are tucked or still sliding out;
   // settled and out, the rows' own popovers go back on top of the box.
-  const [covering, setCovering] = useState(tucked);
-  const reduced = useReducedMotion();
+  useLayoutEffect(() => {
+    const area = boxRef.current?.closest<HTMLElement>("[data-composer-input-area]");
+    if (!area) return;
+    const apply = () => {
+      const covering = enabled && store.get().covering;
+      if (covering !== area.hasAttribute("data-tucked")) area.toggleAttribute("data-tucked", covering);
+    };
+    apply();
+    const off = store.subscribe(apply);
+    return () => { off(); area.removeAttribute("data-tucked"); };
+  }, [boxRef, enabled, store]);
 
   // The ring follows the box's own rectangle (the box is inset in its
   // stack), RIM_OUT larger on every side. It is placed in the observer's
@@ -104,16 +165,17 @@ export function useTuckedControls(boxRef: RefObject<HTMLElement | null>, enabled
       if (field) { event.preventDefault(); field.focus(); }
       return;
     }
-    setCovering(true);
-    setTucked(previous => {
-      const next = !previous;
-      try { localStorage.setItem(KEY, next ? "1" : "0"); } catch { /* the choice lasts this page only */ }
-      return next;
-    });
+    store.toggle();
     if (!reduced) {
-      animate(box, { scale: [1, 0.985, 1.006, 1] }, { duration: 0.42, times: [0, 0.3, 0.68, 1], ease: "easeOut" });
+      // A Web Animation of transform alone, which the compositor runs.
+      box.animate([
+        { transform: "scale(1)", easing: "ease-out" },
+        { transform: "scale(0.985)", offset: 0.3, easing: "ease-out" },
+        { transform: "scale(1.006)", offset: 0.68, easing: "ease-out" },
+        { transform: "scale(1)" },
+      ], { duration: 420 });
     }
-  }, [boxRef, enabled, reduced]);
+  }, [boxRef, enabled, reduced, store]);
 
   const onAreaPointerMove = useCallback((event: PointerEvent<HTMLElement>) => {
     const area = event.currentTarget;
@@ -135,7 +197,5 @@ export function useTuckedControls(boxRef: RefObject<HTMLElement | null>, enabled
     if (bandRef.current) bandRef.current.style.pointerEvents = "";
   }, []);
 
-  const onSettled = useCallback(() => setCovering(tucked), [tucked]);
-
-  return { tucked: enabled && tucked, covering: enabled && covering, enabled, bandRef, onAreaPointerDown, onAreaPointerMove, onAreaPointerLeave, onSettled };
+  return { store, enabled, bandRef, onAreaPointerDown, onAreaPointerMove, onAreaPointerLeave };
 }

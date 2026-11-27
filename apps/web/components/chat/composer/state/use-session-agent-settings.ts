@@ -35,8 +35,11 @@ export function useSessionAgentSettings(): AgentSettingsState {
   const global = useSessionStore((s) => s.agentSettings);
   const branchId = useSessionStore((s) => (sessionId ? s.composerSettingsBySession[sessionId]?.active_branch_id ?? null : null));
   const agentId = useSessionStore((s) => (sessionId ? s.conversations[sessionId]?.agent_id ?? null : null));
-  const epoch = useSessionStore((s) => s.agentSettingsEpoch);
-  const shownFor = settingsShownFor(branchId, agentId, epoch);
+  // Only an unfocused pane reads again when the epoch moves; a focused one
+  // follows the focused reads, so the epoch is no reason to render it (each
+  // model or effort change moves it, and the composer re-rendered for it).
+  const epoch = useSessionStore((s) => (focused ? null : s.agentSettingsEpoch));
+  const shownFor = settingsShownFor(branchId, agentId, epoch ?? useSessionStore.getState().agentSettingsEpoch);
   const hasEntry = !!own;
   useEffect(() => {
     if (!sessionId) return;
